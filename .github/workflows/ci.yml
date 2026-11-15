@@ -1,7 +1,9 @@
 name: CI
 
-# The same gate as a local run: Linux with PoCL (OpenCL on the CPU) under GCC and Clang, and macOS on its own
-# OpenCL. Every leg blocks.
+# The same gate as a local run: Linux with PoCL (OpenCL on the CPU) under GCC and Clang, where every test runs, and
+# macOS, whose runners are virtual machines without an OpenCL device: there everything is built with warnings as
+# errors and the tests that need no device run (DEVICE_TESTS below). The device tests on a real GPU are the local gate
+# (CLAUDE.md "Build and CI"). Every leg blocks.
 
 on:
   push:
@@ -30,6 +32,9 @@ jobs:
           - name: macOS ARM64 Apple Clang
             os: macos-latest
             cxx: c++
+    env:
+      # macOS runners have no OpenCL device: skip the tests that need one (the OpenCL tests, demo and benchmark)
+      DEVICE_TESTS: ${{ startsWith(matrix.os, 'macos') && '-E (GpuOpenCl|OpenCl/|demo.opencl|benchmark.opencl)' || '' }}
     steps:
       - uses: actions/checkout@v5
         with:
@@ -55,10 +60,10 @@ jobs:
         run: |
           cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_CXX_COMPILER=${{ matrix.cxx }} -DSNICHOLLS_GPU_WERROR=ON -DSNICHOLLS_GPU_BUILD_BENCHMARKS=ON
           cmake --build build
-          ctest --test-dir build --output-on-failure
+          ctest --test-dir build --output-on-failure $DEVICE_TESTS
 
       - name: Debug, asserts live
         run: |
           cmake -S . -B build-debug -G Ninja -DCMAKE_BUILD_TYPE=Debug -DCMAKE_CXX_COMPILER=${{ matrix.cxx }} -DSNICHOLLS_GPU_WERROR=ON
           cmake --build build-debug
-          ctest --test-dir build-debug --output-on-failure
+          ctest --test-dir build-debug --output-on-failure $DEVICE_TESTS
