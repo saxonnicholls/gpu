@@ -1,0 +1,130 @@
+#!/usr/bin/env bash
+#
+#  test_ubuntu.sh
+#  snicholls-gpu
+#
+#  Copyright 2010-2026 Saxon Herschel Nicholls
+#
+#  Run the full test suite on Ubuntu 24.04, in Docker, from any machine with
+#  Docker - the local half of the gate that CI runs (CLAUDE.md "Build and CI").
+#
+#      scripts/test_ubuntu.sh            every configuration below
+#      scripts/test_ubuntu.sh --quick    GCC Release only
+#      scripts/test_ubuntu.sh -j 4       at most 4 compiles (and 4 tests) at once, on a shared machine
+#
+#  Configurations, each a fresh CMake build of everything with warnings as
+#  errors, then every CTest:
+#
+#      gcc     Release   + benchmarks smoke run + documentation (Doxygen)
+#      gcc     Debug     -O0, asserts live
+#      clang   Release
+#      clang   Debug
+#      clang   ASan+UBSan
+#      gcc     ASan+UBSan
+#      clang   TSan        the backend is used from many threads
+#
+#  The checkout is mounted read-only and copied into the container from
+#  `git ls-files` plus the submodules, so nothing untracked is tested and
+#  nothing is written back. Exits non-zero if any configuration fails, after
+#  running them all.
+#
+
+set -euo pipefail
+
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+QUICK=0
+JOBS=""
+while [ $# -gt 0 ]; do
+    case "$1" in
+        --quick) QUICK=1 ;;
+        -j) shift; JOBS="${1:-}" ;;
+        -j*) JOBS="${1#-j}" ;;
+        -h|--help) sed -n '2,31p' "$0" | sed 's/^#\s\{0,1\}//'; exit 0 ;;
+        *) echo "test_ubuntu: unknown argument $1" >&2; exit 2 ;;
+    esac
+    shift
+done
+case "$JOBS" in
+    ""|*[!0-9]*) [ -z "$JOBS" ] || { echo "test_ubuntu: -j needs a number" >&2; exit 2; } ;;
+esac
+
+command -v docker >/dev/null || { echo "test_ubuntu: docker is not installed" >&2; exit 2; }
+docker info >/dev/null 2>&1 || { echo "test_ubuntu: docker is not running" >&2; exit 2; }
+
+# The image is tagged by a hash of its Dockerfile, so editing the Dockerfile
+# builds a new image and an unchanged one is reused
+HASH="$(shasum -a 256 "$ROOT/docker/ubuntu/Dockerfile" 2>/dev/null || sha256sum "$ROOT/docker/ubuntu/Dockerfile")"
+IMAGE="snicholls-gpu-ubuntu:${HASH:0:12}"
+if ! docker image inspect "$IMAGE" >/dev/null 2>&1; then
+    echo "test_ubuntu: building $IMAGE"
+    DOCKER_BUILDKIT=1 docker build -q -t "$IMAGE" "$ROOT/docker/ubuntu" >/dev/null
+fi
+
+# Tracked files only, including the submodules' tracked files
+LIST="$(mktemp)"
+trap 'rm -f "$LIST"' EXIT
+( cd "$ROOT" && git ls-files && git submodule foreach --quiet --recursive \
+    'git ls-files | sed "s|^|$displaypath/|"' ) > "$LIST"
+
+docker run --rm -i \
+    -v "$ROOT:/src:ro" -v "$LIST:/filelist:ro" \
+    -e QUICK="$QUICK" \
+    ${JOBS:+-e CMAKE_BUILD_PARALLEL_LEVEL="$JOBS" -e CTEST_PARALLEL_LEVEL="$JOBS"} \
+    "$IMAGE" bash -s <<'IN_CONTAINER'
+set -uo pipefail
+mkdir -p /work/gpu && cd /src && tar -cf - -T /filelist | tar -C /work/gpu -xf -
+cd /work/gpu
+
+failed=()
+passed=()
+run() {   # run <label> <cmake args...>
+    local label="$1"; shift
+    local dir="/work/build-${label// /-}"
+    local log="$dir.log"
+    printf '  %-28s ' "$label"
+    if cmake -S . -B "$dir" -G Ninja -DSNICHOLLS_GPU_WERROR=ON "$@" >"$log" 2>&1 &&
+       cmake --build "$dir" >>"$log" 2>&1 &&
+       ctest --test-dir "$dir" --output-on-failure >>"$log" 2>&1; then
+        echo "ok   $(grep -E '^[0-9]+% tests passed' "$log" | tail -1)"
+        passed+=("$label")
+    else
+        echo "FAILED"
+        tail -40 "$log" | sed 's/^/      /'
+        failed+=("$label")
+    fi
+}
+
+echo "snicholls-gpu on $(. /etc/os-release && echo "$PRETTY_NAME"), $(uname -m)"
+echo "  $(g++ --version | head -1)"
+echo "  $(clang++ --version | head -1)"
+echo "  doxygen $(doxygen --version)"
+echo "  OpenCL: $(clinfo -l 2>/dev/null | tr -s ' ' | tr '\n' ' ')"
+# PoCL and the ICD loader keep allocations for the process's life; LeakSanitizer would report them as ours
+export ASAN_OPTIONS=detect_leaks=0
+# PoCL compiles kernels into a cache; a fresh one per run keeps the configurations independent
+export POCL_CACHE_DIR=/work/pocl-cache
+
+docs=-DSNICHOLLS_GPU_BUILD_DOCS=ON
+case "$(doxygen --version)" in
+    1.9.*|1.8.*) docs=-DSNICHOLLS_GPU_BUILD_DOCS=OFF
+                 echo "  (docs check skipped: Doxygen $(doxygen --version) is older than the pinned 1.18 - an ARM64 host)";;
+esac
+
+run "gcc Release"        -DCMAKE_CXX_COMPILER=g++ -DCMAKE_BUILD_TYPE=Release -DSNICHOLLS_GPU_BUILD_BENCHMARKS=ON "$docs"
+if [ "$QUICK" != 1 ]; then
+    run "gcc Debug"          -DCMAKE_CXX_COMPILER=g++ -DCMAKE_BUILD_TYPE=Debug
+    run "clang Release"      -DCMAKE_CXX_COMPILER=clang++ -DCMAKE_BUILD_TYPE=Release
+    run "clang Debug"        -DCMAKE_CXX_COMPILER=clang++ -DCMAKE_BUILD_TYPE=Debug
+    run "clang ASan+UBSan"   -DCMAKE_CXX_COMPILER=clang++ -DCMAKE_BUILD_TYPE=RelWithDebInfo -DSNICHOLLS_GPU_SANITIZE=address,undefined
+    run "gcc ASan+UBSan"     -DCMAKE_CXX_COMPILER=g++ -DCMAKE_BUILD_TYPE=RelWithDebInfo -DSNICHOLLS_GPU_SANITIZE=address,undefined
+    run "clang TSan"         -DCMAKE_CXX_COMPILER=clang++ -DCMAKE_BUILD_TYPE=RelWithDebInfo -DSNICHOLLS_GPU_SANITIZE=thread
+fi
+
+echo
+if [ ${#failed[@]} -eq 0 ]; then
+    echo "test_ubuntu: all ${#passed[@]} configurations passed"
+    exit 0
+fi
+echo "test_ubuntu: ${#failed[@]} of $(( ${#passed[@]} + ${#failed[@]} )) configurations FAILED: ${failed[*]}"
+exit 1
+IN_CONTAINER

@@ -1,0 +1,64 @@
+name: CI
+
+# The same gate as a local run: Linux with PoCL (OpenCL on the CPU) under GCC and Clang, and macOS on its own
+# OpenCL. Every leg blocks.
+
+on:
+  push:
+    branches: [ main ]
+    tags: [ 'v*' ]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  gate:
+    name: ${{ matrix.name }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: Linux x86-64 GCC, PoCL
+            os: ubuntu-24.04
+            cxx: g++
+          - name: Linux x86-64 Clang, PoCL
+            os: ubuntu-24.04
+            cxx: clang++
+          - name: macOS ARM64 Apple Clang
+            os: macos-latest
+            cxx: c++
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          submodules: recursive
+
+      - name: Build tools and OpenCL
+        run: |
+          if [ "$RUNNER_OS" = Linux ]; then
+            sudo apt-get update
+            sudo apt-get install -y --no-install-recommends ninja-build ocl-icd-opencl-dev opencl-headers pocl-opencl-icd clinfo
+            clinfo -l
+          fi
+          if [ "$RUNNER_OS" = macOS ]; then brew install ninja; fi
+
+      - name: Static checks
+        env:
+          RELEASE_TAG: ${{ startsWith(github.ref, 'refs/tags/') && github.ref_name || '' }}
+        run: |
+          python3 scripts/check_version.py
+          python3 scripts/check_mirror.py
+
+      - name: Release, warnings as errors
+        run: |
+          cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_CXX_COMPILER=${{ matrix.cxx }} -DSNICHOLLS_GPU_WERROR=ON -DSNICHOLLS_GPU_BUILD_BENCHMARKS=ON
+          cmake --build build
+          ctest --test-dir build --output-on-failure
+
+      - name: Debug, asserts live
+        run: |
+          cmake -S . -B build-debug -G Ninja -DCMAKE_BUILD_TYPE=Debug -DCMAKE_CXX_COMPILER=${{ matrix.cxx }} -DSNICHOLLS_GPU_WERROR=ON
+          cmake --build build-debug
+          ctest --test-dir build-debug --output-on-failure

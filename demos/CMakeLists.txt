@@ -1,0 +1,15 @@
+# Demos. The layout mirrors include/snicholls/gpu/ (scripts/check_mirror.py enforces it): <name>.hpp has
+# <name>_demo.cpp. Each prints what it does and exits non-zero if the result is not what it documents, so every demo
+# is also a CTest (label demo).
+
+function(snicholls_gpu_add_demo name source)
+    add_executable(snicholls_gpu_${name} ${source})
+    target_link_libraries(snicholls_gpu_${name} PRIVATE snicholls::gpu)
+    snicholls_gpu_compile_options(snicholls_gpu_${name})
+    snicholls_gpu_sanitize(snicholls_gpu_${name})
+    add_test(NAME demo.${name} COMMAND snicholls_gpu_${name})
+    set_tests_properties(demo.${name} PROPERTIES LABELS demo)
+endfunction()
+
+snicholls_gpu_add_demo(opencl_demo opencl_demo.cpp)
+snicholls_gpu_add_demo(version_demo version_demo.cpp)
