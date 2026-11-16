@@ -3,7 +3,7 @@
 All notable changes to snicholls-gpu. The format follows Keep a Changelog; versions follow Semantic Versioning.
 A version is released when its tag is on a commit where every blocking CI leg is green.
 
-## Unreleased (0.2.0)
+## 0.2.0 - 2026-11-16
 
 ### Added
 

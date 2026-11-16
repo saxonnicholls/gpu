@@ -45,7 +45,7 @@
 /// \brief The major version.
 #define SNICHOLLS_GPU_VERSION_MAJOR 0
 /// \brief The minor version.
-#define SNICHOLLS_GPU_VERSION_MINOR 1
+#define SNICHOLLS_GPU_VERSION_MINOR 2
 /// \brief The patch version.
 #define SNICHOLLS_GPU_VERSION_PATCH 0
 
