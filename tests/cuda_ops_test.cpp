@@ -140,7 +140,7 @@ TEST(GpuCudaOps, TheNormsAndTheirBackwardAreCoresToRounding)
 }
 
 template <ml::transformer_config C, std::size_t N = 24>
-void whole_step_agrees()
+void whole_step_agrees(std::size_t gemm_attention_max = 4096)
 {
     static const ml::rope_table<float, (N > 32 ? N : 32), C.head_dim> table(ml::rope_base_v<C, float>);
     auto run = [&](auto& st, const auto& backend, bool dev) {
@@ -154,7 +154,9 @@ void whole_step_agrees()
         }
     };
     step<C, N> st(*device().context);
-    run(st, backend(), true);    // on the device, every buffer in device memory
+    auto b = backend();
+    b.gemm_attention_max = gemm_attention_max;   // 0: the tiled kernels
+    run(st, b, true);    // on the device, every buffer in device memory
     run(st, la::reference, false);   // the reference, on the host copies
     cudaDeviceSynchronize();
     using S = step<C, N>;
@@ -309,11 +311,25 @@ constexpr ml::transformer_config gpt2_heads{.d_model = 128, .n_heads = 2, .n_kv_
 constexpr ml::transformer_config wide_grouped{.d_model = 256, .n_heads = 4, .n_kv_heads = 2, .head_dim = 128, .d_ff = 128, .norm = ml::norm_kind::rms,
                                               .norm_eps = 1e-5, .mlp = ml::mlp_kind::swiglu, .rope = ml::rope_kind::half, .rope_base = 10000,
                                               .window = 40};
-TEST(GpuCudaOps, TiledAttentionOverManyTokensIsTheReferences)
+TEST(GpuCudaOps, AttentionAsMatrixProductsOverManyTokensIsTheReferences)
 {
     whole_step_agrees<gpt2_heads, 150>();
     whole_step_agrees<wide_grouped, 100>();
     whole_step_agrees<mqa_capped, 130>();
+}
+
+TEST(GpuCudaOps, TiledAttentionOverManyTokensIsTheReferences)
+{
+    whole_step_agrees<gpt2_heads, 150>(0);
+    whole_step_agrees<wide_grouped, 100>(0);
+    whole_step_agrees<mqa_capped, 130>(0);
+}
+
+TEST(GpuCudaOps, BothAttentionPathsGiveTheReferencesShortStep)
+{
+    whole_step_agrees<small>(0);   // the tiled kernels (heads of 16)
+    whole_step_agrees<llama_like>(0);
+    whole_step_agrees<nanochat_like>(0);   // a window
 }
 
 } // namespace

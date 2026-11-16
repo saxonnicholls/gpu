@@ -3,6 +3,17 @@
 All notable changes to snicholls-gpu. The format follows Keep a Changelog; versions follow Semantic Versioning.
 A version is released when its tag is on a commit where every blocking CI leg is green.
 
+## Unreleased (0.3.0)
+
+### Added
+
+- **Attention as matrix products** up to `cuda_training_backend::gemm_attention_max` tokens (4096): per head the
+  scores through cuBLAS, a softmax kernel writing the log-sum-exp, the output product; the backward from the saved
+  log-sum-exp in four products and two kernels. With TF32 the products run on the tensor cores: a whole GPT-2 small
+  step over 1024 tokens on the Blackwell in 78.3 ms (98.5 with the tiled kernels), against llm.c's 64.4 ms in
+  bfloat16; 126 ms in float. Deterministic, within 1e-5 normwise of core's reference; the tiled kernels remain for
+  longer sequences and are tested through the same steps.
+
 ## 0.2.0 - 2026-11-16
 
 ### Added
