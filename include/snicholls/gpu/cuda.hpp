@@ -37,8 +37,11 @@
 /// the reference to rounding, not to the bit.
 ///
 /// **Guarantees.** One context serves any number of threads (one mutex per context around the handle and the stream).
-/// Every call has finished, and its result is in place, when it returns. The context owns the handle and the stream;
-/// a backend must not outlive it, nor a `device_buffer` its context.
+/// A product whose operands and result are all device memory is queued on the context's stream and returns at once:
+/// it is ordered before everything later on that stream (`cuda_ops.hpp`'s kernels, the next product) and before a
+/// `device_buffer::download`; `cuda_context::synchronize()` waits for it, for anything else (another context's stream)
+/// that reads it. A product that touches host memory has finished, its result in place, when it returns. The context
+/// owns the handle and the stream; a backend must not outlive it, nor a `device_buffer` its context.
 ///
 /// **Errors.** `cuda_context::create` returns a `cuda_failure` (no device, or a CUDA or cuBLAS call failed, with its
 /// code). A call that fails on the device (out of memory, a lost device) throws `cuda_exception`, a
@@ -287,6 +290,8 @@ public:
     [[nodiscard]] int device() const noexcept { return device_; }
     /// \brief The context's stream, on which its products run (and `cuda_ops.hpp`'s kernels). \return The stream.
     [[nodiscard]] cudaStream_t stream() const noexcept { return stream_; }
+    /// \brief Waits for everything queued on the context's stream. \throws cuda_exception if the device reports an error.
+    void synchronize() const { detail::cuda::check(cudaStreamSynchronize(stream_), "cudaStreamSynchronize"); }
 
     /// \brief `C = alpha A B + beta C` on the device, any layout, host or device memory. Called by `cuda_backend::gemm`.
     /// \param alpha The scale of the product. \param a `m x k`. \param b `k x n`. \param beta The scale of `C`.
@@ -344,7 +349,10 @@ public:
             dc::check(dc::gemm(blas_, op(B.row_major, true), op(A.row_major, true), static_cast<int>(n), static_cast<int>(m), ik, &alpha,
                                B.data, B.ld, A.data, A.ld, &beta, cp, static_cast<int>(c_ld)),
                       "cublas gemm");
-        dc::check(cudaStreamSynchronize(stream_), "cudaStreamSynchronize");
+        // Wait only for a staged copy: it is copied back or freed below. Device memory in place stays queued on the
+        // stream, so the device runs the next step while the host enqueues it
+        if (staged || A.owned || B.owned)
+            dc::check(cudaStreamSynchronize(stream_), "cudaStreamSynchronize");
         if (span_copy) {
             dc::check(cudaMemcpy(c.data_handle(), cp, c_span * sizeof(T), cudaMemcpyDeviceToHost), "cudaMemcpy");
         } else if (!in_place) {   // back into the view, wherever it lives, keeping the gaps of its span

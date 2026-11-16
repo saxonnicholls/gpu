@@ -166,6 +166,30 @@ TEST(GpuCuda, Tf32ProductsAreWithinTheirRoundingOfFloats)
     EXPECT_GT(diff, 0.0);   // the tensor cores were used: TF32 is not float
 }
 
+// A product over device memory is queued, not waited for: a download after it, or synchronize(), sees its result
+TEST(GpuCuda, ADeviceProductIsQueuedAndItsResultSeenAfterwards)
+{
+    constexpr std::size_t m = 256, n = 256, k = 256;
+    const auto a = stream<float>(m * k, 31), b = stream<float>(k * n, 32);
+    using R = la::layout_right;
+    gpu::device_buffer<float> da(shared_context(), a.size()), db(shared_context(), b.size()), dc(shared_context(), m * n);
+    da.upload(a), db.upload(b);
+    std::vector<float> want(m * n), got(m * n), again(m * n);
+    ASSERT_TRUE(la::gemm(la::reference, 1.0f, la::matrix_view<const float, R>(a.data(), {m, k}), la::matrix_view<const float, R>(b.data(), {k, n}),
+                         0.0f, la::matrix_view<float, R>(want.data(), {m, n}))
+                    .is_ok());
+    for (int round = 0; round < 3; ++round)   // several queued products, each overwriting the last
+        ASSERT_TRUE(la::gemm(gpu::cuda_backend{&shared_context()}, 1.0f, la::matrix_view<const float, R>(da.span().data(), {m, k}),
+                             la::matrix_view<const float, R>(db.span().data(), {k, n}), 0.0f, la::matrix_view<float, R>(dc.span().data(), {m, n}))
+                        .is_ok());
+    dc.download(got);
+    shared_context().synchronize();
+    dc.download(again);
+    EXPECT_EQ(got, again);
+    for (std::size_t i = 0; i < want.size(); ++i)
+        ASSERT_NEAR(got[i], want[i], tolerance<float>(k)) << i;
+}
+
 TEST(GpuCuda, AStridedResultKeepsItsGapsFromHostAndDeviceMemory)
 {
     constexpr std::size_t m = 4, n = 3, k = 6;

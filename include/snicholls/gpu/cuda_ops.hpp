@@ -48,17 +48,17 @@
 ///
 /// **Performance.** `benchmarks/cuda_ops_benchmark.cpp`: a GPT-2-small layer's training step with its data on the
 /// device, against the same step staged; see `BENCHMARKS.md`. A whole GPT-2 small step (124M parameters, one sequence
-/// of 1024 tokens, forward, backward and clipping) on an RTX PRO 4000 Blackwell, 2026-11-17: 126 ms in float, 78.3 ms
+/// of 1024 tokens, forward, backward and clipping) on an RTX PRO 4000 Blackwell, 2026-11-17: 119 ms in float, 70.2 ms
 /// with `cuda_math::tf32`, against llm.c's 64.4 ms in bfloat16 (288 ms with attention a warp per (token, head), 98.5 ms
-/// with the tiled kernels under TF32).
+/// with the tiled kernels under TF32, 78.3 ms before products over device memory stopped waiting for the stream).
 ///
 /// **Tests and demos.** `tests/cuda_ops_test.cpp` (each step against core's, and whole training steps of GPT-2-,
 /// Llama- and nanochat-shaped blocks against the reference), `demos/cuda_ops_demo.cpp`.
 ///
 /// **Dependencies.** `cuda.hpp`, `<nvrtc.h>`, core's `ml/transformer_block.hpp`. Link `CUDA::nvrtc` too.
 ///
-/// **Known issues.** Float only (the products can be TF32). The attention's products are one call per head (the host's
-/// share of a step is about a seventh); its scores take `3 n²` floats of scratch. The tiled kernels for long sequences
+/// **Known issues.** Float only (the products can be TF32). The attention's products are one call per head; its scores
+/// take `3 n²` floats of scratch. The tiled kernels for long sequences
 /// run on the CUDA cores, not the tensor cores.
 ///
 /// **Status.** Experimental, new in 0.2.0.

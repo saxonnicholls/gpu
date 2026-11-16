@@ -10,9 +10,16 @@ A version is released when its tag is on a commit where every blocking CI leg is
 - **Attention as matrix products** up to `cuda_training_backend::gemm_attention_max` tokens (4096): per head the
   scores through cuBLAS, a softmax kernel writing the log-sum-exp, the output product; the backward from the saved
   log-sum-exp in four products and two kernels. With TF32 the products run on the tensor cores: a whole GPT-2 small
-  step over 1024 tokens on the Blackwell in 78.3 ms (98.5 with the tiled kernels), against llm.c's 64.4 ms in
-  bfloat16; 126 ms in float. Deterministic, within 1e-5 normwise of core's reference; the tiled kernels remain for
+  step over 1024 tokens on the Blackwell in 70.2 ms (98.5 with the tiled kernels), against llm.c's 64.4 ms in
+  bfloat16; 119 ms in float. Deterministic, within 1e-5 normwise of core's reference; the tiled kernels remain for
   longer sequences and are tested through the same steps.
+
+### Changed
+
+- **A product over device memory no longer waits for the stream**: `cuda_context::gemm` (and so `cuda_backend`'s
+  `gemm` and `gemv`) returns once the product is queued when its operands and result are all device memory; it is
+  ordered before later work on the context's stream and before a `download`, and `cuda_context::synchronize()` waits
+  for it. A product touching host memory still returns finished. The whole GPT-2 step: 78.3 to 70.2 ms.
 
 ## 0.2.0 - 2026-11-16
 
