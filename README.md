@@ -1,5 +1,11 @@
 # snicholls-gpu
 
+[![CI](https://github.com/saxonnicholls/gpu/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/saxonnicholls/gpu/actions/workflows/ci.yml)
+[![Docs](https://img.shields.io/badge/docs-doxygen-blue)](https://saxonnicholls.github.io/gpu/)
+
+**Documentation:** <https://saxonnicholls.github.io/gpu/>: the newest release at the root, every version under
+`/vX.Y.Z/`, and the latest `main` under `/main/`.
+
 Backends of [snicholls-core](https://github.com/saxonnicholls/core)'s interfaces on GPUs. Core is standard-library
 only and never includes a device header; it states the interfaces (here `linalg::blas_backend`) and checks every
 implementation with its conformance suites. This library implements them on a device.

@@ -69,3 +69,8 @@ before `main` (a hello world included), so sanitizer evidence comes from the Ubu
 kernel is also run on an NVIDIA GPU before it is pushed: the tests and the benchmark, with their bits checked. The
 CUDA backend builds only where the toolkit is (`SNICHOLLS_GPU_WITH_CUDA`), so it is built and tested on the NVIDIA
 machine, every test and the benchmark, before a push; CI runs Linux with PoCL and macOS, without CUDA.
+
+CI also builds the documentation on every run (warnings are errors, the CUDA headers included: Doxygen reads them
+without the toolkit) and publishes it to GitHub Pages, as core does: <https://saxonnicholls.github.io/gpu/>, the newest
+release at the root, every version under `/vX.Y.Z/`, the latest `main` under `/main/`. The `gh-pages` branch holds
+generated HTML only; never edit it by hand.
