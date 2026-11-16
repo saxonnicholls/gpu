@@ -13,11 +13,13 @@ device. The milestones below are measured; nothing moves on until its numbers ar
 
 ## Next
 
-1. **Data that stays on the device.** Today every product copies its operands to the device and back, which is most of
-   the time above. Core's linalg interface first gains a notion of where a view's data lives; then the backend keeps a
-   training step's weights, activations and gradients on the device.
-2. **A CUDA backend** beside the OpenCL one: cuBLAS / cuBLASLt with tensor cores (TF32, bfloat16), which OpenCL cannot
-   reach. Its contract is a stated tolerance against core's reference, per operation, rather than the bits.
+1. **Data that stays on the device.** Core's batched passes now make every step a call on the backend (core's
+   TRAINING.md T9), and the CUDA backend takes device memory in place; what remains is the CUDA overloads of those
+   steps (the norms, attention, activations, residuals), so a training step's weights, activations and gradients stay
+   on the GPU from start to end.
+2. **A CUDA backend** beside the OpenCL one. Done in 0.2.0 for the products (cuBLAS over device memory: 9 TFLOP/s on the
+   Blackwell, against 1.4 for the OpenCL kernel); next, tensor cores through cuBLASLt (TF32, bfloat16), with a stated
+   tolerance against core's reference per operation.
 3. **Every training kernel on the device**: flash attention forward and backward, the norms and activations with their
    backward passes, softmax and the fused cross-entropy, AdamW and Muon; each checked against core's own function.
 4. **Mixed precision**: bfloat16 in the products, float master weights and optimiser state.

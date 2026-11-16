@@ -26,8 +26,10 @@ OUT="$ROOT/BENCHMARKS.md"
     echo "Medians of five. Device times include both transfers; GFLOP/s counts 2 m n k."
     echo
     echo '```'
-    "$BUILD/benchmarks/snicholls_gpu_opencl_benchmark" --benchmark_repetitions=5 --benchmark_report_aggregates_only=true \
-        --benchmark_min_time=0.2s 2>&1 | grep -E "^device|median|^Benchmark|^-"
+    for b in "$BUILD"/benchmarks/snicholls_gpu_*_benchmark; do
+        [ -x "$b" ] || continue
+        "$b" --benchmark_repetitions=5 --benchmark_report_aggregates_only=true --benchmark_min_time=0.2s 2>&1 | grep -E "^device|median|^Benchmark|^-"
+    done
     echo '```'
 } > "$OUT"
 echo "run_benchmarks: wrote $OUT"

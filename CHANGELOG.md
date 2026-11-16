@@ -3,6 +3,18 @@
 All notable changes to snicholls-gpu. The format follows Keep a Changelog; versions follow Semantic Versioning.
 A version is released when its tag is on a commit where every blocking CI leg is green.
 
+## Unreleased (0.2.0)
+
+### Added
+
+- **`cuda_backend`, `cuda_context`, `device_buffer`** (`include/snicholls/gpu/cuda.hpp`): snicholls-core's
+  `linalg::blas_backend` on an NVIDIA GPU through cuBLAS. Device memory (`device_buffer<T>::span()`) is used in place,
+  so a training step's data can stay on the GPU; host memory is staged, a row- or column-major operand copied as it is.
+  Passes core's BLAS conformance suite in float and double and agrees with core's reference to rounding for every
+  shape and layout. On an RTX PRO 4000 Blackwell: 9.0 TFLOP/s from device memory, level with `cublasSgemm` called by
+  hand (the interface costs nothing), and a GPT-2-small layer's training step in 40.1 ms staged, against 53.1 ms on
+  the OpenCL backend. Built where the CUDA toolkit is (`SNICHOLLS_GPU_WITH_CUDA`, target `snicholls::gpu_cuda`).
+
 ## 0.1.0 - 2026-11-16
 
 ### Added
