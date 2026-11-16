@@ -16,6 +16,10 @@ A version is released when its tag is on a commit where every blocking CI leg is
   capped blocks (GQA, MQA, QK norm before and after RoPE, both RoPE layouts, a window, a soft cap, every activation)
   with every buffer in device memory agree with core's reference. A GPT-2-small layer's training step over 128
   tokens: 2.34 ms on an RTX PRO 4000 Blackwell, against 47.5 ms staged and 640 ms on its CPU. Needs core 0.10.0.
+- The model's other steps on the device: the embeddings and their backward (in token order), the fused classifier
+  over a sequence (a warp per row), AdamW, the rescale, and the sums and squared norms (a fixed grid and tree, the
+  partials summed in order: deterministic, and closer to the exact sum than a sequential one). core's
+  `lm_head_loss_sequence` through the CUDA backend agrees with the reference.
 - **`cuda_backend`, `cuda_context`, `device_buffer`** (`include/snicholls/gpu/cuda.hpp`): snicholls-core's
   `linalg::blas_backend` on an NVIDIA GPU through cuBLAS. Device memory (`device_buffer<T>::span()`) is used in place,
   so a training step's data can stay on the GPU; host memory is staged, a row- or column-major operand copied as it is.

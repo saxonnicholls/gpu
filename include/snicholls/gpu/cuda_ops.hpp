@@ -60,11 +60,16 @@
 #include <snicholls/gpu/cuda.hpp>
 
 #include <snicholls/core/linalg/reference.hpp>
+#include <snicholls/core/ml/embedding.hpp>
+#include <snicholls/core/ml/optim.hpp>
+#include <snicholls/core/ml/softmax.hpp>
 #include <snicholls/core/ml/transformer_block.hpp>
 
 #include <nvrtc.h>
 
+#include <algorithm>
 #include <cstddef>
+#include <cstdint>
 #include <cstdio>
 #include <memory>
 #include <span>
@@ -303,6 +308,52 @@ __global__ void attend_backward_keys(const float* q, const float* k, const float
         }
     for (int c = lane, x = 0; c < d; c += LANES, ++x) { gk[at + c] = ak[x]; gv[at + c] = av[x]; }
 }
+// The model's other steps: embeddings, the fused classifier, AdamW, and the reductions
+__global__ void embed(const float* table, const float* pos, const unsigned* ids, float* out, u64 n, u64 d)
+{ const u64 i = blockIdx.x * (u64)blockDim.x + threadIdx.x; if (i >= n * d) return; const u64 t = i / d, c = i % d;
+  const float e = table[(u64)ids[t] * d + c]; out[i] = pos ? e + pos[i] : e; }
+// One thread per channel: each token's row added into its table row in token order (as core's), and into its position's
+__global__ void embed_backward(const float* dout, const unsigned* ids, float* dtable, float* dpos, u64 n, u64 d)
+{ const u64 c = blockIdx.x * (u64)blockDim.x + threadIdx.x; if (c >= d) return;
+  for (u64 t = 0; t < n; ++t) { dtable[(u64)ids[t] * d + c] += dout[t * d + c]; if (dpos) dpos[t * d + c] += dout[t * d + c]; } }
+// One warp per row: core's cross_entropy_with_gradient in place (the loss, then the row replaced by scale (softmax - onehot))
+__global__ void cross_entropy_rows(float* logits, const unsigned* targets, float* losses, u64 n, u64 V, float scale)
+{
+    const u64 t = (blockIdx.x * (u64)blockDim.x + threadIdx.x) / 32; const int lane = threadIdx.x % 32;
+    if (t >= n) return;
+    float* x = logits + t * V; const unsigned target = targets[t];
+    float mx = -INFINITY; for (u64 i = lane; i < V; i += 32) mx = fmaxf(mx, x[i]);
+    for (int o = 16; o > 0; o /= 2) mx = fmaxf(mx, __shfl_down_sync(0xffffffffu, mx, o));
+    mx = __shfl_sync(0xffffffffu, mx, 0);
+    float s = 0.0f; for (u64 i = lane; i < V; i += 32) s += expf(x[i] - mx);
+    for (int o = 16; o > 0; o /= 2) s += __shfl_down_sync(0xffffffffu, s, o);
+    s = __shfl_sync(0xffffffffu, s, 0);
+    const float lse = mx + logf(s), xt = x[target];
+    __syncwarp();   // every lane has read x[target] before any lane overwrites the row
+    for (u64 i = lane; i < V; i += 32) x[i] = scale * (expf(x[i] - lse) - (i == target ? 1.0f : 0.0f));
+    if (lane == 0) losses[t] = lse - xt;
+}
+__global__ void adamw(float* p, const float* g, float* m, float* v, u64 n, float lr, float b1, float b2, float eps, float wd, float c1, float c2)
+{
+    const u64 i = blockIdx.x * (u64)blockDim.x + threadIdx.x; if (i >= n) return;
+    const float gi = g[i];
+    const float mi = b1 * m[i] + (1.0f - b1) * gi, vi = b2 * v[i] + (1.0f - b2) * gi * gi;
+    m[i] = mi; v[i] = vi;
+    const float m_hat = mi / c1, v_hat = vi / c2;
+    p[i] -= lr * (m_hat / (sqrtf(v_hat) + eps) + wd * p[i]);
+}
+__global__ void scale(float* x, u64 n, float alpha) { const u64 i = blockIdx.x * (u64)blockDim.x + threadIdx.x; if (i < n) x[i] *= alpha; }
+// A fixed grid of 256-thread blocks: each thread's strided part, then the block's tree in shared memory; the partials are
+// summed on the host in order, so a sum does not depend on scheduling
+__global__ void partial_sums(const float* x, u64 n, int squares, float* partials)
+{
+    __shared__ float sh[256];
+    float s = 0.0f;
+    for (u64 i = blockIdx.x * (u64)blockDim.x + threadIdx.x; i < n; i += (u64)gridDim.x * blockDim.x) s += squares ? x[i] * x[i] : x[i];
+    sh[threadIdx.x] = s; __syncthreads();
+    for (int o = 128; o > 0; o /= 2) { if (threadIdx.x < o) sh[threadIdx.x] += sh[threadIdx.x + o]; __syncthreads(); }
+    if (threadIdx.x == 0) partials[blockIdx.x] = sh[0];
+}
 // One thread per column: the weight's and bias's gradients, the rows summed in order
 __global__ void norm_param_grads(const float* dh, const float* x, const float* stats, float* dw, float* db, u64 rows, u64 d, int layer)
 {
@@ -373,7 +424,8 @@ public:
             {"activate", &k->activate_}, {"activate_backward", &k->activate_backward_}, {"norm_rows", &k->norm_rows_},
             {"norm_rows_backward_add", &k->norm_rows_backward_add_}, {"norm_param_grads", &k->norm_param_grads_}, {"position", &k->position_},
             {"position_backward", &k->position_backward_}, {"attend", &k->attend_}, {"attend_backward_queries", &k->attend_backward_queries_},
-            {"attend_backward_keys", &k->attend_backward_keys_}};
+            {"attend_backward_keys", &k->attend_backward_keys_}, {"embed", &k->embed_}, {"embed_backward", &k->embed_backward_},
+            {"cross_entropy_rows", &k->cross_entropy_rows_}, {"adamw", &k->adamw_}, {"scale", &k->scale_}, {"partial_sums", &k->partial_sums_}};
         for (const auto& [name, slot] : kernels)
             if (const cudaError_t e = cudaLibraryGetKernel(slot, k->library_, name); e != cudaSuccess) {
                 std::fprintf(stderr, "snicholls::gpu::cuda_kernels: cudaLibraryGetKernel(%s): %s\n", name, cudaGetErrorString(e));
@@ -406,6 +458,15 @@ public:
             throw cuda_exception(std::string("cudaLaunchKernel(") + name_of(k) + ") [" + cudaGetErrorString(e) + "]", static_cast<int>(e));
     }
 
+    /// \brief Launches a kernel with an explicit grid of `block`-thread blocks. \param k The kernel. \param grid The blocks.
+    /// \param block The threads per block. \param args The arguments. \throws cuda_exception if the launch fails.
+    void launch_grid(cudaKernel_t k, unsigned grid, unsigned block, void** args) const
+    {
+        if (const cudaError_t e = cudaLaunchKernel(reinterpret_cast<const void*>(k), dim3(grid), dim3(block), args, 0, context_->stream());
+            e != cudaSuccess)
+            throw cuda_exception(std::string("cudaLaunchKernel(") + name_of(k) + ") [" + cudaGetErrorString(e) + "]", static_cast<int>(e));
+    }
+
     /// \brief The context. \return It.
     [[nodiscard]] const cuda_context& context() const noexcept { return *context_; }
 
@@ -416,7 +477,9 @@ public:
             {fill_, "fill"}, {copy_, "copy"}, {add_, "add"}, {add_bias_rows_, "add_bias_rows"}, {sum_rows_, "sum_rows"}, {activate_, "activate"},
             {activate_backward_, "activate_backward"}, {norm_rows_, "norm_rows"}, {norm_rows_backward_add_, "norm_rows_backward_add"},
             {norm_param_grads_, "norm_param_grads"}, {position_, "position"}, {position_backward_, "position_backward"}, {attend_, "attend"},
-            {attend_backward_queries_, "attend_backward_queries"}, {attend_backward_keys_, "attend_backward_keys"}};
+            {attend_backward_queries_, "attend_backward_queries"}, {attend_backward_keys_, "attend_backward_keys"}, {embed_, "embed"},
+            {embed_backward_, "embed_backward"}, {cross_entropy_rows_, "cross_entropy_rows"}, {adamw_, "adamw"}, {scale_, "scale"},
+            {partial_sums_, "partial_sums"}};
         for (const auto& [kernel, name] : names)
             if (kernel == k)
                 return name;
@@ -426,7 +489,8 @@ public:
     cudaKernel_t fill_ = nullptr, copy_ = nullptr, add_ = nullptr, add_bias_rows_ = nullptr, sum_rows_ = nullptr, activate_ = nullptr,
                  activate_backward_ = nullptr, norm_rows_ = nullptr, norm_rows_backward_add_ = nullptr, norm_param_grads_ = nullptr,
                  position_ = nullptr, position_backward_ = nullptr, attend_ = nullptr, attend_backward_queries_ = nullptr,
-                 attend_backward_keys_ = nullptr;   ///< The kernels, for the overloads below.
+                 attend_backward_keys_ = nullptr, embed_ = nullptr, embed_backward_ = nullptr, cross_entropy_rows_ = nullptr, adamw_ = nullptr,
+                 scale_ = nullptr, partial_sums_ = nullptr;   ///< The kernels, for the overloads below.
 
 private:
     explicit cuda_kernels(const cuda_context& c) : context_(&c) {}
@@ -736,6 +800,111 @@ void attention_position_rows_backward(const cuda_training_backend& b, const ml::
             sum_rows(b, std::span<const float>(ck.span()), grads.k_norm);
         dc::sync(b);
     }
+}
+
+/// \brief A sequence's embeddings on the device. \param b The backend. \param table The token table. \param positions
+/// The position rows, or empty. \param ids The token ids (device memory). \param out The rows.
+inline void embed_rows(const cuda_training_backend& b, std::type_identity_t<std::span<const float>> table,
+                       std::type_identity_t<std::span<const float>> positions, std::span<const std::uint32_t> ids, std::span<float> out)
+{
+    const float* tp = table.data();
+    const float* pp = positions.empty() ? nullptr : positions.data();
+    const std::uint32_t* ip = ids.data();
+    float* op = out.data();
+    const detail::cuda_ops::u64 n = ids.size(), d = ids.empty() ? 0 : out.size() / ids.size();
+    void* args[] = {&tp, &pp, &ip, &op, detail::cuda_ops::arg(n), detail::cuda_ops::arg(d)};
+    b.kernels->launch(b.kernels->embed_, out.size(), args);
+}
+
+/// \brief The backward pass of `embed_rows` on the device, in token order. \param b The backend. \param dout The
+/// gradients in the rows. \param ids The ids. \param dtable Added into. \param dpositions Added into, or empty.
+inline void embed_rows_backward(const cuda_training_backend& b, std::type_identity_t<std::span<const float>> dout,
+                                std::span<const std::uint32_t> ids, std::span<float> dtable, std::type_identity_t<std::span<float>> dpositions)
+{
+    const float* dp = dout.data();
+    const std::uint32_t* ip = ids.data();
+    float* tp = dtable.data();
+    float* pp = dpositions.empty() ? nullptr : dpositions.data();
+    const detail::cuda_ops::u64 n = ids.size(), d = ids.empty() ? 0 : dout.size() / ids.size();
+    void* args[] = {&dp, &ip, &tp, &pp, detail::cuda_ops::arg(n), detail::cuda_ops::arg(d)};
+    b.kernels->launch(b.kernels->embed_backward_, d, args);
+}
+
+/// \brief The fused classifier over a sequence on the device: each row's loss, the row replaced by its scaled gradient.
+/// \param b The backend. \param logits `n · V`. \param targets `n` (device memory). \param losses `n`. \param scale The
+/// gradient's factor.
+inline void cross_entropy_rows(const cuda_training_backend& b, std::span<float> logits, std::type_identity_t<std::span<const std::uint32_t>> targets,
+                               std::span<float> losses, std::type_identity_t<float> scale)
+{
+    float* lp = logits.data();
+    const std::uint32_t* tp = targets.data();
+    float* sp = losses.data();
+    const detail::cuda_ops::u64 n = targets.size(), v = targets.empty() ? 0 : logits.size() / targets.size();
+    void* args[] = {&lp, &tp, &sp, detail::cuda_ops::arg(n), detail::cuda_ops::arg(v), &scale};
+    b.kernels->launch(b.kernels->cross_entropy_rows_, 32 * targets.size(), args);   // a warp per row
+}
+
+/// \brief One AdamW step over a tensor on the device. \param b The backend. \param p The parameters. \param g Their
+/// gradients. \param m The first moments. \param v The second moments. \param step The step, from 1. \param config The settings.
+inline void adamw_rows(const cuda_training_backend& b, std::span<float> p, std::type_identity_t<std::span<const float>> g,
+                       std::type_identity_t<std::span<float>> m, std::type_identity_t<std::span<float>> v, std::uint64_t step,
+                       const ml::adamw_config<float>& config)
+{
+    float* pp = p.data();
+    const float* gp = g.data();
+    float* mp = m.data();
+    float* vp = v.data();
+    const detail::cuda_ops::u64 n = p.size();
+    float lr = config.learning_rate, b1 = config.beta1, b2 = config.beta2, eps = config.eps, wd = config.weight_decay;
+    float c1 = 1.0f - snicholls::math::pow(config.beta1, float(step)), c2 = 1.0f - snicholls::math::pow(config.beta2, float(step));
+    void* args[] = {&pp, &gp, &mp, &vp, detail::cuda_ops::arg(n), &lr, &b1, &b2, &eps, &wd, &c1, &c2};
+    b.kernels->launch(b.kernels->adamw_, p.size(), args);
+}
+
+/// \brief `x *= alpha` on the device. \param b The backend. \param x The values. \param alpha The factor.
+inline void scale_rows(const cuda_training_backend& b, std::span<float> x, std::type_identity_t<float> alpha)
+{
+    float* xp = x.data();
+    const detail::cuda_ops::u64 n = x.size();
+    void* args[] = {&xp, detail::cuda_ops::arg(n), &alpha};
+    b.kernels->launch(b.kernels->scale_, x.size(), args);
+}
+
+namespace detail::cuda_ops {
+    inline float reduce(const cuda_training_backend& b, std::span<const float> x, int squares)
+    {
+        if (x.empty())
+            return 0.0f;
+        const unsigned grid = static_cast<unsigned>(std::min<std::size_t>(1024, (x.size() + 255) / 256));
+        device_buffer<float> partials(*b.context, grid);
+        const float* xp = x.data();
+        float* pp = partials.span().data();
+        const u64 n = x.size();
+        void* args[] = {&xp, arg(n), &squares, &pp};
+        b.kernels->launch_grid(b.kernels->partial_sums_, grid, 256, args);
+        std::vector<float> host(grid);
+        partials.download(host);   // after the kernel: the copy waits for the stream
+        float s = 0.0f;
+        for (const float v : host)
+            s += v;   // the partials in order
+        return s;
+    }
+} // namespace detail::cuda_ops
+
+/// \brief `Σ x` on the device, in a fixed order. \param b The backend. \param x The values. \return The sum.
+template <typename E>
+    requires std::is_same_v<std::remove_const_t<E>, float>
+float sum_values(const cuda_training_backend& b, std::span<E> x)
+{
+    return detail::cuda_ops::reduce(b, std::span<const float>(x), 0);
+}
+
+/// \brief `Σ x²` on the device, in a fixed order. \param b The backend. \param x The values. \return The sum.
+template <typename E>
+    requires std::is_same_v<std::remove_const_t<E>, float>
+float sum_squares(const cuda_training_backend& b, std::span<E> x)
+{
+    return detail::cuda_ops::reduce(b, std::span<const float>(x), 1);
 }
 
 /// @}

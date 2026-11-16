@@ -14,6 +14,9 @@
 #include "support/block_step.hpp"
 
 #include <snicholls/core/linalg/reference.hpp>
+#include <snicholls/core/ml/embedding.hpp>
+#include <snicholls/core/ml/lm_head.hpp>
+#include <snicholls/core/ml/optim.hpp>
 #include <snicholls/core/ml/rope.hpp>
 #include <snicholls/core/ml/transformer_block.hpp>
 #include <snicholls/core/stats/random.hpp>
@@ -107,7 +110,7 @@ TEST(GpuCudaOps, TheNormsAndTheirBackwardAreCoresToRounding)
 {
     constexpr std::size_t n = 20, d = small.d_model;
     const auto b = backend();
-    mirror x(stream(n * d, 5, 2.0f)), w(stream(d, 6, 0.3f, 1.0f)), bias(stream(d, 7, 0.1f)), out(std::vector<float>(n * d)), dh(stream(n * d, 8)),
+    mirror x(stream(n * d, 5, 2.0f)), w(stream(d, 6, 0.3f, 1.0f)), bias(stream(d, 7, 0.1f)), out{std::vector<float>(n * d)}, dh(stream(n * d, 8)),
         dxs(stream(n * d, 9)), dw(stream(d, 10)), db(stream(d, 11));
     gpu::block_norm_rows<small>(b, std::span<const float>(x.d()), std::span<const float>(w.d()), std::span<const float>(bias.d()), out.d());
     auto hout = out.host, hdxs = dxs.host, hdw = dw.host, hdb = db.host;
@@ -155,6 +158,90 @@ constexpr ml::transformer_config nanochat_like{.d_model = 64, .n_heads = 4, .n_k
                                                .norm = ml::norm_kind::rms, .norm_eps = 1.1920928955078125e-07,
                                                .qk_norm = ml::qk_norm_kind::after_rope, .mlp = ml::mlp_kind::relu_squared,
                                                .rope = ml::rope_kind::half, .rope_base = 10000, .window = 8};
+
+// The model's other steps on the device against core's own
+TEST(GpuCudaOps, EmbeddingsTheClassifierAdamwAndTheReductionsAreCores)
+{
+    const auto b = backend();
+    constexpr std::size_t vocab = 50, d = 24, n = 16;
+    std::vector<std::uint32_t> ids(n);
+    for (std::size_t t = 0; t < n; ++t)
+        ids[t] = std::uint32_t((t * 7) % 11);   // repeats, so a table row gathers several tokens' gradients
+    gpu::device_buffer<std::uint32_t> dids(*device().context, n);
+    dids.upload(ids);
+    const std::span<const std::uint32_t> ids_dev(dids.span().data(), n);
+    mirror table(stream(vocab * d, 1)), pos(stream(n * d, 2)), out{std::vector<float>(n * d)}, dout(stream(n * d, 3)), dtable{std::vector<float>(vocab * d)},
+        dpos{std::vector<float>(n * d)};
+    gpu::embed_rows(b, std::span<const float>(table.d()), std::span<const float>(pos.d()), ids_dev, out.d());
+    gpu::embed_rows_backward(b, std::span<const float>(dout.d()), ids_dev, dtable.d(), dpos.d());
+    auto hout = out.host, hdtable = dtable.host, hdpos = dpos.host;
+    ml::embed_rows(la::reference, std::span<const float>(table.host), std::span<const float>(pos.host), ids, std::span<float>(hout));
+    ml::embed_rows_backward(la::reference, std::span<const float>(dout.host), ids, std::span<float>(hdtable), std::span<float>(hdpos));
+    cudaDeviceSynchronize();
+    EXPECT_EQ(out.back(), hout);         // additions in the same order: the same bits
+    EXPECT_EQ(dtable.back(), hdtable);
+    EXPECT_EQ(dpos.back(), hdpos);
+
+    std::vector<std::uint32_t> targets(n);
+    for (std::size_t t = 0; t < n; ++t)
+        targets[t] = std::uint32_t((t * 13) % vocab);
+    gpu::device_buffer<std::uint32_t> dtargets(*device().context, n);
+    dtargets.upload(targets);
+    mirror logits(stream(n * vocab, 4, 3.0f)), losses{std::vector<float>(n)};
+    gpu::cross_entropy_rows(b, logits.d(), std::span<const std::uint32_t>(dtargets.span().data(), n), losses.d(), 0.25f);
+    auto hlogits = logits.host, hlosses = losses.host;
+    ml::cross_entropy_rows(la::reference, std::span<float>(hlogits), targets, std::span<float>(hlosses), 0.25f);
+    near(losses.back(), hlosses, 1e-6f, "losses");
+    near(logits.back(), hlogits, 1e-6f, "gradient");
+
+    mirror p(stream(1000, 5)), g(stream(1000, 6)), m{std::vector<float>(1000)}, v{std::vector<float>(1000)};
+    auto hp = p.host, hm = m.host, hv = v.host;
+    const ml::adamw_config<float> c{.learning_rate = 0.01f, .beta2 = 0.95f, .weight_decay = 0.1f};
+    for (std::uint64_t step = 1; step <= 3; ++step) {
+        gpu::adamw_rows(b, p.d(), std::span<const float>(g.d()), m.d(), v.d(), step, c);
+        ml::adamw_rows(la::reference, std::span<float>(hp), std::span<const float>(g.host), std::span<float>(hm), std::span<float>(hv), step, c);
+    }
+    near(p.back(), hp, 1e-6f, "adamw parameters");
+    near(m.back(), hm, 1e-6f, "adamw first moments");
+
+    mirror big(stream(100000, 7));
+    // Against the exact sums (in double): the device's tree is within a few ulps; a sequential float sum of 10^5 values
+    // (the host's) can be off by n eps |sum|, about 0.2 here, so it is not the yardstick
+    double exact_squares = 0, exact_sum = 0;
+    for (const float x : big.host)
+        exact_squares += double(x) * double(x), exact_sum += double(x);
+    EXPECT_NEAR(gpu::sum_squares(b, std::span<const float>(big.d())), exact_squares, 1e-5 * exact_squares);
+    EXPECT_NEAR(gpu::sum_values(b, std::span<const float>(big.d())), exact_sum, 1e-2);
+    const float again = gpu::sum_squares(b, std::span<const float>(big.d()));
+    EXPECT_EQ(again, gpu::sum_squares(b, std::span<const float>(big.d())));   // a fixed order: the same bits every time
+    gpu::scale_rows(b, big.d(), 0.5f);
+    auto hbig = big.host;
+    ml::scale_rows(la::reference, std::span<float>(hbig), 0.5f);
+    cudaDeviceSynchronize();
+    EXPECT_EQ(big.back(), hbig);
+}
+
+// The whole LM-head loss on the device: core's batched form through the CUDA backend's products and kernels
+TEST(GpuCudaOps, TheSequencesLossThroughTheHeadIsTheReferences)
+{
+    const auto b = backend();
+    constexpr std::size_t vocab = 512, d = 64, n = 32;
+    mirror head(stream(vocab * d, 8, 0.2f)), hs(stream(n * d, 9)), logits{std::vector<float>(n * vocab)}, losses{std::vector<float>(n)},
+        dhs{std::vector<float>(n * d)}, dhead{std::vector<float>(vocab * d)};
+    std::vector<std::uint32_t> targets(n);
+    for (std::size_t t = 0; t < n; ++t)
+        targets[t] = std::uint32_t((t * 37) % vocab);
+    gpu::device_buffer<std::uint32_t> dtargets(*device().context, n);
+    dtargets.upload(targets);
+    const float loss = ml::lm_head_loss_sequence(b, ml::dense_weights<float>{head.d(), vocab, d}, std::span<const float>(hs.d()),
+                                                 std::span<const std::uint32_t>(dtargets.span().data(), n), logits.d(), losses.d(), dhs.d(), dhead.d());
+    auto hlogits = logits.host, hlosses = losses.host, hdhs = dhs.host, hdhead = dhead.host;
+    const float want = ml::lm_head_loss_sequence(la::reference, ml::dense_weights<float>{head.host, vocab, d}, std::span<const float>(hs.host), targets,
+                                                 std::span<float>(hlogits), std::span<float>(hlosses), std::span<float>(hdhs), std::span<float>(hdhead));
+    EXPECT_NEAR(loss, want, 1e-5f);
+    near(dhs.back(), hdhs, 1e-4f, "dhs");
+    near(dhead.back(), hdhead, 1e-4f, "dhead");
+}
 
 // Multi-query attention, QK norm before an interleaved RoPE, a soft cap, the exact GELU, layer norm with biases
 constexpr ml::transformer_config mqa_capped{.d_model = 64, .n_heads = 4, .n_kv_heads = 1, .head_dim = 16, .d_ff = 128,
