@@ -277,6 +277,8 @@ public:
     }
     /// \brief The device's index. \return The index.
     [[nodiscard]] int device() const noexcept { return device_; }
+    /// \brief The context's stream, on which its products run (and `cuda_ops.hpp`'s kernels). \return The stream.
+    [[nodiscard]] cudaStream_t stream() const noexcept { return stream_; }
 
     /// \brief `C = alpha A B + beta C` on the device, any layout, host or device memory. Called by `cuda_backend::gemm`.
     /// \param alpha The scale of the product. \param a `m x k`. \param b `k x n`. \param beta The scale of `C`.
