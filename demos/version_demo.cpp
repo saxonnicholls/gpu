@@ -20,8 +20,8 @@ int main()
     const std::string core(snicholls::gpu::core_version_string());
     std::printf("snicholls-gpu %s, built against snicholls-core %s\n", gpu.c_str(), core.c_str());
     //! [version]
-    if (gpu != SNICHOLLS_GPU_VERSION_STRING || snicholls::core::version() < SNICHOLLS_CORE_VERSION_CHECK(0, 10, 0)) {
-        std::printf("version_demo: FAILED - expected core 0.10.0 or newer\n");
+    if (gpu != SNICHOLLS_GPU_VERSION_STRING || snicholls::core::version() < SNICHOLLS_CORE_VERSION_CHECK(0, 11, 0)) {
+        std::printf("version_demo: FAILED - expected core 0.11.0 or newer\n");
         return 1;
     }
     std::printf("version_demo: ok\n");
