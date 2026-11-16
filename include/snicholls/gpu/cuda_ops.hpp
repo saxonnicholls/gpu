@@ -771,12 +771,12 @@ private:
 };
 
 /// \brief The CUDA backend with the training steps' kernels: core's batched passes run entirely on the device over
-/// `device_buffer` memory. Two pointers and `cuda_math`, trivially copyable.
+/// `device_buffer` memory. Trivially copyable.
 struct cuda_training_backend : cuda_backend {
     const cuda_kernels* kernels = nullptr;   ///< The compiled kernels; must outlive the backend.
-    /// The longest sequence whose attention runs as matrix products (cuBLAS, so the tensor cores under
-    /// `cuda_math::tf32`), its `n x n` scores in the kernels' scratch three times over; longer ones take the tiled kernels.
-    std::size_t gemm_attention_max = 4096;
+    std::size_t gemm_attention_max = 4096;   ///< The longest sequence whose attention runs as matrix products (cuBLAS,
+                                             ///< so on the tensor cores under `cuda_math::tf32`), its `n x n` scores
+                                             ///< three times in the kernels' scratch; longer ones take the tiled kernels.
 };
 
 static_assert(linalg::blas_backend<cuda_training_backend, float> && std::is_trivially_copyable_v<cuda_training_backend>);
