@@ -8,12 +8,14 @@ A version is released when its tag is on a commit where every blocking CI leg is
 ### Added
 
 - **`cuda_training_backend`, `cuda_kernels`** (`include/snicholls/gpu/cuda_ops.hpp`): snicholls-core's batched
-  training passes with every step on the GPU (core's TRAINING.md T9): CUDA overloads of core's operations (fills,
-  copies, residuals, bias rows and sums, the MLP activations, the norms and their backward passes) as kernels compiled
-  by NVRTC to the device's machine code; the attention steps staged for now. Whole training steps of GPT-2-, Llama-
-  and nanochat-shaped blocks with every buffer in device memory agree with core's reference. A GPT-2-small layer's
-  training step over 128 tokens: 12.5 ms on an RTX PRO 4000 Blackwell, against 47.8 ms staged and 640 ms on its CPU.
-  Needs core 0.10.0.
+  training passes with every step on the GPU (core's TRAINING.md T9): CUDA overloads of all of core's training
+  operations (fills, copies, residuals, bias rows and sums, the MLP activations, the norms and their backward passes,
+  QK norm and RoPE, attention and its backward) as kernels compiled by NVRTC to the device's machine code. The norms
+  and attention run a warp per row or head; the weight and key gradients are summed in core's order, with no atomics,
+  so results do not depend on scheduling. Whole training steps of GPT-2-, Llama-, nanochat- and multi-query
+  capped blocks (GQA, MQA, QK norm before and after RoPE, both RoPE layouts, a window, a soft cap, every activation)
+  with every buffer in device memory agree with core's reference. A GPT-2-small layer's training step over 128
+  tokens: 2.34 ms on an RTX PRO 4000 Blackwell, against 47.5 ms staged and 640 ms on its CPU. Needs core 0.10.0.
 - **`cuda_backend`, `cuda_context`, `device_buffer`** (`include/snicholls/gpu/cuda.hpp`): snicholls-core's
   `linalg::blas_backend` on an NVIDIA GPU through cuBLAS. Device memory (`device_buffer<T>::span()`) is used in place,
   so a training step's data can stay on the GPU; host memory is staged, a row- or column-major operand copied as it is.

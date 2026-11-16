@@ -156,6 +156,17 @@ constexpr ml::transformer_config nanochat_like{.d_model = 64, .n_heads = 4, .n_k
                                                .qk_norm = ml::qk_norm_kind::after_rope, .mlp = ml::mlp_kind::relu_squared,
                                                .rope = ml::rope_kind::half, .rope_base = 10000, .window = 8};
 
+// Multi-query attention, QK norm before an interleaved RoPE, a soft cap, the exact GELU, layer norm with biases
+constexpr ml::transformer_config mqa_capped{.d_model = 64, .n_heads = 4, .n_kv_heads = 1, .head_dim = 16, .d_ff = 128,
+                                            .norm = ml::norm_kind::layer, .norm_eps = 1e-5, .qk_norm = ml::qk_norm_kind::before_rope,
+                                            .mlp = ml::mlp_kind::gelu, .rope = ml::rope_kind::interleaved, .rope_base = 500, .window = 0,
+                                            .attention_softcap = 5, .bias = true};
+
+TEST(GpuCudaOps, AMultiQueryCappedBlocksTrainingStepOnTheDeviceIsTheReferences)
+{
+    whole_step_agrees<mqa_capped>();
+}
+
 TEST(GpuCudaOps, AGpt2BlocksTrainingStepOnTheDeviceIsTheReferences)
 {
     whole_step_agrees<small>();

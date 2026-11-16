@@ -26,10 +26,13 @@
 /// `ml/attention_layer.hpp`, `ml/mlp.hpp`, `ml/linear.hpp` (the operations it overloads and the reference it is checked
 /// against). Group: \ref gpu.
 ///
-/// **Implementations.** The elementwise steps one thread per element; the norms one thread per row (each row's sums in
-/// order, as core's), the weights' and biases' gradients one thread per column summing the rows in order, so the
-/// result does not depend on scheduling; the activations with core's formulas in float. The attention steps are staged
-/// in this version: copied to the host, run by core's own code, copied back (the attention kernels are next).
+/// **Implementations.** The elementwise steps one thread per element; the norms a warp per row (each lane's part of a
+/// row's sums in order, then the lanes in a fixed order), the weights' and biases' gradients one thread per column summing the rows in order, so the
+/// result does not depend on scheduling; the activations with core's formulas in float. Attention: a warp per
+/// (token, head) for the one-pass forward and the queries' gradients, a warp per (key-value head, key) for the keys'
+/// and values' gradients summed in core's order, each lane holding a slice of the channels and every dot product
+/// reduced in a fixed order (no atomics: deterministic); QK norm and RoPE one thread per (token, head),
+/// the norms' weight gradients summed in core's order. Heads of at most 256 channels.
 ///
 /// **Guarantees.** Every step is enqueued on the context's stream, in the order the pass makes them, after the
 /// previous product; the results agree with core's reference to rounding (the device's `expf`, `tanhf`, `sqrtf`
@@ -46,7 +49,8 @@
 ///
 /// **Dependencies.** `cuda.hpp`, `<nvrtc.h>`, core's `ml/transformer_block.hpp`. Link `CUDA::nvrtc` too.
 ///
-/// **Known issues.** Float only. The norms' kernels use one thread per row: correct, not yet fast for long rows.
+/// **Known issues.** Float only. Attention is a warp per (token, head) without tiling through shared memory: long
+/// sequences want a flash-attention tiling next.
 ///
 /// **Status.** Experimental, new in 0.2.0.
 
@@ -110,42 +114,194 @@ __global__ void activate_backward(const float* up, const float* gate, float* dh,
         dgate[i] = dh[i] * up[i] * dsilu; dh[i] = dh[i] * silu;
     } else dh[i] = dh[i] * act_derivative_(up[i], kind);
 }
-// One thread per row: core's layer norm (layer != 0) or RMS norm, each sum in index order; stats[2t], stats[2t+1] = mean, rstd
+// A sum over a warp, for the norms (defined before the attention kernels' copy, which uses LANES)
+__device__ float norm_warp_sum_(float s)
+{
+    for (int o = 16; o > 0; o /= 2) s += __shfl_down_sync(0xffffffffu, s, o);
+    return __shfl_sync(0xffffffffu, s, 0);
+}
+// One warp per row: core's layer norm (layer != 0) or RMS norm; stats[2t], stats[2t+1] = mean, rstd
 __global__ void norm_rows(const float* x, const float* w, const float* b, float* out, float* stats, u64 rows, u64 d, int layer, float eps)
 {
-    const u64 t = blockIdx.x * (u64)blockDim.x + threadIdx.x; if (t >= rows) return;
+    const u64 t = (blockIdx.x * (u64)blockDim.x + threadIdx.x) / 32; const int lane = threadIdx.x % 32;
+    if (t >= rows) return;
     const float* in = x + t * d; float* y = out + t * d;
     float mean = 0.0f, rstd;
     if (layer) {
-        for (u64 i = 0; i < d; ++i) mean += in[i];
-        mean = mean / (float)d;
-        float var = 0.0f; for (u64 i = 0; i < d; ++i) var += (in[i] - mean) * (in[i] - mean);
-        var = var / (float)d; rstd = 1.0f / sqrtf(var + eps);
-        for (u64 i = 0; i < d; ++i) y[i] = (in[i] - mean) * rstd * (w ? w[i] : 1.0f) + (b ? b[i] : 0.0f);
+        float s = 0.0f; for (u64 i = lane; i < d; i += 32) s += in[i];
+        mean = norm_warp_sum_(s) / (float)d;
+        float v = 0.0f; for (u64 i = lane; i < d; i += 32) v += (in[i] - mean) * (in[i] - mean);
+        rstd = 1.0f / sqrtf(norm_warp_sum_(v) / (float)d + eps);
+        for (u64 i = lane; i < d; i += 32) y[i] = (in[i] - mean) * rstd * (w ? w[i] : 1.0f) + (b ? b[i] : 0.0f);
     } else {
-        float ms = 0.0f; for (u64 i = 0; i < d; ++i) ms += in[i] * in[i];
-        ms = ms / (float)d; rstd = 1.0f / sqrtf(ms + eps);
-        for (u64 i = 0; i < d; ++i) y[i] = in[i] * rstd * (w ? w[i] : 1.0f);
+        float s = 0.0f; for (u64 i = lane; i < d; i += 32) s += in[i] * in[i];
+        rstd = 1.0f / sqrtf(norm_warp_sum_(s) / (float)d + eps);
+        for (u64 i = lane; i < d; i += 32) y[i] = in[i] * rstd * (w ? w[i] : 1.0f);
     }
-    if (stats) { stats[2 * t] = mean; stats[2 * t + 1] = rstd; }
+    if (stats && lane == 0) { stats[2 * t] = mean; stats[2 * t + 1] = rstd; }
 }
-// One thread per row: dxs_t += norm'(x_t)^T dh_t, from the statistics norm_rows left
+// One warp per row: dxs_t += norm'(x_t)^T dh_t, from the statistics norm_rows left
 __global__ void norm_rows_backward_add(const float* dh, const float* x, const float* w, const float* stats, float* dxs, u64 rows, u64 d, int layer)
 {
-    const u64 t = blockIdx.x * (u64)blockDim.x + threadIdx.x; if (t >= rows) return;
+    const u64 t = (blockIdx.x * (u64)blockDim.x + threadIdx.x) / 32; const int lane = threadIdx.x % 32;
+    if (t >= rows) return;
     const float* g_ = dh + t * d; const float* in = x + t * d; float* gx = dxs + t * d;
     const float mean = stats[2 * t], rstd = stats[2 * t + 1];
     if (layer) {
-        float mean_g = 0.0f, mean_gn = 0.0f;
-        for (u64 i = 0; i < d; ++i) { const float norm = (in[i] - mean) * rstd; const float g = (w ? w[i] : 1.0f) * g_[i]; mean_g += g; mean_gn += g * norm; }
-        mean_g /= (float)d; mean_gn /= (float)d;
-        for (u64 i = 0; i < d; ++i) { const float norm = (in[i] - mean) * rstd; const float g = (w ? w[i] : 1.0f) * g_[i]; gx[i] += rstd * (g - mean_g - norm * mean_gn); }
+        float sg = 0.0f, sgn = 0.0f;
+        for (u64 i = lane; i < d; i += 32) { const float norm = (in[i] - mean) * rstd; const float g = (w ? w[i] : 1.0f) * g_[i]; sg += g; sgn += g * norm; }
+        const float mean_g = norm_warp_sum_(sg) / (float)d, mean_gn = norm_warp_sum_(sgn) / (float)d;
+        for (u64 i = lane; i < d; i += 32) { const float norm = (in[i] - mean) * rstd; const float g = (w ? w[i] : 1.0f) * g_[i]; gx[i] += rstd * (g - mean_g - norm * mean_gn); }
     } else {
-        float mean_gn = 0.0f;
-        for (u64 i = 0; i < d; ++i) mean_gn += (w ? w[i] : 1.0f) * g_[i] * in[i] * rstd;
-        mean_gn /= (float)d;
-        for (u64 i = 0; i < d; ++i) { const float norm = in[i] * rstd; const float g = (w ? w[i] : 1.0f) * g_[i]; gx[i] += rstd * (g - norm * mean_gn); }
+        float sgn = 0.0f; for (u64 i = lane; i < d; i += 32) sgn += (w ? w[i] : 1.0f) * g_[i] * in[i] * rstd;
+        const float mean_gn = norm_warp_sum_(sgn) / (float)d;
+        for (u64 i = lane; i < d; i += 32) { const float norm = in[i] * rstd; const float g = (w ? w[i] : 1.0f) * g_[i]; gx[i] += rstd * (g - norm * mean_gn); }
     }
+}
+#define MAXD 256
+#define INFINITY __int_as_float(0x7f800000)   // NVRTC has no <math.h>
+__device__ float dot_(const float* a, const float* b, int d) { float s = 0.0f; for (int i = 0; i < d; ++i) s += a[i] * b[i]; return s; }
+// core's rms_norm of one head, in place: y = x rstd w (w may be null); returns rstd
+__device__ float rms_(float* x, const float* w, int d, float eps)
+{ float ms = 0.0f; for (int i = 0; i < d; ++i) ms += x[i] * x[i]; ms = ms / (float)d; const float rstd = 1.0f / sqrtf(ms + eps);
+  for (int i = 0; i < d; ++i) x[i] = x[i] * rstd * (w ? w[i] : 1.0f); return rstd; }
+__device__ float rstd_(const float* x, int d, float eps)
+{ float ms = 0.0f; for (int i = 0; i < d; ++i) ms += x[i] * x[i]; ms = ms / (float)d; return 1.0f / sqrtf(ms + eps); }
+// core's rope rotation of one head by sign * theta
+__device__ void rotate_(float* x, const float* c, const float* s, int d, int half, float sign)
+{
+    const int h = d / 2;
+    for (int i = 0; i < h; ++i) {
+        float* a = half ? x + i : x + 2 * i; float* b = half ? x + i + h : x + 2 * i + 1;
+        const float x1 = *a, x2 = *b, sn = sign * s[i];
+        *a = x1 * c[i] - x2 * sn; *b = x1 * sn + x2 * c[i];
+    }
+}
+// core's rms_norm_backward in place on g (the gradient in the norm's output becomes its input's); contrib = g * norm
+__device__ void rms_backward_(float* g, const float* x, const float* w, float rstd, float* contrib, int d)
+{
+    float mean_gn = 0.0f; for (int i = 0; i < d; ++i) mean_gn += (w ? w[i] : 1.0f) * g[i] * x[i] * rstd;
+    mean_gn /= (float)d;
+    for (int i = 0; i < d; ++i) { const float norm = x[i] * rstd; const float gi = (w ? w[i] : 1.0f) * g[i];
+        if (contrib) contrib[i] = g[i] * norm; g[i] = rstd * (gi - norm * mean_gn); }
+}
+// One thread per (token, head) of the queries then the keys: the raw copies, QK norm before or after RoPE, RoPE
+__global__ void position(float* q, float* k, float* q_raw, float* k_raw, const float* qnw, const float* knw, const float* cs, const float* sn,
+                         u64 n, int H, int KVH, int d, int qk, int rope, int half, float eps)
+{
+    const u64 idx = blockIdx.x * (u64)blockDim.x + threadIdx.x; if (idx >= n * (u64)(H + KVH)) return;
+    const u64 t = idx / (H + KVH); const int h = (int)(idx % (H + KVH));
+    float* head; float* raw; const float* w;
+    if (h < H) { head = q + t * (u64)(H * d) + (u64)h * d; raw = q_raw ? q_raw + t * (u64)(H * d) + (u64)h * d : 0; w = qnw; }
+    else { const int hk = h - H; head = k + ((u64)hk * n + t) * d; raw = k_raw ? k_raw + t * (u64)(KVH * d) + (u64)hk * d : 0; w = knw; }
+    if (qk) for (int i = 0; i < d; ++i) raw[i] = head[i];
+    if (qk == 1) rms_(head, w, d, eps);
+    if (rope) rotate_(head, cs + t * (u64)(d / 2), sn + t * (u64)(d / 2), d, half, 1.0f);
+    if (qk == 2) rms_(head, w, d, eps);
+}
+// The backward of position, in place on the gradients; each head's norm-weight contributions written for an in-order sum
+__global__ void position_backward(float* gq, float* gk, const float* q_raw, const float* k_raw, const float* qnw, const float* knw,
+                                  const float* cs, const float* sn, float* cq, float* ck, u64 n, int H, int KVH, int d, int qk, int rope, int half, float eps)
+{
+    const u64 idx = blockIdx.x * (u64)blockDim.x + threadIdx.x; if (idx >= n * (u64)(H + KVH)) return;
+    const u64 t = idx / (H + KVH); const int h = (int)(idx % (H + KVH));
+    float* g; const float* raw; const float* w; float* contrib;
+    if (h < H) { g = gq + t * (u64)(H * d) + (u64)h * d; raw = q_raw ? q_raw + t * (u64)(H * d) + (u64)h * d : 0; w = qnw;
+                 contrib = cq ? cq + (t * H + h) * (u64)d : 0; }
+    else { const int hk = h - H; g = gk + ((u64)hk * n + t) * d; raw = k_raw ? k_raw + t * (u64)(KVH * d) + (u64)hk * d : 0; w = knw;
+           contrib = ck ? ck + (t * KVH + hk) * (u64)d : 0; }
+    const float* c = cs + t * (u64)(d / 2); const float* s = sn + t * (u64)(d / 2);
+    float x[MAXD];
+    if (qk == 2) { for (int i = 0; i < d; ++i) x[i] = raw[i]; if (rope) rotate_(x, c, s, d, half, 1.0f); rms_backward_(g, x, w, rstd_(x, d, eps), contrib, d); }
+    if (rope) rotate_(g, c, s, d, half, -1.0f);
+    if (qk == 1) { for (int i = 0; i < d; ++i) x[i] = raw[i]; rms_backward_(g, x, w, rstd_(x, d, eps), contrib, d); }
+}
+__device__ u64 first_(u64 t, u64 window) { return (window == 0 || window > t) ? 0 : t + 1 - window; }
+// One warp per (token, head): lane l holds channels l, l + 32, ...; a dot product sums each lane's channels in order,
+// then the lanes down to lane 0, then broadcasts lane 0's sum, so every lane has the same value
+#define LANES 32
+#define PER_LANE 8   // MAXD / LANES
+__device__ float warp_sum_(float s)
+{
+    for (int o = LANES / 2; o > 0; o /= 2) s += __shfl_down_sync(0xffffffffu, s, o);
+    return __shfl_sync(0xffffffffu, s, 0);
+}
+__device__ float warp_dot_(const float* a, const float* b, int d, int lane)
+{
+    float s = 0.0f; for (int c = lane; c < d; c += LANES) s += a[c] * b[c];
+    return warp_sum_(s);
+}
+// core's one-pass softmax over the visible keys of the head's key-value head
+__global__ void attend(const float* q, const float* k, const float* v, float* y, float* lse, u64 n, int H, int KVH, int d, u64 window, float scale, float cap)
+{
+    const u64 w = (blockIdx.x * (u64)blockDim.x + threadIdx.x) / LANES; const int lane = threadIdx.x % LANES;
+    if (w >= n * (u64)H) return;
+    const u64 t = w / H; const int h = (int)(w % H), kvh = h / (H / KVH);
+    const float* qh = q + t * (u64)(H * d) + (u64)h * d;
+    float acc[PER_LANE]; for (int r = 0; r < PER_LANE; ++r) acc[r] = 0.0f;
+    float mx = -INFINITY, sum = 0.0f;
+    for (u64 j = first_(t, window); j <= t; ++j) {
+        const float* kj = k + ((u64)kvh * n + j) * d; const float* vj = v + ((u64)kvh * n + j) * d;
+        float sc = scale * warp_dot_(qh, kj, d, lane);
+        if (cap > 0.0f) sc = cap * tanhf(sc / cap);
+        if (sc == -INFINITY) continue;
+        if (sc > mx) { const float r = expf(mx - sc); for (int c = lane, x = 0; c < d; c += LANES, ++x) acc[x] = acc[x] * r + vj[c]; sum = sum * r + 1.0f; mx = sc; }
+        else { const float e = expf(sc - mx); for (int c = lane, x = 0; c < d; c += LANES, ++x) acc[x] += e * vj[c]; sum += e; }
+    }
+    float* yh = y + t * (u64)(H * d) + (u64)h * d;
+    for (int c = lane, x = 0; c < d; c += LANES, ++x) yh[c] = sum == 0.0f ? 0.0f : acc[x] / sum;
+    if (lane == 0) lse[t * H + h] = sum == 0.0f ? -INFINITY : mx + logf(sum);
+}
+// The backward, queries: one warp per (token, query head) writes its query's gradient and D = dy . y
+__global__ void attend_backward_queries(const float* q, const float* k, const float* v, const float* y, const float* lse, const float* dy,
+                                        float* gq, float* D, u64 n, int H, int KVH, int d, u64 window, float scale, float cap)
+{
+    const u64 w = (blockIdx.x * (u64)blockDim.x + threadIdx.x) / LANES; const int lane = threadIdx.x % LANES;
+    if (w >= n * (u64)H) return;
+    const u64 t = w / H; const int h = (int)(w % H), kvh = h / (H / KVH);
+    const u64 at = t * (u64)(H * d) + (u64)h * d;
+    const float* qh = q + at; const float* g = dy + at; float* gqh = gq + at;
+    float acc[PER_LANE]; for (int r = 0; r < PER_LANE; ++r) acc[r] = 0.0f;
+    const float l = lse[t * H + h];
+    if (l != -INFINITY) {
+        const float bigd = warp_dot_(g, y + at, d, lane);
+        if (lane == 0) D[t * H + h] = bigd;
+        for (u64 j = first_(t, window); j <= t; ++j) {
+            const float* kj = k + ((u64)kvh * n + j) * d; const float* vj = v + ((u64)kvh * n + j) * d;
+            const float r = scale * warp_dot_(qh, kj, d, lane), gv = warp_dot_(g, vj, d, lane);
+            float ds;
+            if (cap > 0.0f) { const float th = tanhf(r / cap); ds = expf(cap * th - l) * (gv - bigd) * (1.0f - th * th); }
+            else ds = expf(r - l) * (gv - bigd);
+            for (int c = lane, x = 0; c < d; c += LANES, ++x) acc[x] += scale * ds * kj[c];
+        }
+    } else if (lane == 0) D[t * H + h] = 0.0f;
+    for (int c = lane, x = 0; c < d; c += LANES, ++x) gqh[c] = acc[x];
+}
+// The backward, keys and values: one warp per (key-value head, key) adds every query's contribution in core's order
+// (query token ascending, then query head), so the sums do not depend on scheduling
+__global__ void attend_backward_keys(const float* q, const float* k, const float* v, const float* lse, const float* dy, const float* D,
+                                     float* gk, float* gv, u64 n, int H, int KVH, int d, u64 window, float scale, float cap)
+{
+    const u64 w = (blockIdx.x * (u64)blockDim.x + threadIdx.x) / LANES; const int lane = threadIdx.x % LANES;
+    if (w >= n * (u64)KVH) return;
+    const int kvh = (int)(w / n); const u64 j = w % n; const int group = H / KVH;
+    const u64 at = ((u64)kvh * n + j) * d;
+    const float* kj = k + at; const float* vj = v + at;
+    float ak[PER_LANE], av[PER_LANE];
+    for (int c = lane, x = 0; c < d; c += LANES, ++x) { ak[x] = gk[at + c]; av[x] = gv[at + c]; }
+    const u64 last = (window == 0 || j + window - 1 >= n - 1) ? n - 1 : j + window - 1;
+    for (u64 t = j; t <= last; ++t)
+        for (int h = kvh * group; h < (kvh + 1) * group; ++h) {
+            const float l = lse[t * H + h]; if (l == -INFINITY) continue;
+            const u64 qa = t * (u64)(H * d) + (u64)h * d;
+            const float* qh = q + qa; const float* g = dy + qa;
+            const float r = scale * warp_dot_(qh, kj, d, lane), gvd = warp_dot_(g, vj, d, lane);
+            float p, ds;
+            if (cap > 0.0f) { const float th = tanhf(r / cap); p = expf(cap * th - l); ds = p * (gvd - D[t * H + h]) * (1.0f - th * th); }
+            else { p = expf(r - l); ds = p * (gvd - D[t * H + h]); }
+            for (int c = lane, x = 0; c < d; c += LANES, ++x) { av[x] += p * g[c]; ak[x] += scale * ds * qh[c]; }
+        }
+    for (int c = lane, x = 0; c < d; c += LANES, ++x) { gk[at + c] = ak[x]; gv[at + c] = av[x]; }
 }
 // One thread per column: the weight's and bias's gradients, the rows summed in order
 __global__ void norm_param_grads(const float* dh, const float* x, const float* stats, float* dw, float* db, u64 rows, u64 d, int layer)
@@ -168,26 +324,6 @@ __global__ void norm_param_grads(const float* dh, const float* x, const float* s
         if (r != NVRTC_SUCCESS)
             throw cuda_exception(what, static_cast<int>(r));
     }
-
-    // A device copy of a span, made on the host for a staged step and written back if asked
-    template <typename T>
-    struct staged {
-        std::span<T> device;
-        std::vector<std::remove_const_t<T>> host;
-        explicit staged(std::span<T> d) : device(d), host(d.size())
-        {
-            if (!d.empty())
-                detail::cuda::check(cudaMemcpy(host.data(), d.data(), d.size() * sizeof(T), cudaMemcpyDefault), "cudaMemcpy");
-        }
-        std::span<std::remove_const_t<T>> span() { return host; }
-        void write_back()
-        {
-            if (!host.empty())
-                detail::cuda::check(cudaMemcpy(const_cast<std::remove_const_t<T>*>(device.data()), host.data(), host.size() * sizeof(T),
-                                               cudaMemcpyDefault),
-                                    "cudaMemcpy");
-        }
-    };
 
 } // namespace detail::cuda_ops
 
@@ -235,7 +371,9 @@ public:
         const std::pair<const char*, cudaKernel_t*> kernels[] = {
             {"fill", &k->fill_}, {"copy", &k->copy_}, {"add", &k->add_}, {"add_bias_rows", &k->add_bias_rows_}, {"sum_rows", &k->sum_rows_},
             {"activate", &k->activate_}, {"activate_backward", &k->activate_backward_}, {"norm_rows", &k->norm_rows_},
-            {"norm_rows_backward_add", &k->norm_rows_backward_add_}, {"norm_param_grads", &k->norm_param_grads_}};
+            {"norm_rows_backward_add", &k->norm_rows_backward_add_}, {"norm_param_grads", &k->norm_param_grads_}, {"position", &k->position_},
+            {"position_backward", &k->position_backward_}, {"attend", &k->attend_}, {"attend_backward_queries", &k->attend_backward_queries_},
+            {"attend_backward_keys", &k->attend_backward_keys_}};
         for (const auto& [name, slot] : kernels)
             if (const cudaError_t e = cudaLibraryGetKernel(slot, k->library_, name); e != cudaSuccess) {
                 std::fprintf(stderr, "snicholls::gpu::cuda_kernels: cudaLibraryGetKernel(%s): %s\n", name, cudaGetErrorString(e));
@@ -277,7 +415,8 @@ public:
         const std::pair<cudaKernel_t, const char*> names[] = {
             {fill_, "fill"}, {copy_, "copy"}, {add_, "add"}, {add_bias_rows_, "add_bias_rows"}, {sum_rows_, "sum_rows"}, {activate_, "activate"},
             {activate_backward_, "activate_backward"}, {norm_rows_, "norm_rows"}, {norm_rows_backward_add_, "norm_rows_backward_add"},
-            {norm_param_grads_, "norm_param_grads"}};
+            {norm_param_grads_, "norm_param_grads"}, {position_, "position"}, {position_backward_, "position_backward"}, {attend_, "attend"},
+            {attend_backward_queries_, "attend_backward_queries"}, {attend_backward_keys_, "attend_backward_keys"}};
         for (const auto& [kernel, name] : names)
             if (kernel == k)
                 return name;
@@ -285,8 +424,9 @@ public:
     }
 
     cudaKernel_t fill_ = nullptr, copy_ = nullptr, add_ = nullptr, add_bias_rows_ = nullptr, sum_rows_ = nullptr, activate_ = nullptr,
-                 activate_backward_ = nullptr, norm_rows_ = nullptr, norm_rows_backward_add_ = nullptr,
-                 norm_param_grads_ = nullptr;   ///< The kernels, for the overloads below.
+                 activate_backward_ = nullptr, norm_rows_ = nullptr, norm_rows_backward_add_ = nullptr, norm_param_grads_ = nullptr,
+                 position_ = nullptr, position_backward_ = nullptr, attend_ = nullptr, attend_backward_queries_ = nullptr,
+                 attend_backward_keys_ = nullptr;   ///< The kernels, for the overloads below.
 
 private:
     explicit cuda_kernels(const cuda_context& c) : context_(&c) {}
@@ -410,7 +550,7 @@ void block_norm_rows(const cuda_training_backend& b, std::type_identity_t<std::s
     int layer = C.norm == ml::norm_kind::layer ? 1 : 0;
     float eps = ml::norm_eps_v<C, float>;
     void* args[] = {&xp, &wp, &bp, &op, &stats, detail::cuda_ops::arg(rows), detail::cuda_ops::arg(d), &layer, &eps};
-    b.kernels->launch(b.kernels->norm_rows_, rows, args);
+    b.kernels->launch(b.kernels->norm_rows_, 32 * rows, args);   // a warp per row
 }
 
 /// \brief The backward pass of `block_norm_rows` on the device, added into `dxs`; the weight's and bias's gradients
@@ -434,11 +574,11 @@ void block_norm_rows_backward_add(const cuda_training_backend& b, std::type_iden
     int layer = C.norm == ml::norm_kind::layer ? 1 : 0;
     float eps = ml::norm_eps_v<C, float>;
     void* a1[] = {&xp, &wp, &bp, &tmp, &sp, dc::arg(rows), dc::arg(d), &layer, &eps};
-    b.kernels->launch(b.kernels->norm_rows_, rows, a1);
+    b.kernels->launch(b.kernels->norm_rows_, 32 * rows, a1);
     const float* g = dh.data();
     float* gx = dxs.data();
     void* a2[] = {&g, &xp, &wp, &sp, &gx, dc::arg(rows), dc::arg(d), &layer};
-    b.kernels->launch(b.kernels->norm_rows_backward_add_, rows, a2);
+    b.kernels->launch(b.kernels->norm_rows_backward_add_, 32 * rows, a2);
     float* gw = dweight.empty() ? nullptr : dweight.data();
     float* gb = (bias.empty() || dbias.empty()) ? nullptr : dbias.data();
     void* a3[] = {&g, &xp, &sp, &gw, &gb, dc::arg(rows), dc::arg(d), &layer};
@@ -447,90 +587,154 @@ void block_norm_rows_backward_add(const cuda_training_backend& b, std::type_iden
     dc::sync(b);   // the scratch buffers are freed on return
 }
 
-/// \brief QK norm and RoPE on the device: staged in this version (core's code on host copies).
-/// \tparam C The configuration. \param b The backend. \param w The weights. \param act The activations.
-/// \param n The tokens. \param rope_src The rope source (host memory).
+namespace detail::cuda_ops {
+    // The rope source's cosines and sines for positions 0 to n - 1, in device memory (the source lives on the host)
+    template <ml::transformer_config C, typename R>
+    struct rope_rows {
+        device_buffer<float> cos, sin;
+        rope_rows(const cuda_context& ctx, const R& rope_src, std::size_t n) : cos(ctx, n * (C.head_dim / 2)), sin(ctx, n * (C.head_dim / 2))
+        {
+            if constexpr (C.rope != ml::rope_kind::none) {
+                std::vector<float> c(n * (C.head_dim / 2)), s(c.size());
+                for (std::size_t t = 0; t < n; ++t) {
+                    const auto ct = rope_src.cos_at(t);
+                    const auto st = rope_src.sin_at(t);
+                    for (std::size_t i = 0; i < C.head_dim / 2; ++i)
+                        c[t * (C.head_dim / 2) + i] = ct[i], s[t * (C.head_dim / 2) + i] = st[i];
+                }
+                cos.upload(c);
+                sin.upload(s);
+            } else {
+                (void)rope_src;
+            }
+        }
+    };
+    template <ml::transformer_config C>
+    constexpr int qk_mode = C.qk_norm == ml::qk_norm_kind::none ? 0 : C.qk_norm == ml::qk_norm_kind::before_rope ? 1 : 2;
+    template <typename S>
+    const float* data_or_null(S s) { return s.empty() ? nullptr : s.data(); }
+    template <typename S>
+    float* mutable_or_null(S s) { return s.empty() ? nullptr : s.data(); }
+} // namespace detail::cuda_ops
+
+/// \brief QK norm and RoPE of every token's heads on the device, after the raw copies.
+/// \tparam C The configuration. \param b The backend. \param w The weights (the norms', device memory).
+/// \param act The activations (device memory). \param n The tokens. \param rope_src The rope source (host memory).
 template <ml::transformer_config C, typename W, typename R>
 void attention_position_rows(const cuda_training_backend& b, const ml::attention_weights<W, float>& w,
                              const ml::attention_activations<float>& act, std::size_t n, const R& rope_src)
 {
+    namespace dc = detail::cuda_ops;
     if constexpr (C.qk_norm == ml::qk_norm_kind::none && C.rope == ml::rope_kind::none) {
         (void)b, (void)w, (void)act, (void)n, (void)rope_src;   // nothing to do
     } else {
-        detail::cuda_ops::sync(b);
-        using S = detail::cuda_ops::staged<float>;
-        using SC = detail::cuda_ops::staged<const float>;
-        S q(act.q), k(act.k), qr(act.q_raw), kr(act.k_raw);
-        SC qn(w.q_norm), kn(w.k_norm);
-        auto wh = w;
-        wh.q_norm = qn.span();
-        wh.k_norm = kn.span();
-        ml::attention_activations<float> a = act;
-        a.q = q.span(), a.k = k.span(), a.q_raw = qr.span(), a.k_raw = kr.span();
-        ml::attention_position_rows<C>(linalg::reference, wh, a, n, rope_src);
-        q.write_back(), k.write_back(), qr.write_back(), kr.write_back();
+        static_assert(C.head_dim <= 256, "snicholls::gpu: the device kernels take heads of at most 256 channels");
+        const dc::rope_rows<C, R> table(*b.context, rope_src, n);
+        float* q = act.q.data();
+        float* k = act.k.data();
+        float* qr = dc::mutable_or_null(act.q_raw);
+        float* kr = dc::mutable_or_null(act.k_raw);
+        const float* qn = dc::data_or_null(w.q_norm);
+        const float* kn = dc::data_or_null(w.k_norm);
+        const float* cs = table.cos.span().data();
+        const float* sn = table.sin.span().data();
+        const dc::u64 nn = n;
+        int H = int(C.n_heads), KVH = int(C.n_kv_heads), d = int(C.head_dim), qk = dc::qk_mode<C>, rope = C.rope == ml::rope_kind::none ? 0 : 1,
+            half = C.layout() == ml::rope_layout::half ? 1 : 0;
+        float eps = ml::norm_eps_v<C, float>;
+        void* args[] = {&q, &k, &qr, &kr, &qn, &kn, &cs, &sn, dc::arg(nn), &H, &KVH, &d, &qk, &rope, &half, &eps};
+        b.kernels->launch(b.kernels->position_, n * (C.n_heads + C.n_kv_heads), args);
+        dc::sync(b);   // the uploaded table is freed on return
     }
 }
 
-/// \brief Every token's heads on the device: staged in this version. \tparam C The configuration.
-/// \param b The backend. \param act The activations. \param n The tokens.
+/// \brief Every token's heads over its visible keys on the device: `act.y` and `act.lse`. \tparam C The configuration.
+/// \param b The backend. \param act The activations (device memory). \param n The tokens.
 template <ml::transformer_config C>
 void attention_attend_rows(const cuda_training_backend& b, const ml::attention_activations<float>& act, std::size_t n)
 {
-    detail::cuda_ops::sync(b);
-    using S = detail::cuda_ops::staged<float>;
-    S q(act.q), k(act.k), v(act.v), y(act.y), lse(act.lse);
-    ml::attention_activations<float> a = act;
-    a.q = q.span(), a.k = k.span(), a.v = v.span(), a.y = y.span(), a.lse = lse.span();
-    ml::attention_attend_rows<C>(linalg::reference, a, n);
-    y.write_back(), lse.write_back();
+    namespace dc = detail::cuda_ops;
+    static_assert(C.head_dim <= 256, "snicholls::gpu: the device kernels take heads of at most 256 channels");
+    const float* q = act.q.data();
+    const float* k = act.k.data();
+    const float* v = act.v.data();
+    float* y = act.y.data();
+    float* lse = act.lse.data();
+    const dc::u64 nn = n, window = C.window;
+    int H = int(C.n_heads), KVH = int(C.n_kv_heads), d = int(C.head_dim);
+    float scale = 1.0f / snicholls::math::sqrt(float(C.head_dim)), cap = ml::attention_softcap_v<C, float>;
+    void* args[] = {&q, &k, &v, &y, &lse, dc::arg(nn), &H, &KVH, &d, dc::arg(window), &scale, &cap};
+    b.kernels->launch(b.kernels->attend_, 32 * n * C.n_heads, args);   // a warp per (token, head)
 }
 
-/// \brief The backward pass of the heads on the device: staged in this version. \tparam C The configuration.
-/// \param b The backend. \param act The activations. \param dy The heads' output gradients. \param grads The
-/// gradients. \param n The tokens.
+/// \brief The backward pass of the heads on the device, deterministic: the queries' gradients written, the keys' and
+/// values' added in core's order. \tparam C The configuration. \param b The backend. \param act The activations.
+/// \param dy The heads' output gradients. \param grads The gradients. \param n The tokens.
 template <ml::transformer_config C>
 void attention_attend_rows_backward(const cuda_training_backend& b, const ml::attention_activations<float>& act,
                                     std::type_identity_t<std::span<const float>> dy, const ml::attention_gradients<float>& grads, std::size_t n)
 {
-    detail::cuda_ops::sync(b);
-    using S = detail::cuda_ops::staged<float>;
-    using SC = detail::cuda_ops::staged<const float>;
-    S q(act.q), k(act.k), v(act.v), y(act.y), lse(act.lse), gq(grads.q), gk(grads.k), gv(grads.v);
-    SC dys(dy);
-    ml::attention_activations<float> a = act;
-    a.q = q.span(), a.k = k.span(), a.v = v.span(), a.y = y.span(), a.lse = lse.span();
-    ml::attention_gradients<float> g = grads;
-    g.q = gq.span(), g.k = gk.span(), g.v = gv.span();
-    ml::attention_attend_rows_backward<C>(linalg::reference, a, std::span<const float>(dys.span()), g, n);
-    gq.write_back(), gk.write_back(), gv.write_back();
+    namespace dc = detail::cuda_ops;
+    device_buffer<float> D(*b.context, n * C.n_heads);
+    const float* q = act.q.data();
+    const float* k = act.k.data();
+    const float* v = act.v.data();
+    const float* y = act.y.data();
+    const float* lse = act.lse.data();
+    const float* g = dy.data();
+    float* gq = grads.q.data();
+    float* gk = grads.k.data();
+    float* gv = grads.v.data();
+    float* dp = D.span().data();
+    const dc::u64 nn = n, window = C.window;
+    int H = int(C.n_heads), KVH = int(C.n_kv_heads), d = int(C.head_dim);
+    float scale = 1.0f / snicholls::math::sqrt(float(C.head_dim)), cap = ml::attention_softcap_v<C, float>;
+    void* a1[] = {&q, &k, &v, &y, &lse, &g, &gq, &dp, dc::arg(nn), &H, &KVH, &d, dc::arg(window), &scale, &cap};
+    b.kernels->launch(b.kernels->attend_backward_queries_, 32 * n * C.n_heads, a1);
+    const float* dc_ = dp;
+    void* a2[] = {&q, &k, &v, &lse, &g, &dc_, &gk, &gv, dc::arg(nn), &H, &KVH, &d, dc::arg(window), &scale, &cap};
+    b.kernels->launch(b.kernels->attend_backward_keys_, 32 * n * C.n_kv_heads, a2);
+    dc::sync(b);   // D is freed on return
 }
 
-/// \brief The backward pass of QK norm and RoPE on the device: staged in this version. \tparam C The configuration.
-/// \param b The backend. \param w The weights. \param act The activations. \param grads The gradients.
-/// \param n The tokens. \param rope_src The rope source (host memory).
+/// \brief The backward pass of QK norm and RoPE on the device, in place on `grads.q` and `grads.k`; the norm weights'
+/// gradients summed over heads and positions in core's order. \tparam C The configuration. \param b The backend.
+/// \param w The weights. \param act The activations. \param grads The gradients. \param n The tokens.
+/// \param rope_src The rope source (host memory).
 template <ml::transformer_config C, typename W, typename R>
 void attention_position_rows_backward(const cuda_training_backend& b, const ml::attention_weights<W, float>& w,
                                       const ml::attention_activations<float>& act, const ml::attention_gradients<float>& grads,
                                       std::size_t n, const R& rope_src)
 {
+    namespace dc = detail::cuda_ops;
     if constexpr (C.qk_norm == ml::qk_norm_kind::none && C.rope == ml::rope_kind::none) {
         (void)b, (void)w, (void)act, (void)grads, (void)n, (void)rope_src;
     } else {
-        detail::cuda_ops::sync(b);
-        using S = detail::cuda_ops::staged<float>;
-        using SC = detail::cuda_ops::staged<const float>;
-        S gq(grads.q), gk(grads.k), gqn(grads.q_norm), gkn(grads.k_norm), qr(act.q_raw), kr(act.k_raw);
-        SC qn(w.q_norm), kn(w.k_norm);
-        auto wh = w;
-        wh.q_norm = qn.span();
-        wh.k_norm = kn.span();
-        ml::attention_activations<float> a = act;
-        a.q_raw = qr.span(), a.k_raw = kr.span();
-        ml::attention_gradients<float> g = grads;
-        g.q = gq.span(), g.k = gk.span(), g.q_norm = gqn.span(), g.k_norm = gkn.span();
-        ml::attention_position_rows_backward<C>(linalg::reference, wh, a, g, n, rope_src);
-        gq.write_back(), gk.write_back(), gqn.write_back(), gkn.write_back();
+        constexpr bool qk = C.qk_norm != ml::qk_norm_kind::none;
+        const dc::rope_rows<C, R> table(*b.context, rope_src, n);
+        device_buffer<float> cq(*b.context, qk && !grads.q_norm.empty() ? n * C.n_heads * C.head_dim : 0),
+            ck(*b.context, qk && !grads.k_norm.empty() ? n * C.n_kv_heads * C.head_dim : 0);
+        float* gq = grads.q.data();
+        float* gk = grads.k.data();
+        const float* qr = dc::data_or_null(act.q_raw);
+        const float* kr = dc::data_or_null(act.k_raw);
+        const float* qn = dc::data_or_null(w.q_norm);
+        const float* kn = dc::data_or_null(w.k_norm);
+        const float* cs = table.cos.span().data();
+        const float* sn = table.sin.span().data();
+        float* cqp = dc::mutable_or_null(cq.span());
+        float* ckp = dc::mutable_or_null(ck.span());
+        const dc::u64 nn = n;
+        int H = int(C.n_heads), KVH = int(C.n_kv_heads), d = int(C.head_dim), mode = dc::qk_mode<C>, rope = C.rope == ml::rope_kind::none ? 0 : 1,
+            half = C.layout() == ml::rope_layout::half ? 1 : 0;
+        float eps = ml::norm_eps_v<C, float>;
+        void* args[] = {&gq, &gk, &qr, &kr, &qn, &kn, &cs, &sn, &cqp, &ckp, dc::arg(nn), &H, &KVH, &d, &mode, &rope, &half, &eps};
+        b.kernels->launch(b.kernels->position_backward_, n * (C.n_heads + C.n_kv_heads), args);
+        if (cqp != nullptr)   // the rows are (token, head) in core's order: summed in that order
+            sum_rows(b, std::span<const float>(cq.span()), grads.q_norm);
+        if (ckp != nullptr)
+            sum_rows(b, std::span<const float>(ck.span()), grads.k_norm);
+        dc::sync(b);
     }
 }
 
