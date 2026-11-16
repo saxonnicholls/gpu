@@ -48,10 +48,11 @@
 /// compile. A launch or copy that fails throws `cuda_exception`.
 ///
 /// **Performance.** `benchmarks/cuda_ops_benchmark.cpp`: a GPT-2-small layer's training step with its data on the
-/// device, against the same step staged; see `BENCHMARKS.md`. A whole GPT-2 small step (124M parameters, one sequence
-/// of 1024 tokens, forward, backward and clipping) on an RTX PRO 4000 Blackwell, 2026-11-17: 116 ms in float, 67.7 ms
-/// with `cuda_math::tf32`, against llm.c's 64.4 ms in bfloat16 (288 ms with attention a warp per (token, head), 98.5 ms
-/// with the tiled kernels under TF32, 78.3 ms before products over device memory stopped waiting for the stream).
+/// device, against the same step staged; see `BENCHMARKS.md`. A whole GPT-2 small step (124M parameters, sequences of
+/// 1024 tokens, forward, backward, clipping and AdamW) on an RTX PRO 4000 Blackwell with nothing else on it,
+/// 2026-11-17, with `cuda_math::tf32`: 72 ms at batch 1 and 245 ms at batch 4, against llm.c's 34 and 105 ms in
+/// bfloat16; 424 ms at batch 4 in float. Attention's products are about half of it (n x n per head, the masked half
+/// included).
 ///
 /// **Tests and demos.** `tests/cuda_ops_test.cpp` (each step against core's, and whole training steps of GPT-2-,
 /// Llama- and nanochat-shaped blocks against the reference), `demos/cuda_ops_demo.cpp`.
