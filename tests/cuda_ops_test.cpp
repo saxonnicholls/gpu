@@ -83,6 +83,18 @@ void near(const std::vector<float>& got, const std::vector<float>& want, float t
         ASSERT_NEAR(got[i], want[i], tol * (1 + std::fabs(want[i]))) << what << " at " << i;
 }
 
+// Normwise: the largest difference against the largest magnitude, for steps large enough that elementwise rounding
+// varies (a different summation order is not a different answer)
+void near_normwise(const std::vector<float>& got, const std::vector<float>& want, double tol, const std::string& what)
+{
+    ASSERT_EQ(got.size(), want.size()) << what;
+    double diff = 0, scale = 0;
+    for (std::size_t i = 0; i < got.size(); ++i)
+        diff = std::max(diff, double(std::fabs(got[i] - want[i]))), scale = std::max(scale, double(std::fabs(want[i])));
+    std::printf("  %-22s normwise %.2e\n", what.c_str(), scale == 0 ? 0.0 : diff / scale);
+    EXPECT_LE(diff, tol * scale) << what;
+}
+
 constexpr ml::transformer_config small{.d_model = 64, .n_heads = 4, .n_kv_heads = 4, .head_dim = 16, .d_ff = 128,
                                        .norm = ml::norm_kind::layer, .norm_eps = 1e-5, .mlp = ml::mlp_kind::gelu_tanh, .bias = true};
 
@@ -127,10 +139,10 @@ TEST(GpuCudaOps, TheNormsAndTheirBackwardAreCoresToRounding)
     near(db.back(), hdb, 1e-6f, "dbias");
 }
 
-template <ml::transformer_config C>
+template <ml::transformer_config C, std::size_t N = 24>
 void whole_step_agrees()
 {
-    static const ml::rope_table<float, 32, C.head_dim> table(ml::rope_base_v<C, float>);
+    static const ml::rope_table<float, (N > 32 ? N : 32), C.head_dim> table(ml::rope_base_v<C, float>);
     auto run = [&](auto& st, const auto& backend, bool dev) {
         const auto w = st.weights(dev);
         if constexpr (C.rope == ml::rope_kind::none) {
@@ -141,15 +153,36 @@ void whole_step_agrees()
             ml::block_backward<C>(backend, w, table, st.act(dev), st.s(st.dxs, dev), st.grads(dev));
         }
     };
-    step<C> st(*device().context);
+    step<C, N> st(*device().context);
     run(st, backend(), true);    // on the device, every buffer in device memory
     run(st, la::reference, false);   // the reference, on the host copies
     cudaDeviceSynchronize();
-    using S = step<C>;
-    near(st.m[S::xs].back(), st.m[S::xs].host, 1e-4f, "output");
-    near(st.m[S::dxs].back(), st.m[S::dxs].host, 1e-4f, "input gradient");
-    for (int i = S::gn1w; i <= S::gbdown; ++i)
-        near(st.m[std::size_t(i)].back(), st.m[std::size_t(i)].host, 1e-3f, "parameter gradient " + std::to_string(i - S::gn1w));
+    using S = step<C, N>;
+    if constexpr (N <= 24) {
+        near(st.m[S::xs].back(), st.m[S::xs].host, 1e-4f, "output");
+        near(st.m[S::dxs].back(), st.m[S::dxs].host, 1e-4f, "input gradient");
+        for (int i = S::gn1w; i <= S::gbdown; ++i)
+            near(st.m[std::size_t(i)].back(), st.m[std::size_t(i)].host, 1e-3f, "parameter gradient " + std::to_string(i - S::gn1w));
+    } else {
+        near_normwise(st.m[S::xs].back(), st.m[S::xs].host, 1e-5, "output");
+        near_normwise(st.m[S::dxs].back(), st.m[S::dxs].host, 1e-5, "input gradient");
+        for (int i = S::gn1w; i <= S::gbdown; ++i)
+            if (i != S::gbk || C.attention_softcap > 0)
+                near_normwise(st.m[std::size_t(i)].back(), st.m[std::size_t(i)].host, 1e-4, "parameter gradient " + std::to_string(i - S::gn1w));
+        // Without a soft cap the key bias's gradient is zero in exact arithmetic (a softmax does not see a shift common to
+        // every key), so both sides are rounding: each negligible beside the query bias's
+        if constexpr (C.attention_softcap > 0)
+            return;
+        const auto largest = [](const std::vector<float>& v) {
+            float m = 0;
+            for (const float e : v)
+                m = std::max(m, std::fabs(e));
+            return m;
+        };
+        const float q_bias = largest(st.m[S::gbq].host);
+        EXPECT_LE(largest(st.m[S::gbk].back()), 1e-4f * q_bias);
+        EXPECT_LE(largest(st.m[S::gbk].host), 1e-4f * q_bias);
+    }
 }
 
 constexpr ml::transformer_config llama_like{.d_model = 64, .n_heads = 4, .n_kv_heads = 2, .head_dim = 16, .d_ff = 96, .norm = ml::norm_kind::rms,
@@ -267,6 +300,20 @@ TEST(GpuCudaOps, ALlamaBlocksTrainingStepOnTheDeviceIsTheReferences)
 TEST(GpuCudaOps, ANanochatBlocksTrainingStepOnTheDeviceIsTheReferences)
 {
     whole_step_agrees<nanochat_like>();
+}
+
+// The tiled attention kernels over several tiles and a partial one: GPT-2's heads of 64, grouped heads of 128 under a
+// window, and the capped multi-query heads of 16
+constexpr ml::transformer_config gpt2_heads{.d_model = 128, .n_heads = 2, .n_kv_heads = 2, .head_dim = 64, .d_ff = 256,
+                                            .norm = ml::norm_kind::layer, .norm_eps = 1e-5, .mlp = ml::mlp_kind::gelu_tanh, .bias = true};
+constexpr ml::transformer_config wide_grouped{.d_model = 256, .n_heads = 4, .n_kv_heads = 2, .head_dim = 128, .d_ff = 128, .norm = ml::norm_kind::rms,
+                                              .norm_eps = 1e-5, .mlp = ml::mlp_kind::swiglu, .rope = ml::rope_kind::half, .rope_base = 10000,
+                                              .window = 40};
+TEST(GpuCudaOps, TiledAttentionOverManyTokensIsTheReferences)
+{
+    whole_step_agrees<gpt2_heads, 150>();
+    whole_step_agrees<wide_grouped, 100>();
+    whole_step_agrees<mqa_capped, 130>();
 }
 
 } // namespace

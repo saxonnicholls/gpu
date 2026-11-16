@@ -28,11 +28,13 @@
 ///
 /// **Implementations.** The elementwise steps one thread per element; the norms a warp per row (each lane's part of a
 /// row's sums in order, then the lanes in a fixed order), the weights' and biases' gradients one thread per column summing the rows in order, so the
-/// result does not depend on scheduling; the activations with core's formulas in float. Attention: a warp per
-/// (token, head) for the one-pass forward and the queries' gradients, a warp per (key-value head, key) for the keys'
-/// and values' gradients summed in core's order, each lane holding a slice of the channels and every dot product
-/// reduced in a fixed order (no atomics: deterministic); QK norm and RoPE one thread per (token, head),
-/// the norms' weight gradients summed in core's order. Heads of at most 256 channels.
+/// result does not depend on scheduling; the activations with core's formulas in float. Attention, for heads of 16,
+/// 32, 64 or 128 channels, is tiled: a thread per query (the one-pass forward, the queries' gradients) or per key (the
+/// keys' and values' gradients) holds its row in registers while the other side passes through shared memory a tile at
+/// a time; the keys' gradients are split over the queries into partials added in a fixed order (no atomics:
+/// deterministic). Other head sizes, up to 256, take a warp per (token, head). QK norm and RoPE one thread per
+/// (token, head), the norms' weight gradients summed in core's order. The kernels' working space
+/// (`cuda_kernels::scratch`) is kept between calls, so a step allocates nothing.
 ///
 /// **Guarantees.** Every step is enqueued on the context's stream, in the order the pass makes them, after the
 /// previous product; the results agree with core's reference to rounding (the device's `expf`, `tanhf`, `sqrtf`
@@ -42,15 +44,17 @@
 /// compile. A launch or copy that fails throws `cuda_exception`.
 ///
 /// **Performance.** `benchmarks/cuda_ops_benchmark.cpp`: a GPT-2-small layer's training step with its data on the
-/// device, against the same step staged; see `BENCHMARKS.md`.
+/// device, against the same step staged; see `BENCHMARKS.md`. A whole GPT-2 small step (124M parameters, one sequence
+/// of 1024 tokens, forward, backward and clipping) on an RTX PRO 4000 Blackwell, 2026-11-17: 137 ms in float, 98.5 ms
+/// with `cuda_math::tf32`, against llm.c's 64.4 ms in bfloat16 (the tiled attention took it from 288 ms).
 ///
 /// **Tests and demos.** `tests/cuda_ops_test.cpp` (each step against core's, and whole training steps of GPT-2-,
 /// Llama- and nanochat-shaped blocks against the reference), `demos/cuda_ops_demo.cpp`.
 ///
 /// **Dependencies.** `cuda.hpp`, `<nvrtc.h>`, core's `ml/transformer_block.hpp`. Link `CUDA::nvrtc` too.
 ///
-/// **Known issues.** Float only. Attention is a warp per (token, head) without tiling through shared memory: long
-/// sequences want a flash-attention tiling next.
+/// **Known issues.** Float only (the products can be TF32). The tiled attention is on the CUDA cores, not the tensor
+/// cores, and the keys' gradients are the slowest kernel of a long sequence's step.
 ///
 /// **Status.** Experimental, new in 0.2.0.
 
@@ -68,6 +72,7 @@
 #include <nvrtc.h>
 
 #include <algorithm>
+#include <array>
 #include <cstddef>
 #include <cstdint>
 #include <cstdio>
@@ -308,6 +313,151 @@ __global__ void attend_backward_keys(const float* q, const float* k, const float
         }
     for (int c = lane, x = 0; c < d; c += LANES, ++x) { gk[at + c] = ak[x]; gv[at + c] = av[x]; }
 }
+}
+// Tiled attention for a head of D channels (16, 32, 64 or 128): a thread per query (forward, query gradients) or per
+// key (key and value gradients) with its row in registers, the other side staged through shared memory a tile at a
+// time and read by every thread of the block. Each thread's sums run in a fixed order: deterministic.
+#define TK 32   // keys per tile
+template <int D>
+__device__ void attend_tiled_(const float* q, const float* k, const float* v, float* y, float* lse, u64 n, int H, int KVH, u64 window, float scale, float cap)
+{
+    __shared__ float ks[TK * D], vs[TK * D];
+    const int h = blockIdx.y, kvh = h / (H / KVH);
+    const u64 q0 = (u64)blockIdx.x * blockDim.x, t = q0 + threadIdx.x, qlast = min(q0 + blockDim.x, n) - 1;
+    const bool live = t < n;
+    float qr[D], acc[D];
+    for (int c = 0; c < D; ++c) { qr[c] = live ? q[t * (u64)(H * D) + (u64)h * D + c] : 0.0f; acc[c] = 0.0f; }
+    float mx = -INFINITY, sum = 0.0f;
+    const u64 mine = live ? first_(t, window) : 0;
+    for (u64 jt = first_(q0, window); jt <= qlast; jt += TK) {
+        __syncthreads();
+        const float* kt = k + ((u64)kvh * n + jt) * D; const float* vt = v + ((u64)kvh * n + jt) * D;
+        for (int i = threadIdx.x; i < TK * D; i += blockDim.x) { const bool in = jt + i / D < n; ks[i] = in ? kt[i] : 0.0f; vs[i] = in ? vt[i] : 0.0f; }
+        __syncthreads();
+        if (!live) continue;
+        for (int x = 0; x < TK; ++x) {
+            const u64 j = jt + x; if (j < mine || j > t) continue;
+            float s = 0.0f; for (int c = 0; c < D; ++c) s += qr[c] * ks[x * D + c];
+            float sc = scale * s;
+            if (cap > 0.0f) sc = cap * tanhf(sc / cap);
+            if (sc == -INFINITY) continue;
+            if (sc > mx) { const float r = expf(mx - sc); for (int c = 0; c < D; ++c) acc[c] = acc[c] * r + vs[x * D + c]; sum = sum * r + 1.0f; mx = sc; }
+            else { const float e = expf(sc - mx); for (int c = 0; c < D; ++c) acc[c] += e * vs[x * D + c]; sum += e; }
+        }
+    }
+    if (!live) return;
+    float* yh = y + t * (u64)(H * D) + (u64)h * D;
+    for (int c = 0; c < D; ++c) yh[c] = sum == 0.0f ? 0.0f : acc[c] / sum;
+    lse[t * H + h] = sum == 0.0f ? -INFINITY : mx + logf(sum);
+}
+template <int D>
+__device__ void attend_backward_queries_tiled_(const float* q, const float* k, const float* v, const float* y, const float* lse, const float* dy,
+                                               float* gq, float* Dd, u64 n, int H, int KVH, u64 window, float scale, float cap)
+{
+    __shared__ float ks[TK * D], vs[TK * D];
+    const int h = blockIdx.y, kvh = h / (H / KVH);
+    const u64 q0 = (u64)blockIdx.x * blockDim.x, t = q0 + threadIdx.x, qlast = min(q0 + blockDim.x, n) - 1;
+    const u64 at = t * (u64)(H * D) + (u64)h * D;
+    const float l = t < n ? lse[t * H + h] : -INFINITY;
+    const bool live = l != -INFINITY;
+    float qr[D], g[D], acc[D], bigd = 0.0f;
+    for (int c = 0; c < D; ++c) {
+        qr[c] = live ? q[at + c] : 0.0f; g[c] = live ? dy[at + c] : 0.0f; acc[c] = 0.0f;
+        bigd += live ? g[c] * y[at + c] : 0.0f;
+    }
+    const u64 mine = t < n ? first_(t, window) : 0;
+    for (u64 jt = first_(q0, window); jt <= qlast; jt += TK) {
+        __syncthreads();
+        const float* kt = k + ((u64)kvh * n + jt) * D; const float* vt = v + ((u64)kvh * n + jt) * D;
+        for (int i = threadIdx.x; i < TK * D; i += blockDim.x) { const bool in = jt + i / D < n; ks[i] = in ? kt[i] : 0.0f; vs[i] = in ? vt[i] : 0.0f; }
+        __syncthreads();
+        if (!live) continue;
+        for (int x = 0; x < TK; ++x) {
+            const u64 j = jt + x; if (j < mine || j > t) continue;
+            float r = 0.0f, gv = 0.0f;
+            for (int c = 0; c < D; ++c) { r += qr[c] * ks[x * D + c]; gv += g[c] * vs[x * D + c]; }
+            r *= scale;
+            float ds;
+            if (cap > 0.0f) { const float th = tanhf(r / cap); ds = expf(cap * th - l) * (gv - bigd) * (1.0f - th * th); }
+            else ds = expf(r - l) * (gv - bigd);
+            for (int c = 0; c < D; ++c) acc[c] += scale * ds * ks[x * D + c];
+        }
+    }
+    if (t >= n) return;
+    Dd[t * H + h] = bigd;
+    for (int c = 0; c < D; ++c) gq[at + c] = acc[c];
+}
+// Keys and values: a thread per key, its key and value rows in shared memory (padded against bank conflicts), the
+// queries and their output gradients staged TQ tokens at a time, one query head after another
+template <int D>
+__device__ void attend_backward_keys_tiled_(const float* q, const float* k, const float* v, const float* lse, const float* dy, const float* Dd,
+                                            float* pk, float* pv, u64 n, int H, int KVH, u64 window, float scale, float cap)
+{
+    constexpr int TQ = 1024 / D, KB = 32;   // query tokens per tile; keys per block
+    __shared__ float qs[TQ * D], gs[TQ * D], ls[TQ], ds_[TQ], kj[KB * (D + 1)], vj[KB * (D + 1)];
+    const int kvh = blockIdx.y, group = H / KVH;
+    const u64 j0 = (u64)blockIdx.x * KB, j = j0 + threadIdx.x, jlast = min(j0 + KB, n) - 1;
+    const bool live = j < n;
+    const u64 at = ((u64)kvh * n + j) * D;
+    float ak[D], av[D];
+    for (int c = 0; c < D; ++c) {
+        kj[threadIdx.x * (D + 1) + c] = live ? k[at + c] : 0.0f; vj[threadIdx.x * (D + 1) + c] = live ? v[at + c] : 0.0f;
+        ak[c] = 0.0f; av[c] = 0.0f;
+    }
+    const float* kr = kj + threadIdx.x * (D + 1); const float* vr = vj + threadIdx.x * (D + 1);
+    const u64 last = (window == 0 || j + window - 1 >= n - 1) ? n - 1 : j + window - 1;
+    const u64 tend = (window == 0 || jlast + window - 1 >= n - 1) ? n - 1 : jlast + window - 1;
+    // This block's share of the query tiles: split z of gridDim.z, contiguous, so the partials add up in a fixed order
+    const u64 tiles = (tend - j0) / TQ + 1, from = tiles * blockIdx.z / gridDim.z, to = tiles * (blockIdx.z + 1) / gridDim.z;
+    for (u64 tt = j0 + from * TQ; tt < j0 + to * TQ; tt += TQ)
+        for (int h = kvh * group; h < (kvh + 1) * group; ++h) {
+            __syncthreads();
+            for (int i = threadIdx.x; i < TQ * D; i += blockDim.x) {
+                const u64 t = tt + i / D; const bool in = t < n; const u64 qa = t * (u64)(H * D) + (u64)h * D + i % D;
+                qs[i] = in ? q[qa] : 0.0f; gs[i] = in ? dy[qa] : 0.0f;
+            }
+            for (int i = threadIdx.x; i < TQ; i += blockDim.x) { const bool in = tt + i < n; ls[i] = in ? lse[(tt + i) * H + h] : -INFINITY; ds_[i] = in ? Dd[(tt + i) * H + h] : 0.0f; }
+            __syncthreads();
+            if (!live) continue;
+            for (int x = 0; x < TQ; ++x) {
+                const u64 t = tt + x; if (t < j || t > last) continue;
+                const float l = ls[x]; if (l == -INFINITY) continue;
+                float r = 0.0f, gvd = 0.0f;
+                for (int c = 0; c < D; ++c) { r += qs[x * D + c] * kr[c]; gvd += gs[x * D + c] * vr[c]; }
+                r *= scale;
+                float p, ds;
+                if (cap > 0.0f) { const float th = tanhf(r / cap); p = expf(cap * th - l); ds = p * (gvd - ds_[x]) * (1.0f - th * th); }
+                else { p = expf(r - l); ds = p * (gvd - ds_[x]); }
+                for (int c = 0; c < D; ++c) { av[c] += p * gs[x * D + c]; ak[c] += scale * ds * qs[x * D + c]; }
+            }
+        }
+    if (!live) return;
+    const u64 part = (u64)blockIdx.z * KVH * n * D + at;
+    for (int c = 0; c < D; ++c) { pk[part + c] = ak[c]; pv[part + c] = av[c]; }
+}
+// The keys' and values' gradients: each split's partial added in, split by split
+extern "C" __global__ void attend_keys_reduce(float* gk, float* gv, const float* pk, const float* pv, u64 m, int splits)
+{
+    const u64 i = blockIdx.x * (u64)blockDim.x + threadIdx.x; if (i >= m) return;
+    float a = gk[i], b = gv[i];
+    for (int z = 0; z < splits; ++z) { a += pk[z * m + i]; b += pv[z * m + i]; }
+    gk[i] = a; gv[i] = b;
+}
+#define SNICHOLLS_ATTEND_TILED(D)                                                                                                        \
+    extern "C" __global__ void attend_tiled_##D(const float* q, const float* k, const float* v, float* y, float* lse, u64 n, int H, int KVH, \
+                                                u64 window, float scale, float cap)                                                   \
+    { attend_tiled_<D>(q, k, v, y, lse, n, H, KVH, window, scale, cap); }                                                              \
+    extern "C" __global__ void attend_backward_queries_tiled_##D(const float* q, const float* k, const float* v, const float* y,      \
+        const float* lse, const float* dy, float* gq, float* Dd, u64 n, int H, int KVH, u64 window, float scale, float cap)           \
+    { attend_backward_queries_tiled_<D>(q, k, v, y, lse, dy, gq, Dd, n, H, KVH, window, scale, cap); }                                 \
+    extern "C" __global__ void attend_backward_keys_tiled_##D(const float* q, const float* k, const float* v, const float* lse,       \
+        const float* dy, const float* Dd, float* pk, float* pv, u64 n, int H, int KVH, u64 window, float scale, float cap)            \
+    { attend_backward_keys_tiled_<D>(q, k, v, lse, dy, Dd, pk, pv, n, H, KVH, window, scale, cap); }
+SNICHOLLS_ATTEND_TILED(16)
+SNICHOLLS_ATTEND_TILED(32)
+SNICHOLLS_ATTEND_TILED(64)
+SNICHOLLS_ATTEND_TILED(128)
+extern "C" {
 // The model's other steps: embeddings, the fused classifier, AdamW, and the reductions
 __global__ void embed(const float* table, const float* pos, const unsigned* ids, float* out, u64 n, u64 d)
 { const u64 i = blockIdx.x * (u64)blockDim.x + threadIdx.x; if (i >= n * d) return; const u64 t = i / d, c = i % d;
@@ -378,7 +528,7 @@ __global__ void norm_param_grads(const float* dh, const float* x, const float* s
 
 } // namespace detail::cuda_ops
 
-/// \brief The kernels of the training steps, compiled for one context's device.
+/// \brief The kernels of the training steps, compiled for one context's device, and their working space.
 class cuda_kernels {
 public:
     /// \brief Compiles the kernels (NVRTC) for the context's device and loads them.
@@ -425,10 +575,20 @@ public:
             {"norm_rows_backward_add", &k->norm_rows_backward_add_}, {"norm_param_grads", &k->norm_param_grads_}, {"position", &k->position_},
             {"position_backward", &k->position_backward_}, {"attend", &k->attend_}, {"attend_backward_queries", &k->attend_backward_queries_},
             {"attend_backward_keys", &k->attend_backward_keys_}, {"embed", &k->embed_}, {"embed_backward", &k->embed_backward_},
-            {"cross_entropy_rows", &k->cross_entropy_rows_}, {"adamw", &k->adamw_}, {"scale", &k->scale_}, {"partial_sums", &k->partial_sums_}};
+            {"cross_entropy_rows", &k->cross_entropy_rows_}, {"adamw", &k->adamw_}, {"scale", &k->scale_}, {"partial_sums", &k->partial_sums_},
+            {"attend_keys_reduce", &k->attend_keys_reduce_}};
+        std::vector<std::pair<std::string, cudaKernel_t*>> all;
         for (const auto& [name, slot] : kernels)
-            if (const cudaError_t e = cudaLibraryGetKernel(slot, k->library_, name); e != cudaSuccess) {
-                std::fprintf(stderr, "snicholls::gpu::cuda_kernels: cudaLibraryGetKernel(%s): %s\n", name, cudaGetErrorString(e));
+            all.emplace_back(name, slot);
+        for (std::size_t i = 0; i < 4; ++i) {
+            const std::string d = std::to_string(16 << i);
+            all.emplace_back("attend_tiled_" + d, &k->attend_tiled_[i]);
+            all.emplace_back("attend_backward_queries_tiled_" + d, &k->attend_backward_queries_tiled_[i]);
+            all.emplace_back("attend_backward_keys_tiled_" + d, &k->attend_backward_keys_tiled_[i]);
+        }
+        for (const auto& [name, slot] : all)
+            if (const cudaError_t e = cudaLibraryGetKernel(slot, k->library_, name.c_str()); e != cudaSuccess) {
+                std::fprintf(stderr, "snicholls::gpu::cuda_kernels: cudaLibraryGetKernel(%s): %s\n", name.c_str(), cudaGetErrorString(e));
                 return err(cuda_failure{cuda_error::call_failed, static_cast<int>(e)});
             }
         return ok(std::move(k));
@@ -467,6 +627,35 @@ public:
             throw cuda_exception(std::string("cudaLaunchKernel(") + name_of(k) + ") [" + cudaGetErrorString(e) + "]", static_cast<int>(e));
     }
 
+    /// \brief Launches a kernel over a two-dimensional grid. \param k The kernel. \param x The blocks along x.
+    /// \param y The blocks along y. \param block The threads per block. \param args The arguments.
+    /// \throws cuda_exception if the launch fails.
+    void launch_grid2(cudaKernel_t k, unsigned x, std::size_t y, unsigned block, void** args) const { launch_grid3(k, x, y, 1, block, args); }
+
+    /// \brief Launches a kernel over a three-dimensional grid. \param k The kernel. \param x The blocks along x.
+    /// \param y The blocks along y. \param z The blocks along z. \param block The threads per block.
+    /// \param args The arguments. \throws cuda_exception if the launch fails.
+    void launch_grid3(cudaKernel_t k, unsigned x, std::size_t y, std::size_t z, unsigned block, void** args) const
+    {
+        if (x == 0 || y == 0 || z == 0)
+            return;
+        if (const cudaError_t e = cudaLaunchKernel(reinterpret_cast<const void*>(k), dim3(x, unsigned(y), unsigned(z)), dim3(block), args, 0,
+                                                   context_->stream());
+            e != cudaSuccess)
+            throw cuda_exception(std::string("cudaLaunchKernel(") + name_of(k) + ") [" + cudaGetErrorString(e) + "]", static_cast<int>(e));
+    }
+
+    /// \brief Working space in device memory of at least `floats` floats, kept between calls and grown when asked for
+    /// more: the kernels' scratch, so a step allocates nothing. Its contents are the caller's until the next call; the
+    /// kernels are for one host thread at a time, as their context's one stream is.
+    /// \param floats The size. \return The space.
+    [[nodiscard]] std::span<float> scratch(std::size_t floats) const
+    {
+        if (!scratch_ || scratch_->span().size() < floats)
+            scratch_ = std::make_unique<device_buffer<float>>(*context_, floats);
+        return scratch_->span().first(floats);
+    }
+
     /// \brief The context. \return It.
     [[nodiscard]] const cuda_context& context() const noexcept { return *context_; }
 
@@ -479,27 +668,54 @@ public:
             {norm_param_grads_, "norm_param_grads"}, {position_, "position"}, {position_backward_, "position_backward"}, {attend_, "attend"},
             {attend_backward_queries_, "attend_backward_queries"}, {attend_backward_keys_, "attend_backward_keys"}, {embed_, "embed"},
             {embed_backward_, "embed_backward"}, {cross_entropy_rows_, "cross_entropy_rows"}, {adamw_, "adamw"}, {scale_, "scale"},
-            {partial_sums_, "partial_sums"}};
+            {partial_sums_, "partial_sums"}, {attend_keys_reduce_, "attend_keys_reduce"}};
         for (const auto& [kernel, name] : names)
             if (kernel == k)
                 return name;
+        for (std::size_t i = 0; i < 4; ++i)
+            if (k == attend_tiled_[i] || k == attend_backward_queries_tiled_[i] || k == attend_backward_keys_tiled_[i])
+                return k == attend_tiled_[i] ? "attend_tiled" : k == attend_backward_queries_tiled_[i] ? "attend_backward_queries_tiled" : "attend_backward_keys_tiled";
         return "?";
     }
 
-    cudaKernel_t fill_ = nullptr, copy_ = nullptr, add_ = nullptr, add_bias_rows_ = nullptr, sum_rows_ = nullptr, activate_ = nullptr,
-                 activate_backward_ = nullptr, norm_rows_ = nullptr, norm_rows_backward_add_ = nullptr, norm_param_grads_ = nullptr,
-                 position_ = nullptr, position_backward_ = nullptr, attend_ = nullptr, attend_backward_queries_ = nullptr,
-                 attend_backward_keys_ = nullptr, embed_ = nullptr, embed_backward_ = nullptr, cross_entropy_rows_ = nullptr, adamw_ = nullptr,
-                 scale_ = nullptr, partial_sums_ = nullptr;   ///< The kernels, for the overloads below.
+    /// \name The kernels, for the overloads below
+    /// @{
+    cudaKernel_t fill_ = nullptr;   ///< `fill`.
+    cudaKernel_t copy_ = nullptr;   ///< `copy`.
+    cudaKernel_t add_ = nullptr;   ///< `add`.
+    cudaKernel_t add_bias_rows_ = nullptr;   ///< `add_bias_rows`.
+    cudaKernel_t sum_rows_ = nullptr;   ///< `sum_rows`.
+    cudaKernel_t activate_ = nullptr;   ///< `activate`.
+    cudaKernel_t activate_backward_ = nullptr;   ///< `activate_backward`.
+    cudaKernel_t norm_rows_ = nullptr;   ///< `norm_rows`.
+    cudaKernel_t norm_rows_backward_add_ = nullptr;   ///< `norm_rows_backward_add`.
+    cudaKernel_t norm_param_grads_ = nullptr;   ///< `norm_param_grads`.
+    cudaKernel_t position_ = nullptr;   ///< `position`.
+    cudaKernel_t position_backward_ = nullptr;   ///< `position_backward`.
+    cudaKernel_t attend_ = nullptr;   ///< `attend`.
+    cudaKernel_t attend_backward_queries_ = nullptr;   ///< `attend_backward_queries`.
+    cudaKernel_t attend_backward_keys_ = nullptr;   ///< `attend_backward_keys`.
+    cudaKernel_t embed_ = nullptr;   ///< `embed`.
+    cudaKernel_t embed_backward_ = nullptr;   ///< `embed_backward`.
+    cudaKernel_t cross_entropy_rows_ = nullptr;   ///< `cross_entropy_rows`.
+    cudaKernel_t adamw_ = nullptr;   ///< `adamw`.
+    cudaKernel_t scale_ = nullptr;   ///< `scale`.
+    cudaKernel_t partial_sums_ = nullptr;   ///< `partial_sums`.
+    cudaKernel_t attend_keys_reduce_ = nullptr;   ///< `attend_keys_reduce`.
+    std::array<cudaKernel_t, 4> attend_tiled_{};                    ///< `attend_tiled_D`, for heads of 16, 32, 64 and 128 channels.
+    std::array<cudaKernel_t, 4> attend_backward_queries_tiled_{};   ///< `attend_backward_queries_tiled_D`.
+    std::array<cudaKernel_t, 4> attend_backward_keys_tiled_{};      ///< `attend_backward_keys_tiled_D`.
+    /// @}
 
 private:
     explicit cuda_kernels(const cuda_context& c) : context_(&c) {}
     const cuda_context* context_;
     cudaLibrary_t library_ = nullptr;
+    mutable std::unique_ptr<device_buffer<float>> scratch_;
 };
 
 /// \brief The CUDA backend with the training steps' kernels: core's batched passes run entirely on the device over
-/// `device_buffer` memory. Two pointers, trivially copyable.
+/// `device_buffer` memory. Two pointers and `cuda_math`, trivially copyable.
 struct cuda_training_backend : cuda_backend {
     const cuda_kernels* kernels = nullptr;   ///< The compiled kernels; must outlive the backend.
 };
@@ -511,6 +727,9 @@ namespace detail::cuda_ops {
     inline void sync(const cuda_training_backend& b) { cuda::check(cudaStreamSynchronize(b.context->stream()), "cudaStreamSynchronize"); }
     template <typename T>
     void* arg(const T& v) { return const_cast<void*>(static_cast<const void*>(&v)); }
+    // The tiled attention kernels' index for a head size, or -1 where only the warp-per-row kernels serve
+    template <std::size_t D>
+    constexpr int tiled = D == 16 ? 0 : D == 32 ? 1 : D == 64 ? 2 : D == 128 ? 3 : -1;
     template <ml::mlp_kind K>
     constexpr int kind = K == ml::mlp_kind::gelu ? 0 : K == ml::mlp_kind::gelu_tanh ? 1 : K == ml::mlp_kind::relu_squared ? 2 : 3;
 } // namespace detail::cuda_ops
@@ -727,8 +946,13 @@ void attention_attend_rows(const cuda_training_backend& b, const ml::attention_a
     const dc::u64 nn = n, window = C.window;
     int H = int(C.n_heads), KVH = int(C.n_kv_heads), d = int(C.head_dim);
     float scale = 1.0f / snicholls::math::sqrt(float(C.head_dim)), cap = ml::attention_softcap_v<C, float>;
-    void* args[] = {&q, &k, &v, &y, &lse, dc::arg(nn), &H, &KVH, &d, dc::arg(window), &scale, &cap};
-    b.kernels->launch(b.kernels->attend_, 32 * n * C.n_heads, args);   // a warp per (token, head)
+    if constexpr (dc::tiled<C.head_dim> >= 0) {
+        void* args[] = {&q, &k, &v, &y, &lse, dc::arg(nn), &H, &KVH, dc::arg(window), &scale, &cap};
+        b.kernels->launch_grid2(b.kernels->attend_tiled_[dc::tiled<C.head_dim>], unsigned((n + 63) / 64), C.n_heads, 64, args);
+    } else {
+        void* args[] = {&q, &k, &v, &y, &lse, dc::arg(nn), &H, &KVH, &d, dc::arg(window), &scale, &cap};
+        b.kernels->launch(b.kernels->attend_, 32 * n * C.n_heads, args);   // a warp per (token, head)
+    }
 }
 
 /// \brief The backward pass of the heads on the device, deterministic: the queries' gradients written, the keys' and
@@ -739,7 +963,10 @@ void attention_attend_rows_backward(const cuda_training_backend& b, const ml::at
                                     std::type_identity_t<std::span<const float>> dy, const ml::attention_gradients<float>& grads, std::size_t n)
 {
     namespace dc = detail::cuda_ops;
-    device_buffer<float> D(*b.context, n * C.n_heads);
+    // The heads' D = dy . y, then the key splits' partials: the kernels' scratch
+    constexpr std::size_t D_ = C.head_dim;
+    const std::size_t splits = std::clamp<std::size_t>(n / 128, 1, 8), part = C.n_kv_heads * n * D_;
+    const auto space = b.kernels->scratch(n * C.n_heads + (dc::tiled<D_> >= 0 ? 2 * splits * part : 0));
     const float* q = act.q.data();
     const float* k = act.k.data();
     const float* v = act.v.data();
@@ -749,16 +976,31 @@ void attention_attend_rows_backward(const cuda_training_backend& b, const ml::at
     float* gq = grads.q.data();
     float* gk = grads.k.data();
     float* gv = grads.v.data();
-    float* dp = D.span().data();
+    float* dp = space.data();
     const dc::u64 nn = n, window = C.window;
     int H = int(C.n_heads), KVH = int(C.n_kv_heads), d = int(C.head_dim);
     float scale = 1.0f / snicholls::math::sqrt(float(C.head_dim)), cap = ml::attention_softcap_v<C, float>;
-    void* a1[] = {&q, &k, &v, &y, &lse, &g, &gq, &dp, dc::arg(nn), &H, &KVH, &d, dc::arg(window), &scale, &cap};
-    b.kernels->launch(b.kernels->attend_backward_queries_, 32 * n * C.n_heads, a1);
     const float* dc_ = dp;
-    void* a2[] = {&q, &k, &v, &lse, &g, &dc_, &gk, &gv, dc::arg(nn), &H, &KVH, &d, dc::arg(window), &scale, &cap};
-    b.kernels->launch(b.kernels->attend_backward_keys_, 32 * n * C.n_kv_heads, a2);
-    dc::sync(b);   // D is freed on return
+    if constexpr (dc::tiled<C.head_dim> >= 0) {
+        constexpr int i = dc::tiled<C.head_dim>;
+        void* a1[] = {&q, &k, &v, &y, &lse, &g, &gq, &dp, dc::arg(nn), &H, &KVH, dc::arg(window), &scale, &cap};
+        b.kernels->launch_grid2(b.kernels->attend_backward_queries_tiled_[i], unsigned((n + 63) / 64), C.n_heads, 64, a1);
+        float* pk = space.data() + n * C.n_heads;
+        float* pv = pk + splits * part;
+        void* a2[] = {&q, &k, &v, &lse, &g, &dc_, &pk, &pv, dc::arg(nn), &H, &KVH, dc::arg(window), &scale, &cap};
+        b.kernels->launch_grid3(b.kernels->attend_backward_keys_tiled_[i], unsigned((n + 31) / 32), C.n_kv_heads, splits, 32, a2);
+        const float* cpk = pk;
+        const float* cpv = pv;
+        const dc::u64 m = part;
+        int z = int(splits);
+        void* a3[] = {&gk, &gv, &cpk, &cpv, dc::arg(m), &z};
+        b.kernels->launch(b.kernels->attend_keys_reduce_, part, a3);
+    } else {
+        void* a1[] = {&q, &k, &v, &y, &lse, &g, &gq, &dp, dc::arg(nn), &H, &KVH, &d, dc::arg(window), &scale, &cap};
+        b.kernels->launch(b.kernels->attend_backward_queries_, 32 * n * C.n_heads, a1);
+        void* a2[] = {&q, &k, &v, &lse, &g, &dc_, &gk, &gv, dc::arg(nn), &H, &KVH, &d, dc::arg(window), &scale, &cap};
+        b.kernels->launch(b.kernels->attend_backward_keys_, 32 * n * C.n_kv_heads, a2);
+    }
 }
 
 /// \brief The backward pass of QK norm and RoPE on the device, in place on `grads.q` and `grads.k`; the norm weights'
