@@ -140,7 +140,7 @@ TEST(GpuCudaOps, TheNormsAndTheirBackwardAreCoresToRounding)
 }
 
 template <ml::transformer_config C, std::size_t N = 24>
-void whole_step_agrees(std::size_t gemm_attention_max = 4096)
+void whole_step_agrees(std::size_t gemm_attention_max = 4096, gpu::cuda_math math = gpu::cuda_math::float32)
 {
     static const ml::rope_table<float, (N > 32 ? N : 32), C.head_dim> table(ml::rope_base_v<C, float>);
     auto run = [&](auto& st, const auto& backend, bool dev) {
@@ -156,10 +156,19 @@ void whole_step_agrees(std::size_t gemm_attention_max = 4096)
     step<C, N> st(*device().context);
     auto b = backend();
     b.gemm_attention_max = gemm_attention_max;   // 0: the tiled kernels
+    b.math = math;                               // TF32: the products and flash attention on the tensor cores
     run(st, b, true);    // on the device, every buffer in device memory
     run(st, la::reference, false);   // the reference, on the host copies
     cudaDeviceSynchronize();
     using S = step<C, N>;
+    if (math == gpu::cuda_math::tf32) {   // TF32 rounds every product's inputs to 10 bits: normwise, a few parts in 10^3
+        near_normwise(st.m[S::xs].back(), st.m[S::xs].host, 2e-3, "output (tf32)");
+        near_normwise(st.m[S::dxs].back(), st.m[S::dxs].host, 3e-3, "input gradient (tf32)");
+        for (int i = S::gn1w; i <= S::gbdown; ++i)
+            if (i != S::gbk || C.attention_softcap > 0)
+                near_normwise(st.m[std::size_t(i)].back(), st.m[std::size_t(i)].host, 5e-3, "parameter gradient (tf32) " + std::to_string(i - S::gn1w));
+        return;
+    }
     if constexpr (N <= 24) {
         near(st.m[S::xs].back(), st.m[S::xs].host, 1e-4f, "output");
         near(st.m[S::dxs].back(), st.m[S::dxs].host, 1e-4f, "input gradient");
@@ -343,6 +352,18 @@ TEST(GpuCudaOps, TiledAttentionOverManyTokensIsTheReferences)
     whole_step_agrees<gpt2_heads, 150>(0);
     whole_step_agrees<wide_grouped, 100>(0);
     whole_step_agrees<mqa_capped, 130>(0);
+}
+
+// Flash attention on the tensor cores (TF32): heads of 64 (GPT-2's) over several tiles and a partial one, and heads of
+// 32 grouped, rotated, windowed and capped
+constexpr ml::transformer_config flash_mix{.d_model = 128, .n_heads = 4, .n_kv_heads = 2, .head_dim = 32, .d_ff = 128, .norm = ml::norm_kind::rms,
+                                           .norm_eps = 1e-5, .mlp = ml::mlp_kind::swiglu, .rope = ml::rope_kind::half, .rope_base = 10000,
+                                           .window = 40, .attention_softcap = 5};
+TEST(GpuCudaOps, FlashAttentionOnTheTensorCoresIsTheReferencesToTf32)
+{
+    whole_step_agrees<gpt2_heads, 150>(4096, gpu::cuda_math::tf32);
+    whole_step_agrees<gpt2_heads, 24>(4096, gpu::cuda_math::tf32);
+    whole_step_agrees<flash_mix, 130>(4096, gpu::cuda_math::tf32);
 }
 
 TEST(GpuCudaOps, BothAttentionPathsGiveTheReferencesShortStep)

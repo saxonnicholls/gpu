@@ -10,6 +10,11 @@ A version is released when its tag is on a commit where every blocking CI leg is
 - **`linear_heads` and `linear_heads_backward` on the device** (core 0.11.0): the keys' and values' projections for
   every head in one product, permuted to the heads' layout, instead of a product per head. A whole GPT-2 small step
   over 1024 tokens with TF32: 67.5 to 63.2 ms.
+- **Flash attention on the tensor cores** under `cuda_math::tf32`, for heads of 32 and 64 channels: `mma.sync`
+  m16n8k8 in TF32, the online softmax in registers, no `n x n` scores, the masked tiles skipped; the backward in two
+  kernels (queries; keys and values), no atomics, deterministic. GPT-2 small's attention at batch 4 x 1024 tokens:
+  115 to 46 ms a step; the whole step with AdamW 245 to 230 ms. Against PyTorch on llm.c's reference batch: the loss
+  within 5e-4, every gradient tensor within 1.2%.
 - The documentation is built in CI and published to <https://saxonnicholls.github.io/gpu/>, as core's.
 
 ### Corrected

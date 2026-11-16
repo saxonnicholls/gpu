@@ -29,7 +29,13 @@
 ///
 /// **Implementations.** The elementwise steps one thread per element; the norms a warp per row (each lane's part of a
 /// row's sums in order, then the lanes in a fixed order), the weights' and biases' gradients one thread per column summing the rows in order, so the
-/// result does not depend on scheduling; the activations with core's formulas in float. Attention, up to
+/// result does not depend on scheduling; the activations with core's formulas in float. Attention under
+/// `cuda_math::tf32`, for heads of 32 or 64 channels, is **flash attention on the tensor cores** (`mma.sync m16n8k8`,
+/// TF32 in, float accumulated, as FlashAttention-2 without atomics): the forward a block per (64 queries, head), the
+/// online softmax in registers, the log-sum-exp saved, no `n x n` scores, the tiles past the diagonal or outside a
+/// window skipped; the backward one kernel for the queries' gradients and one for the keys' and values' (a block per
+/// 64 keys walking the queries that see them, a group's heads in order), both recomputing the probabilities.
+/// Otherwise, up to
 /// `cuda_training_backend::gemm_attention_max` tokens (4096), is matrix products head by head, as llm.c's: the scores
 /// `S = Q Kᵀ` through cuBLAS (the tensor cores under TF32), a softmax kernel writing the log-sum-exp, `Y = P V`; the
 /// backward recomputes `P` from the log-sum-exp and makes the four gradient products, a group's heads adding into
@@ -50,9 +56,9 @@
 /// **Performance.** `benchmarks/cuda_ops_benchmark.cpp`: a GPT-2-small layer's training step with its data on the
 /// device, against the same step staged; see `BENCHMARKS.md`. A whole GPT-2 small step (124M parameters, sequences of
 /// 1024 tokens, forward, backward, clipping and AdamW) on an RTX PRO 4000 Blackwell with nothing else on it,
-/// 2026-11-17, with `cuda_math::tf32`: 72 ms at batch 1 and 245 ms at batch 4, against llm.c's 34 and 105 ms in
-/// bfloat16; 424 ms at batch 4 in float. Attention's products are about half of it (n x n per head, the masked half
-/// included).
+/// 2026-11-17, with `cuda_math::tf32`: 68.7 ms at batch 1 and 230 ms at batch 4, against llm.c's 34 and 105 ms in
+/// bfloat16; 424 ms at batch 4 in float. At batch 4: the products 131 ms, flash attention 46 ms (115 ms as matrix
+/// products), the rest 57 ms.
 ///
 /// **Tests and demos.** `tests/cuda_ops_test.cpp` (each step against core's, and whole training steps of GPT-2-,
 /// Llama- and nanochat-shaped blocks against the reference), `demos/cuda_ops_demo.cpp`.
@@ -528,6 +534,276 @@ SNICHOLLS_ATTEND_TILED(16)
 SNICHOLLS_ATTEND_TILED(32)
 SNICHOLLS_ATTEND_TILED(64)
 SNICHOLLS_ATTEND_TILED(128)
+// Flash attention on the tensor cores (mma.sync m16n8k8, TF32 in, float accumulated), as FlashAttention-2 but with no
+// atomics: the forward a block per (64 queries, head), four warps of 16 queries; the backward one kernel for the
+// queries' gradients (a block per 64 queries, walking their keys) and one for the keys' and values' (a block per 64
+// keys, walking the queries that see them). Key or query tiles of 32 pass through shared memory; no n x n scores.
+// Fragments of m16n8k8 (g = lane / 4, q4 = lane % 4): A (16 x 8) a0 (g, q4), a1 (g + 8, q4), a2 (g, q4 + 4),
+// a3 (g + 8, q4 + 4); B (8 x 8, k x n) b0 (q4, g), b1 (q4 + 4, g); C (16 x 8) c0 (g, 2 q4), c1 (g, 2 q4 + 1),
+// c2 (g + 8, 2 q4), c3 (g + 8, 2 q4 + 1).
+#define FT 32   // the tile of the other side
+__device__ __forceinline__ unsigned tf32_(float x) { unsigned r; asm("cvt.rna.tf32.f32 %0, %1;" : "=r"(r) : "f"(x)); return r; }
+__device__ __forceinline__ void mma_(float* c, const unsigned* a, unsigned b0, unsigned b1)
+{
+    asm volatile("mma.sync.aligned.m16n8k8.row.col.f32.tf32.tf32.f32 {%0,%1,%2,%3}, {%4,%5,%6,%7}, {%8,%9}, {%0,%1,%2,%3};"
+                 : "+f"(c[0]), "+f"(c[1]), "+f"(c[2]), "+f"(c[3]) : "r"(a[0]), "r"(a[1]), "r"(a[2]), "r"(a[3]), "r"(b0), "r"(b1));
+}
+__device__ __forceinline__ float quad_max_(float x) { x = fmaxf(x, __shfl_xor_sync(0xffffffffu, x, 1)); return fmaxf(x, __shfl_xor_sync(0xffffffffu, x, 2)); }
+__device__ __forceinline__ float quad_sum_(float x) { x += __shfl_xor_sync(0xffffffffu, x, 1); return x + __shfl_xor_sync(0xffffffffu, x, 2); }
+// Whether query t sees key j
+__device__ __forceinline__ bool sees_(u64 t, u64 j, u64 n, u64 window) { return t < n && j <= t && j >= first_(t, window); }
+// A row-major 16-row A operand from global memory, rows r and r + 8 of `base` (stride ld), channels 8s.., times x
+template <int D>
+__device__ __forceinline__ void a_rows_(unsigned (*a)[4], const float* base, u64 ld, u64 ra, u64 rb, u64 n, int q4, float x)
+{
+#pragma unroll
+    for (int s = 0; s < D / 8; ++s) {
+        a[s][0] = tf32_(ra < n ? base[ra * ld + 8 * s + q4] * x : 0.0f);
+        a[s][1] = tf32_(rb < n ? base[rb * ld + 8 * s + q4] * x : 0.0f);
+        a[s][2] = tf32_(ra < n ? base[ra * ld + 8 * s + q4 + 4] * x : 0.0f);
+        a[s][3] = tf32_(rb < n ? base[rb * ld + 8 * s + q4 + 4] * x : 0.0f);
+    }
+}
+// rows[i][c] of a tile into shared memory with a pad, from rows at `base` (stride ld), zero past n
+template <int D, int P>
+__device__ __forceinline__ void tile_(float (*dst)[D + P], const float* base, u64 ld, u64 first, u64 n)
+{
+    for (int i = threadIdx.x; i < FT * D; i += blockDim.x) { const int r = i / D, c = i % D; dst[r][c] = first + r < n ? base[(first + r) * ld + c] : 0.0f; }
+}
+template <int D>
+__device__ void flash_fwd_(const float* q, const float* k, const float* v, float* y, float* lse, u64 n, int H, int KVH, u64 window, float scale, float cap)
+{
+    __shared__ float ks[FT][D + 4], vs[FT][D + 8], ps[4][16][FT + 4];
+    const int warp = threadIdx.x / 32, lane = threadIdx.x % 32, g = lane >> 2, q4 = lane & 3;
+    const int h = blockIdx.y, kvh = h / (H / KVH);
+    const u64 q0 = (u64)blockIdx.x * 64, ra = q0 + warp * 16 + g, rb = ra + 8, qlast = min(q0 + 64, n) - 1;
+    unsigned qa[D / 8][4];
+    a_rows_<D>(qa, q + (u64)h * D, (u64)H * D, ra, rb, n, q4, scale);
+    float o[D / 8][4];
+#pragma unroll
+    for (int t = 0; t < D / 8; ++t) o[t][0] = o[t][1] = o[t][2] = o[t][3] = 0.0f;
+    float m[2] = {-INFINITY, -INFINITY}, l[2] = {0.0f, 0.0f};
+    const float* kb = k + (u64)kvh * n * D;
+    const float* vb = v + (u64)kvh * n * D;
+    for (u64 jt = first_(q0, window) / FT * FT; jt <= qlast; jt += FT) {
+        __syncthreads();
+        tile_<D, 4>(ks, kb, D, jt, n);
+        tile_<D, 8>(vs, vb, D, jt, n);
+        __syncthreads();
+        float sc[FT / 8][4];
+#pragma unroll
+        for (int t = 0; t < FT / 8; ++t) {
+            sc[t][0] = sc[t][1] = sc[t][2] = sc[t][3] = 0.0f;
+#pragma unroll
+            for (int s = 0; s < D / 8; ++s) mma_(sc[t], qa[s], tf32_(ks[8 * t + g][8 * s + q4]), tf32_(ks[8 * t + g][8 * s + q4 + 4]));
+        }
+#pragma unroll
+        for (int half = 0; half < 2; ++half) {
+            const u64 row = half ? rb : ra;
+            float mx = -INFINITY;
+#pragma unroll
+            for (int t = 0; t < FT / 8; ++t)
+#pragma unroll
+                for (int e = 0; e < 2; ++e) {
+                    float x = sc[t][2 * half + e];
+                    if (cap > 0.0f) x = cap * tanhf(x / cap);
+                    x = sees_(row, jt + 8 * t + 2 * q4 + e, n, window) ? x : -INFINITY;
+                    sc[t][2 * half + e] = x;
+                    mx = fmaxf(mx, x);
+                }
+            const float mnew = fmaxf(m[half], quad_max_(mx));
+            const float corr = mnew == -INFINITY ? 1.0f : expf(m[half] - mnew);
+            float sum = 0.0f;
+#pragma unroll
+            for (int t = 0; t < FT / 8; ++t)
+#pragma unroll
+                for (int e = 0; e < 2; ++e) {
+                    const float p = mnew == -INFINITY ? 0.0f : expf(sc[t][2 * half + e] - mnew);
+                    ps[warp][g + 8 * half][8 * t + 2 * q4 + e] = p;
+                    sum += p;
+                }
+            l[half] = l[half] * corr + quad_sum_(sum);
+            m[half] = mnew;
+#pragma unroll
+            for (int t = 0; t < D / 8; ++t) { o[t][2 * half] *= corr; o[t][2 * half + 1] *= corr; }
+        }
+        __syncwarp();
+#pragma unroll
+        for (int s = 0; s < FT / 8; ++s) {
+            const unsigned a[4] = {tf32_(ps[warp][g][8 * s + q4]), tf32_(ps[warp][g + 8][8 * s + q4]), tf32_(ps[warp][g][8 * s + q4 + 4]),
+                                   tf32_(ps[warp][g + 8][8 * s + q4 + 4])};
+#pragma unroll
+            for (int t = 0; t < D / 8; ++t) mma_(o[t], a, tf32_(vs[8 * s + q4][8 * t + g]), tf32_(vs[8 * s + q4 + 4][8 * t + g]));
+        }
+        __syncwarp();
+    }
+#pragma unroll
+    for (int half = 0; half < 2; ++half) {
+        const u64 row = half ? rb : ra;
+        if (row >= n) continue;
+        const float inv = l[half] > 0.0f ? 1.0f / l[half] : 0.0f;
+        float* yr = y + row * (u64)(H * D) + (u64)h * D;
+#pragma unroll
+        for (int t = 0; t < D / 8; ++t) { yr[8 * t + 2 * q4] = o[t][2 * half] * inv; yr[8 * t + 2 * q4 + 1] = o[t][2 * half + 1] * inv; }
+        if (q4 == 0) lse[row * H + h] = l[half] > 0.0f ? m[half] + logf(l[half]) : -INFINITY;
+    }
+}
+// D[t H + h] = dy_t,h . y_t,h: a warp per (token, head)
+extern "C" __global__ void attn_rowdot(const float* dy, const float* y, float* Dd, u64 n, int H, int d)
+{
+    const u64 w = (blockIdx.x * (u64)blockDim.x + threadIdx.x) / LANES; const int lane = threadIdx.x % LANES;
+    if (w >= n * (u64)H) return;
+    const float r = warp_dot_(dy + w * d, y + w * d, d, lane);
+    if (lane == 0) Dd[w] = r;
+}
+// The probability and the score's gradient factor of one score: p = exp(s - l), and ds = p (dp - D) (1 - th^2)
+__device__ __forceinline__ float ds_(float r, float dp, float l, float Dt, float cap, bool vis, float* pout)
+{
+    float s = r, f = 1.0f;
+    if (cap > 0.0f) { const float th = tanhf(r / cap); s = cap * th; f = 1.0f - th * th; }
+    const float p = vis && l != -INFINITY ? expf(s - l) : 0.0f;
+    *pout = p;
+    return p * (dp - Dt) * f;
+}
+template <int D>
+__device__ void flash_dq_(const float* q, const float* k, const float* v, const float* lse, const float* dy, const float* Dd, float* gq, u64 n, int H,
+                          int KVH, u64 window, float scale, float cap)
+{
+    __shared__ float ks[FT][D + 4], vs[FT][D + 4], dss[4][16][FT + 4];
+    const int warp = threadIdx.x / 32, lane = threadIdx.x % 32, g = lane >> 2, q4 = lane & 3;
+    const int h = blockIdx.y, kvh = h / (H / KVH);
+    const u64 q0 = (u64)blockIdx.x * 64, ra = q0 + warp * 16 + g, rb = ra + 8, qlast = min(q0 + 64, n) - 1;
+    unsigned qa[D / 8][4], ga[D / 8][4];
+    a_rows_<D>(qa, q + (u64)h * D, (u64)H * D, ra, rb, n, q4, scale);
+    a_rows_<D>(ga, dy + (u64)h * D, (u64)H * D, ra, rb, n, q4, 1.0f);
+    const float la = ra < n ? lse[ra * H + h] : -INFINITY, lb = rb < n ? lse[rb * H + h] : -INFINITY;
+    const float Da = ra < n ? Dd[ra * H + h] : 0.0f, Db = rb < n ? Dd[rb * H + h] : 0.0f;
+    float dq[D / 8][4];
+#pragma unroll
+    for (int t = 0; t < D / 8; ++t) dq[t][0] = dq[t][1] = dq[t][2] = dq[t][3] = 0.0f;
+    const float* kb = k + (u64)kvh * n * D;
+    const float* vb = v + (u64)kvh * n * D;
+    for (u64 jt = first_(q0, window) / FT * FT; jt <= qlast; jt += FT) {
+        __syncthreads();
+        tile_<D, 4>(ks, kb, D, jt, n);
+        tile_<D, 4>(vs, vb, D, jt, n);
+        __syncthreads();
+#pragma unroll
+        for (int t = 0; t < FT / 8; ++t) {
+            float sc[4] = {0.0f, 0.0f, 0.0f, 0.0f}, dp[4] = {0.0f, 0.0f, 0.0f, 0.0f};
+#pragma unroll
+            for (int s = 0; s < D / 8; ++s) {
+                mma_(sc, qa[s], tf32_(ks[8 * t + g][8 * s + q4]), tf32_(ks[8 * t + g][8 * s + q4 + 4]));
+                mma_(dp, ga[s], tf32_(vs[8 * t + g][8 * s + q4]), tf32_(vs[8 * t + g][8 * s + q4 + 4]));
+            }
+#pragma unroll
+            for (int e = 0; e < 4; ++e) {
+                const u64 row = e < 2 ? ra : rb, j = jt + 8 * t + 2 * q4 + (e & 1);
+                float p;
+                dss[warp][g + 8 * (e >> 1)][8 * t + 2 * q4 + (e & 1)] = ds_(sc[e], dp[e], e < 2 ? la : lb, e < 2 ? Da : Db, cap, sees_(row, j, n, window), &p);
+            }
+        }
+        __syncwarp();
+#pragma unroll
+        for (int s = 0; s < FT / 8; ++s) {
+            const unsigned a[4] = {tf32_(dss[warp][g][8 * s + q4]), tf32_(dss[warp][g + 8][8 * s + q4]), tf32_(dss[warp][g][8 * s + q4 + 4]),
+                                   tf32_(dss[warp][g + 8][8 * s + q4 + 4])};
+#pragma unroll
+            for (int t = 0; t < D / 8; ++t) mma_(dq[t], a, tf32_(ks[8 * s + q4][8 * t + g]), tf32_(ks[8 * s + q4 + 4][8 * t + g]));
+        }
+        __syncwarp();
+    }
+#pragma unroll
+    for (int half = 0; half < 2; ++half) {
+        const u64 row = half ? rb : ra;
+        if (row >= n) continue;
+        float* gr = gq + row * (u64)(H * D) + (u64)h * D;
+#pragma unroll
+        for (int t = 0; t < D / 8; ++t) { gr[8 * t + 2 * q4] = scale * dq[t][2 * half]; gr[8 * t + 2 * q4 + 1] = scale * dq[t][2 * half + 1]; }
+    }
+}
+template <int D>
+__device__ void flash_dkv_(const float* q, const float* k, const float* v, const float* lse, const float* dy, const float* Dd, float* gk, float* gv,
+                           u64 n, int H, int KVH, u64 window, float scale, float cap)
+{
+    __shared__ float qs[FT][D + 4], gs[FT][D + 4], ls[FT], dd[FT], pts[4][16][FT + 4], dts[4][16][FT + 4];
+    const int warp = threadIdx.x / 32, lane = threadIdx.x % 32, g = lane >> 2, q4 = lane & 3;
+    const int kvh = blockIdx.y, group = H / KVH;
+    const u64 j0 = (u64)blockIdx.x * 64, ja = j0 + warp * 16 + g, jb = ja + 8, jlast = min(j0 + 64, n) - 1;
+    unsigned ka[D / 8][4], va[D / 8][4];
+    a_rows_<D>(ka, k + (u64)kvh * n * D, D, ja, jb, n, q4, 1.0f);
+    a_rows_<D>(va, v + (u64)kvh * n * D, D, ja, jb, n, q4, 1.0f);
+    float dk[D / 8][4], dv[D / 8][4];
+#pragma unroll
+    for (int t = 0; t < D / 8; ++t) dk[t][0] = dk[t][1] = dk[t][2] = dk[t][3] = dv[t][0] = dv[t][1] = dv[t][2] = dv[t][3] = 0.0f;
+    const u64 tend = (window == 0 || jlast + window - 1 >= n - 1) ? n - 1 : jlast + window - 1;
+    for (int h = kvh * group; h < (kvh + 1) * group; ++h)
+        for (u64 tt = j0 / FT * FT; tt <= tend; tt += FT) {
+            __syncthreads();
+            tile_<D, 4>(qs, q + (u64)h * D, (u64)H * D, tt, n);
+            tile_<D, 4>(gs, dy + (u64)h * D, (u64)H * D, tt, n);
+            for (int i = threadIdx.x; i < FT; i += blockDim.x) { const bool in = tt + i < n; ls[i] = in ? lse[(tt + i) * H + h] : -INFINITY; dd[i] = in ? Dd[(tt + i) * H + h] : 0.0f; }
+            __syncthreads();
+#pragma unroll
+            for (int t = 0; t < FT / 8; ++t) {
+                float sc[4] = {0.0f, 0.0f, 0.0f, 0.0f}, dp[4] = {0.0f, 0.0f, 0.0f, 0.0f};
+#pragma unroll
+                for (int s = 0; s < D / 8; ++s) {
+                    mma_(sc, ka[s], tf32_(qs[8 * t + g][8 * s + q4]), tf32_(qs[8 * t + g][8 * s + q4 + 4]));
+                    mma_(dp, va[s], tf32_(gs[8 * t + g][8 * s + q4]), tf32_(gs[8 * t + g][8 * s + q4 + 4]));
+                }
+#pragma unroll
+                for (int e = 0; e < 4; ++e) {
+                    const int qi = 8 * t + 2 * q4 + (e & 1);
+                    const u64 key = e < 2 ? ja : jb, tq = tt + qi;
+                    float p;
+                    const float d = ds_(scale * sc[e], dp[e], ls[qi], dd[qi], cap, key < n && sees_(tq, key, n, window), &p);
+                    pts[warp][g + 8 * (e >> 1)][qi] = p;
+                    dts[warp][g + 8 * (e >> 1)][qi] = d;
+                }
+            }
+            __syncwarp();
+#pragma unroll
+            for (int s = 0; s < FT / 8; ++s) {
+                const unsigned ap[4] = {tf32_(pts[warp][g][8 * s + q4]), tf32_(pts[warp][g + 8][8 * s + q4]), tf32_(pts[warp][g][8 * s + q4 + 4]),
+                                        tf32_(pts[warp][g + 8][8 * s + q4 + 4])};
+                const unsigned ad[4] = {tf32_(dts[warp][g][8 * s + q4]), tf32_(dts[warp][g + 8][8 * s + q4]), tf32_(dts[warp][g][8 * s + q4 + 4]),
+                                        tf32_(dts[warp][g + 8][8 * s + q4 + 4])};
+#pragma unroll
+                for (int t = 0; t < D / 8; ++t) {
+                    mma_(dv[t], ap, tf32_(gs[8 * s + q4][8 * t + g]), tf32_(gs[8 * s + q4 + 4][8 * t + g]));
+                    mma_(dk[t], ad, tf32_(qs[8 * s + q4][8 * t + g]), tf32_(qs[8 * s + q4 + 4][8 * t + g]));
+                }
+            }
+            __syncwarp();
+        }
+#pragma unroll
+    for (int half = 0; half < 2; ++half) {
+        const u64 key = half ? jb : ja;
+        if (key >= n) continue;
+        const u64 at = ((u64)kvh * n + key) * D;
+#pragma unroll
+        for (int t = 0; t < D / 8; ++t)
+#pragma unroll
+            for (int e = 0; e < 2; ++e) {
+                const int c = 8 * t + 2 * q4 + e;
+                gk[at + c] += scale * dk[t][2 * half + e];
+                gv[at + c] += dv[t][2 * half + e];
+            }
+    }
+}
+#define SNICHOLLS_FLASH(D)                                                                                                                  \
+    extern "C" __global__ void __launch_bounds__(128) flash_fwd_##D(const float* q, const float* k, const float* v, float* y, float* lse,   \
+        u64 n, int H, int KVH, u64 window, float scale, float cap)                                                                         \
+    { flash_fwd_<D>(q, k, v, y, lse, n, H, KVH, window, scale, cap); }                                                                     \
+    extern "C" __global__ void __launch_bounds__(128) flash_dq_##D(const float* q, const float* k, const float* v, const float* lse,        \
+        const float* dy, const float* Dd, float* gq, u64 n, int H, int KVH, u64 window, float scale, float cap)                            \
+    { flash_dq_<D>(q, k, v, lse, dy, Dd, gq, n, H, KVH, window, scale, cap); }                                                             \
+    extern "C" __global__ void __launch_bounds__(128) flash_dkv_##D(const float* q, const float* k, const float* v, const float* lse,       \
+        const float* dy, const float* Dd, float* gk, float* gv, u64 n, int H, int KVH, u64 window, float scale, float cap)                 \
+    { flash_dkv_<D>(q, k, v, lse, dy, Dd, gk, gv, n, H, KVH, window, scale, cap); }
+SNICHOLLS_FLASH(32)
+SNICHOLLS_FLASH(64)
 extern "C" {
 // The model's other steps: embeddings, the fused classifier, AdamW, and the reductions
 __global__ void embed(const float* table, const float* pos, const unsigned* ids, float* out, u64 n, u64 d)
@@ -658,6 +934,13 @@ public:
             all.emplace_back("attend_backward_queries_tiled_" + d, &k->attend_backward_queries_tiled_[i]);
             all.emplace_back("attend_backward_keys_tiled_" + d, &k->attend_backward_keys_tiled_[i]);
         }
+        for (std::size_t i = 0; i < 2; ++i) {
+            const std::string d = std::to_string(32 << i);
+            all.emplace_back("flash_fwd_" + d, &k->flash_fwd_[i]);
+            all.emplace_back("flash_dq_" + d, &k->flash_dq_[i]);
+            all.emplace_back("flash_dkv_" + d, &k->flash_dkv_[i]);
+        }
+        all.emplace_back("attn_rowdot", &k->attn_rowdot_);
         for (const auto& [name, slot] : all)
             if (const cudaError_t e = cudaLibraryGetKernel(slot, k->library_, name.c_str()); e != cudaSuccess) {
                 std::fprintf(stderr, "snicholls::gpu::cuda_kernels: cudaLibraryGetKernel(%s): %s\n", name.c_str(), cudaGetErrorString(e));
@@ -745,6 +1028,11 @@ public:
         for (const auto& [kernel, name] : names)
             if (kernel == k)
                 return name;
+        for (std::size_t i = 0; i < 2; ++i)
+            if (k == flash_fwd_[i] || k == flash_dq_[i] || k == flash_dkv_[i])
+                return k == flash_fwd_[i] ? "flash_fwd" : k == flash_dq_[i] ? "flash_dq" : "flash_dkv";
+        if (k == attn_rowdot_)
+            return "attn_rowdot";
         for (std::size_t i = 0; i < 4; ++i)
             if (k == attend_tiled_[i] || k == attend_backward_queries_tiled_[i] || k == attend_backward_keys_tiled_[i])
                 return k == attend_tiled_[i] ? "attend_tiled" : k == attend_backward_queries_tiled_[i] ? "attend_backward_queries_tiled" : "attend_backward_keys_tiled";
@@ -782,6 +1070,10 @@ public:
     std::array<cudaKernel_t, 4> attend_tiled_{};                    ///< `attend_tiled_D`, for heads of 16, 32, 64 and 128 channels.
     std::array<cudaKernel_t, 4> attend_backward_queries_tiled_{};   ///< `attend_backward_queries_tiled_D`.
     std::array<cudaKernel_t, 4> attend_backward_keys_tiled_{};      ///< `attend_backward_keys_tiled_D`.
+    std::array<cudaKernel_t, 2> flash_fwd_{};                       ///< `flash_fwd_D`, for heads of 32 and 64 channels.
+    std::array<cudaKernel_t, 2> flash_dq_{};                        ///< `flash_dq_D`.
+    std::array<cudaKernel_t, 2> flash_dkv_{};                       ///< `flash_dkv_D`.
+    cudaKernel_t attn_rowdot_ = nullptr;                            ///< `attn_rowdot`.
     /// @}
 
 private:
@@ -807,6 +1099,9 @@ namespace detail::cuda_ops {
     inline void sync(const cuda_training_backend& b) { cuda::check(cudaStreamSynchronize(b.context->stream()), "cudaStreamSynchronize"); }
     template <typename T>
     void* arg(const T& v) { return const_cast<void*>(static_cast<const void*>(&v)); }
+    // The flash kernels' index for a head size, or -1
+    template <std::size_t D>
+    constexpr int flash = D == 32 ? 0 : D == 64 ? 1 : -1;
     // The tiled attention kernels' index for a head size, or -1 where only the warp-per-row kernels serve
     template <std::size_t D>
     constexpr int tiled = D == 16 ? 0 : D == 32 ? 1 : D == 64 ? 2 : D == 128 ? 3 : -1;
@@ -1075,7 +1370,11 @@ void attention_attend_rows(const cuda_training_backend& b, const ml::attention_a
     const dc::u64 nn = n, window = C.window;
     int H = int(C.n_heads), KVH = int(C.n_kv_heads), d = int(C.head_dim);
     float scale = 1.0f / snicholls::math::sqrt(float(C.head_dim)), cap = ml::attention_softcap_v<C, float>;
-    if (n <= b.gemm_attention_max) {
+    if (dc::flash<C.head_dim> >= 0 && b.math == cuda_math::tf32) {
+        // Flash attention on the tensor cores: a block per (64 queries, head)
+        void* args[] = {&q, &k, &v, &y, &lse, dc::arg(nn), &H, &KVH, dc::arg(window), &scale, &cap};
+        b.kernels->launch_grid2(b.kernels->flash_fwd_[std::size_t(dc::flash<C.head_dim>)], unsigned((n + 63) / 64), C.n_heads, 128, args);
+    } else if (n <= b.gemm_attention_max) {
         // Per head: S = scale Q_h K^T, the softmax in place (lse written), Y_h = P V
         constexpr std::size_t dh = C.head_dim, hd = C.n_heads * C.head_dim, group = C.n_heads / C.n_kv_heads;
         float* S = b.kernels->scratch(n * n).data();
@@ -1104,6 +1403,32 @@ void attention_attend_rows_backward(const cuda_training_backend& b, const ml::at
                                     std::type_identity_t<std::span<const float>> dy, const ml::attention_gradients<float>& grads, std::size_t n)
 {
     namespace dc = detail::cuda_ops;
+    if (dc::flash<C.head_dim> >= 0 && b.math == cuda_math::tf32) {
+        // Flash attention's backward on the tensor cores: D = dy . y per (token, head), then the queries' gradients (a block
+        // per 64 queries) and the keys' and values' (a block per 64 keys, added into)
+        constexpr std::size_t fi = std::size_t(dc::flash<C.head_dim>);
+        float* Dd = b.kernels->scratch(n * C.n_heads).data();
+        const float* q = act.q.data();
+        const float* k = act.k.data();
+        const float* v = act.v.data();
+        const float* y = act.y.data();
+        const float* lse = act.lse.data();
+        const float* g = dy.data();
+        float* gq = grads.q.data();
+        float* gk = grads.k.data();
+        float* gv = grads.v.data();
+        const dc::u64 nn = n, window = C.window;
+        int H = int(C.n_heads), KVH = int(C.n_kv_heads), d = int(C.head_dim);
+        float scale = 1.0f / snicholls::math::sqrt(float(C.head_dim)), cap = ml::attention_softcap_v<C, float>;
+        void* a0[] = {&g, &y, &Dd, dc::arg(nn), &H, &d};
+        b.kernels->launch(b.kernels->attn_rowdot_, 32 * n * C.n_heads, a0);
+        const float* cD = Dd;
+        void* a1[] = {&q, &k, &v, &lse, &g, &cD, &gq, dc::arg(nn), &H, &KVH, dc::arg(window), &scale, &cap};
+        b.kernels->launch_grid2(b.kernels->flash_dq_[fi], unsigned((n + 63) / 64), C.n_heads, 128, a1);
+        void* a2[] = {&q, &k, &v, &lse, &g, &cD, &gk, &gv, dc::arg(nn), &H, &KVH, dc::arg(window), &scale, &cap};
+        b.kernels->launch_grid2(b.kernels->flash_dkv_[fi], unsigned((n + 63) / 64), C.n_kv_heads, 128, a2);
+        return;
+    }
     if (n <= b.gemm_attention_max) {
         // Per head, from the saved lse (nothing else kept): S = scale Q_h K^T, P from S, dV += P^T dY_h, dP = dY_h V^T,
         // dS from dP, dQ_h = scale dS K, dK += scale dS^T Q_h. A group's heads add into its keys' and values'
