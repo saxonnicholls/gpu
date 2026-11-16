@@ -15,6 +15,8 @@ const snicholls::gpu::opencl_backend device{context.get()};
 snicholls::linalg::gemm(device, 1.0f, x, snicholls::linalg::transposed(w), 0.0f, y);   // Y = X Wᵀ on the GPU
 ```
 
+See `ROADMAP.md` for where this is going: large-scale training of transformers on GPUs.
+
 ## Use
 
 As a submodule, after core:

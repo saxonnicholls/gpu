@@ -11,11 +11,17 @@
 //  reference takes seconds), checked against the reference once. A fairness check refuses to benchmark unless every
 //  result agrees to the bit.
 //
+//  Training: one GPT-2-small layer (768 wide, 12 heads, MLP of 3072, layer norm, tanh GELU, biases) over 128 tokens,
+//  forward with its activations saved and backward, through core's batched passes (ml::block_forward_sequence and
+//  ml::block_backward with a backend): on the device and on the host's reference, which must agree to the bit; and,
+//  for context, core's per-token path on the host (its own order of summation, so not a pair).
+//
 
 #include <snicholls/gpu/opencl.hpp>
 
 #include <snicholls/core/linalg/backend.hpp>
 #include <snicholls/core/linalg/reference.hpp>
+#include <snicholls/core/ml/transformer_block.hpp>
 
 #include <benchmark/benchmark.h>
 
@@ -25,6 +31,7 @@
 #include <cstdio>
 #include <cstring>
 #include <memory>
+#include <span>
 #include <utility>
 #include <vector>
 
@@ -111,6 +118,110 @@ BENCHMARK(BM_Gemm<on_device>)->Name("BM_Gemm_Device")->Apply(shapes);
 BENCHMARK(BM_Gemm<on_device_directly>)->Name("BM_Gemm_DeviceDirectly")->Apply(shapes);
 BENCHMARK(BM_Gemm<on_device>)->Name("BM_Gemm_DeviceOnly")->Args({1024, 1024, 1024, 0})->Args({1024, 1024, 1024, 1})->Unit(benchmark::kMillisecond);
 
+// ---- training a GPT-2-small layer ----
+
+namespace ml = snicholls::ml;
+constexpr ml::transformer_config tc = ml::gpt2_small;
+constexpr std::size_t td = tc.d_model, tf = tc.d_ff, tn = 128;
+
+struct layer_t {
+    using v = std::vector<float>;
+    v ln1w = stream(td, 3), ln1b = stream(td, 4), wq = stream(td * td, 5), wk = stream(td * td, 6), wv = stream(td * td, 7),
+      bq = stream(td, 8), bk = stream(td, 9), bv = stream(td, 10), wo = stream(td * td, 11), bo = stream(td, 12),
+      ln2w = stream(td, 13), ln2b = stream(td, 14), wup = stream(tf * td, 15), bup = stream(tf, 16), wdown = stream(td * tf, 17),
+      bdown = stream(td, 18);
+    layer_t()
+    {
+        for (float& x : ln1w)
+            x += 1.0f;
+        for (float& x : ln2w)
+            x += 1.0f;
+        for (auto* m : {&wq, &wk, &wv, &wo, &wup, &wdown})
+            for (float& x : *m)
+                x *= 0.1f;
+    }
+    ml::block_weights<ml::dense_weights<float>> weights() const
+    {
+        using W = ml::dense_weights<float>;
+        ml::block_weights<W> w{};
+        w.norm1_weight = ln1w;
+        w.norm1_bias = ln1b;
+        w.attention = {W{wq, td, td}, W{wk, td, td}, W{wv, td, td}, W{wo, td, td}, bq, bk, bv, bo};
+        w.norm2_weight = ln2w;
+        w.norm2_bias = ln2b;
+        w.mlp = {W{wup, tf, td}, W{}, W{wdown, td, tf}, bup, {}, bdown};
+        return w;
+    }
+};
+
+const layer_t& layer()
+{
+    static const layer_t l;
+    return l;
+}
+
+// One step's buffers: the sequence, what the forward saves, and every gradient with the batched path's working space
+struct step_t {
+    using v = std::vector<float>;
+    v xs = stream(tn * td, 20), dxs = stream(tn * td, 21);
+    v x0 = v(tn * td), h1 = x0, x1 = x0, h2 = x0, q = x0, k = x0, val = x0, y = x0, lse = v(tn * tc.n_heads), up = v(tn * tf), hidden = up;
+    v g1w = v(td), g1b = v(td), g2w = v(td), g2b = v(td), gq = v(tn * td), gk = gq, gv = gq, gwq = v(td * td), gwk = gwq, gwv = gwq,
+      gwo = gwq, gbq = v(td), gbk = gbq, gbv = gbq, gbo = gbq, gup = v(tf * td), gupb = v(tf), gdown = v(td * tf), gdownb = v(td),
+      scratch = v(tn * td), dy = v(tn * td), mlp_scratch = v(tn * tf);
+    ml::block_activations<float> act() { return {x0, h1, x1, h2, {q, k, val, {}, {}, y, lse}, up, {}, hidden}; }
+    ml::block_gradients<float> grads()
+    {
+        return {g1w, g1b, g2w, g2b, {gq, gk, gv, gwq, gwk, gwv, gwo, gbq, gbk, gbv, gbo, {}, {}, dy},
+                {gup, {}, gdown, gupb, {}, gdownb, mlp_scratch}, scratch};
+    }
+};
+
+template <typename B>
+void train_batched(const B& backend, step_t& s)
+{
+    static const auto w = layer().weights();
+    ml::block_forward_sequence<tc>(backend, w, std::span<float>(s.xs), ml::no_rope, s.act());
+    ml::block_backward<tc>(backend, w, ml::no_rope, s.act(), std::span<float>(s.dxs), s.grads());
+}
+
+void train_on_device(step_t& s) { train_batched(gpu::opencl_backend{device()}, s); }
+void train_on_host(step_t& s) { train_batched(la::reference, s); }
+void train_per_token(step_t& s)
+{
+    static const auto w = layer().weights();
+    ml::block_forward_sequence<tc>(w, s.xs, ml::no_rope, s.act());
+    ml::block_backward<tc>(w, ml::no_rope, s.act(), s.dxs, s.grads());
+}
+
+template <void (*Train)(step_t&)>
+void BM_Train(benchmark::State& state)
+{
+    step_t s;
+    const std::vector<float> x0 = s.xs, d0 = s.dxs;
+    for (auto _ : state) {
+        s.xs = x0;
+        s.dxs = d0;   // the same step every iteration; the weights' gradients keep accumulating
+        Train(s);
+        benchmark::DoNotOptimize(s.dxs.data());
+        benchmark::ClobberMemory();
+    }
+    state.SetItemsProcessed(state.iterations() * std::int64_t(tn));   // tokens
+}
+BENCHMARK(BM_Train<train_on_device>)->Name("BM_TrainGpt2SmallLayer_Device")->Unit(benchmark::kMillisecond);
+BENCHMARK(BM_Train<train_on_host>)->Name("BM_TrainGpt2SmallLayer_HostReference")->Unit(benchmark::kMillisecond);
+BENCHMARK(BM_Train<train_per_token>)->Name("BM_TrainGpt2SmallLayer_HostPerToken_Context")->Unit(benchmark::kMillisecond);
+
+bool training_agrees()
+{
+    step_t d, h;
+    train_on_device(d);
+    train_on_host(h);
+    for (const auto m : {&step_t::xs, &step_t::dxs, &step_t::gwq, &step_t::gwo, &step_t::gup, &step_t::gdown, &step_t::g1w, &step_t::gbq})
+        if (std::memcmp((d.*m).data(), (h.*m).data(), (d.*m).size() * sizeof(float)) != 0)
+            return false;
+    return true;
+}
+
 bool fair()
 {
     if (!device())
@@ -125,7 +236,7 @@ bool fair()
             if (std::memcmp(h.c.data(), d.c.data(), bytes) != 0 || std::memcmp(h.c.data(), dd.c.data(), bytes) != 0)
                 return false;
         }
-    return true;
+    return training_agrees();
 }
 
 } // namespace

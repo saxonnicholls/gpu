@@ -44,7 +44,7 @@ if(NOT EXISTS "${SNICHOLLS_GPU_CORE_ROOT}/CMakeLists.txt")
                         "Run: git submodule update --init --recursive")
 endif()
 add_subdirectory(${SNICHOLLS_GPU_CORE_ROOT} ${CMAKE_CURRENT_BINARY_DIR}/third_party/core EXCLUDE_FROM_ALL)
-snicholls_core_require(0.8.0)
+snicholls_core_require(0.9.0)
 
 find_package(OpenCL REQUIRED)
 
