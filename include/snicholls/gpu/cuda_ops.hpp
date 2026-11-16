@@ -1087,6 +1087,8 @@ private:
 /// `device_buffer` memory. Trivially copyable.
 struct cuda_training_backend : cuda_backend {
     const cuda_kernels* kernels = nullptr;   ///< The compiled kernels; must outlive the backend.
+    bool flash_attention = true;             ///< Under `cuda_math::tf32`, heads of 32 or 64 channels: flash attention on the
+                                             ///< tensor cores; false for the matrix-product path.
     std::size_t gemm_attention_max = 4096;   ///< The longest sequence whose attention runs as matrix products (cuBLAS,
                                              ///< so on the tensor cores under `cuda_math::tf32`), its `n x n` scores
                                              ///< three times in the kernels' scratch; longer ones take the tiled kernels.
@@ -1370,7 +1372,7 @@ void attention_attend_rows(const cuda_training_backend& b, const ml::attention_a
     const dc::u64 nn = n, window = C.window;
     int H = int(C.n_heads), KVH = int(C.n_kv_heads), d = int(C.head_dim);
     float scale = 1.0f / snicholls::math::sqrt(float(C.head_dim)), cap = ml::attention_softcap_v<C, float>;
-    if (dc::flash<C.head_dim> >= 0 && b.math == cuda_math::tf32) {
+    if (dc::flash<C.head_dim> >= 0 && b.math == cuda_math::tf32 && b.flash_attention) {
         // Flash attention on the tensor cores: a block per (64 queries, head)
         void* args[] = {&q, &k, &v, &y, &lse, dc::arg(nn), &H, &KVH, dc::arg(window), &scale, &cap};
         b.kernels->launch_grid2(b.kernels->flash_fwd_[std::size_t(dc::flash<C.head_dim>)], unsigned((n + 63) / 64), C.n_heads, 128, args);
@@ -1403,7 +1405,7 @@ void attention_attend_rows_backward(const cuda_training_backend& b, const ml::at
                                     std::type_identity_t<std::span<const float>> dy, const ml::attention_gradients<float>& grads, std::size_t n)
 {
     namespace dc = detail::cuda_ops;
-    if (dc::flash<C.head_dim> >= 0 && b.math == cuda_math::tf32) {
+    if (dc::flash<C.head_dim> >= 0 && b.math == cuda_math::tf32 && b.flash_attention) {
         // Flash attention's backward on the tensor cores: D = dy . y per (token, head), then the queries' gradients (a block
         // per 64 queries) and the keys' and values' (a block per 64 keys, added into)
         constexpr std::size_t fi = std::size_t(dc::flash<C.head_dim>);

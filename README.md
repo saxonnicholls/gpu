@@ -4,7 +4,9 @@
 [![Docs](https://img.shields.io/badge/docs-doxygen-blue)](https://saxonnicholls.github.io/gpu/)
 
 **Documentation:** <https://saxonnicholls.github.io/gpu/>: the newest release at the root, every version under
-`/vX.Y.Z/`, and the latest `main` under `/main/`.
+`/vX.Y.Z/`, and the latest `main` under `/main/`. **Performance:** [docs/performance.md](docs/performance.md), how fast
+a transformer trains on each path, how it was measured, and the comparison with llm.c; the raw figures in
+[BENCHMARKS.md](BENCHMARKS.md).
 
 Backends of [snicholls-core](https://github.com/saxonnicholls/core)'s interfaces on GPUs. Core is standard-library
 only and never includes a device header; it states the interfaces (here `linalg::blas_backend`) and checks every

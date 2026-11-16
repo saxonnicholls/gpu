@@ -7,6 +7,7 @@ PROJECT_NUMBER         = @PROJECT_VERSION@
 PROJECT_BRIEF          = "GPU backends of snicholls-core's interfaces: linalg on OpenCL"
 OUTPUT_DIRECTORY       = @DOXYGEN_OUTPUT_DIR@
 INPUT                  = @CMAKE_CURRENT_SOURCE_DIR@/README.md \
+                         @CMAKE_CURRENT_SOURCE_DIR@/BENCHMARKS.md \
                          @CMAKE_CURRENT_SOURCE_DIR@/docs \
                          @CMAKE_CURRENT_SOURCE_DIR@/include
 FILE_PATTERNS          = *.hpp *.md *.dox
