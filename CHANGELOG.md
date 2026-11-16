@@ -20,6 +20,8 @@ A version is released when its tag is on a commit where every blocking CI leg is
   `gemm` and `gemv`) returns once the product is queued when its operands and result are all device memory; it is
   ordered before later work on the context's stream and before a `download`, and `cuda_context::synchronize()` waits
   for it. A product touching host memory still returns finished. The whole GPT-2 step: 78.3 to 70.2 ms.
+- **`sum_rows` a warp per column** (each lane's rows in order, then a fixed tree): deterministic, core's sequential sum
+  to rounding rather than to the bit. The whole GPT-2 step: 70.2 to 67.7 ms.
 
 ## 0.2.0 - 2026-11-16
 

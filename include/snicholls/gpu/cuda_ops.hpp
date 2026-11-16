@@ -48,7 +48,7 @@
 ///
 /// **Performance.** `benchmarks/cuda_ops_benchmark.cpp`: a GPT-2-small layer's training step with its data on the
 /// device, against the same step staged; see `BENCHMARKS.md`. A whole GPT-2 small step (124M parameters, one sequence
-/// of 1024 tokens, forward, backward and clipping) on an RTX PRO 4000 Blackwell, 2026-11-17: 119 ms in float, 70.2 ms
+/// of 1024 tokens, forward, backward and clipping) on an RTX PRO 4000 Blackwell, 2026-11-17: 116 ms in float, 67.7 ms
 /// with `cuda_math::tf32`, against llm.c's 64.4 ms in bfloat16 (288 ms with attention a warp per (token, head), 98.5 ms
 /// with the tiled kernels under TF32, 78.3 ms before products over device memory stopped waiting for the stream).
 ///
@@ -114,8 +114,20 @@ __global__ void copy(const float* a, float* x, u64 n) { const u64 i = blockIdx.x
 __global__ void add(const float* a, float* x, u64 n) { const u64 i = blockIdx.x * (u64)blockDim.x + threadIdx.x; if (i < n) x[i] = a[i] + x[i]; }
 __global__ void add_bias_rows(float* y, const float* b, u64 rows, u64 r)
 { const u64 i = blockIdx.x * (u64)blockDim.x + threadIdx.x; if (i < rows * r) y[i] += b[i % r]; }
-__global__ void sum_rows(const float* y, float* into, u64 rows, u64 r)
-{ const u64 i = blockIdx.x * (u64)blockDim.x + threadIdx.x; if (i >= r) return; float s = into[i]; for (u64 t = 0; t < rows; ++t) s += y[t * r + i]; into[i] = s; }
+}
+// A warp per column: each lane sums its rows (lane, lane + 32, ...) in order, then the lanes in a fixed tree
+#define LANES 32
+extern "C" __device__ float warp_sum_(float s);   // defined below, with the attention kernels
+extern "C" __global__ void sum_rows(const float* y, float* into, u64 rows, u64 r)
+{
+    const u64 i = (blockIdx.x * (u64)blockDim.x + threadIdx.x) / LANES; const int lane = threadIdx.x % LANES;
+    if (i >= r) return;
+    float s = 0.0f;
+    for (u64 t = lane; t < rows; t += LANES) s += y[t * r + i];
+    s = warp_sum_(s);
+    if (lane == 0) into[i] += s;
+}
+extern "C" {
 __global__ void activate(const float* up, const float* gate, float* hidden, u64 m, int kind)
 {
     const u64 i = blockIdx.x * (u64)blockDim.x + threadIdx.x; if (i >= m) return;
@@ -234,7 +246,6 @@ __global__ void position_backward(float* gq, float* gk, const float* q_raw, cons
 __device__ u64 first_(u64 t, u64 window) { return (window == 0 || window > t) ? 0 : t + 1 - window; }
 // One warp per (token, head): lane l holds channels l, l + 32, ...; a dot product sums each lane's channels in order,
 // then the lanes down to lane 0, then broadcasts lane 0's sum, so every lane has the same value
-#define LANES 32
 #define PER_LANE 8   // MAXD / LANES
 __device__ float warp_sum_(float s)
 {
@@ -835,7 +846,8 @@ inline void add_bias_rows(const cuda_training_backend& b, std::span<float> ys, s
     b.kernels->launch(b.kernels->add_bias_rows_, ys.size(), args);
 }
 
-/// \brief `into += Σ_t ys_t` on the device, the rows in order. \param b The backend. \param ys Device memory.
+/// \brief `into += Σ_t ys_t` on the device: a warp per column, each lane's rows in order, then the lanes in a fixed
+/// tree (deterministic; core's sequential sum to rounding). \param b The backend. \param ys Device memory.
 /// \param into Device memory, added into.
 inline void sum_rows(const cuda_training_backend& b, std::type_identity_t<std::span<const float>> ys, std::span<float> into)
 {
@@ -843,7 +855,7 @@ inline void sum_rows(const cuda_training_backend& b, std::type_identity_t<std::s
     float* ip = into.data();
     const detail::cuda_ops::u64 r = into.size(), rows = ys.size() / into.size();
     void* args[] = {&y, &ip, detail::cuda_ops::arg(rows), detail::cuda_ops::arg(r)};
-    b.kernels->launch(b.kernels->sum_rows_, into.size(), args);
+    b.kernels->launch(b.kernels->sum_rows_, 32 * into.size(), args);   // a warp per column
 }
 
 /// \brief The MLP's activation on the device. \tparam C The configuration. \param b The backend.

@@ -98,7 +98,7 @@ void near_normwise(const std::vector<float>& got, const std::vector<float>& want
 constexpr ml::transformer_config small{.d_model = 64, .n_heads = 4, .n_kv_heads = 4, .head_dim = 16, .d_ff = 128,
                                        .norm = ml::norm_kind::layer, .norm_eps = 1e-5, .mlp = ml::mlp_kind::gelu_tanh, .bias = true};
 
-TEST(GpuCudaOps, TheElementwiseStepsAreCoresToTheBit)
+TEST(GpuCudaOps, TheElementwiseStepsAreCoresToTheBitAndTheSumsToRounding)
 {
     const auto b = backend();
     mirror x(stream(1000, 1)), a(stream(1000, 2)), bias(stream(40, 3)), into(stream(40, 4));
@@ -111,7 +111,7 @@ TEST(GpuCudaOps, TheElementwiseStepsAreCoresToTheBit)
     ml::sum_rows(la::reference, std::span<const float>(hx), std::span<float>(hinto));
     cudaDeviceSynchronize();
     EXPECT_EQ(x.back(), hx);           // additions in the same order: the same bits
-    EXPECT_EQ(into.back(), hinto);
+    near(into.back(), hinto, 1e-6f, "sum_rows");   // the rows summed lane by lane, then a tree: rounding
     gpu::fill_rows(b, x.d(), 2.5f);
     gpu::copy_rows(b, std::span<const float>(x.d()), a.d());
     cudaDeviceSynchronize();
