@@ -256,6 +256,26 @@ TEST(GpuCudaOps, EmbeddingsTheClassifierAdamwAndTheReductionsAreCores)
     EXPECT_EQ(big.back(), hbig);
 }
 
+// The projections head by head as one product and a permutation, against core's per-head loop
+TEST(GpuCudaOps, LinearHeadsAreTheReferencesPerHeadProducts)
+{
+    const auto b = backend();
+    constexpr std::size_t heads = 4, d = 16, rows = heads * d, cols = 48, n = 37;
+    mirror w(stream(rows * cols, 41, 0.3f)), xs(stream(n * cols, 42)), bias(stream(rows, 43, 0.1f)), out{std::vector<float>(n * rows)},
+        douts(stream(n * rows, 44)), dxs(stream(n * cols, 45)), dw(stream(rows * cols, 46)), db(stream(rows, 47));
+    const ml::dense_weights<float> dev{w.d(), rows, cols}, host{w.host, rows, cols};
+    gpu::linear_heads(b, dev, std::span<const float>(xs.d()), out.d(), std::span<const float>(bias.d()), heads);
+    gpu::linear_heads_backward(b, dev, std::span<const float>(xs.d()), std::span<const float>(douts.d()), dxs.d(), dw.d(), db.d(), heads);
+    auto hout = out.host, hdxs = dxs.host, hdw = dw.host, hdb = db.host;
+    ml::linear_heads(la::reference, host, std::span<const float>(xs.host), std::span<float>(hout), std::span<const float>(bias.host), heads);
+    ml::linear_heads_backward(la::reference, host, std::span<const float>(xs.host), std::span<const float>(douts.host), std::span<float>(hdxs),
+                              std::span<float>(hdw), std::span<float>(hdb), heads);
+    near(out.back(), hout, 1e-5f, "outputs");
+    near(dxs.back(), hdxs, 1e-5f, "input gradient");
+    near(dw.back(), hdw, 1e-5f, "weight gradient");
+    near(db.back(), hdb, 1e-5f, "bias gradient");
+}
+
 // The whole LM-head loss on the device: core's batched form through the CUDA backend's products and kernels
 TEST(GpuCudaOps, TheSequencesLossThroughTheHeadIsTheReferences)
 {

@@ -12,7 +12,8 @@
 /// **Overview.** Core's batched passes (`ml::block_forward_sequence`, `ml::block_backward` and the attention, MLP and
 /// linear passes beneath them) make every step a call with their backend (core's TRAINING.md T9): the products, and
 /// `fill_rows`, `copy_rows`, `add_rows`, `add_bias_rows`, `sum_rows`, `mlp_activate_rows` and its backward,
-/// `block_norm_rows` and its backward, and the four attention steps. This header overloads each for
+/// `block_norm_rows` and its backward, the four attention steps, and `linear_heads` with its backward (the keys' and
+/// values' projections as one product and a permutation, not one per head). This header overloads each for
 /// `cuda_training_backend`, so with the weights, activations and gradients in `device_buffer`s the whole step runs on
 /// the GPU: the products by cuBLAS, the other steps by kernels compiled at run time (NVRTC, to the device's machine code) when
 /// `cuda_kernels` is created.
@@ -464,6 +465,13 @@ extern "C" __global__ void attend_keys_reduce(float* gk, float* gv, const float*
     for (int z = 0; z < splits; ++z) { a += pk[z * m + i]; b += pv[z * m + i]; }
     gk[i] = a; gv[i] = b;
 }
+// Between rows and heads: rows[t][h d + c] and heads[h][t][c], one thread per element; to_heads picks the direction
+extern "C" __global__ void heads_permute(const float* in, float* out, u64 n, u64 heads, u64 d, int to_heads)
+{
+    const u64 i = blockIdx.x * (u64)blockDim.x + threadIdx.x; if (i >= n * heads * d) return;
+    const u64 t = i / (heads * d), h = (i / d) % heads, c = i % d, at = (h * n + t) * d + c;   // i is the row-major index
+    if (to_heads) out[at] = in[i]; else out[i] = in[at];
+}
 // Attention as matrix products, one head at a time: the scores S (n x n, row t the query) come from cuBLAS; these
 // kernels make them probabilities and back. A warp per row, its sums lane by lane in order and then a fixed tree.
 // The softmax: S becomes P in place, masked to the visible keys and capped; lse[t H + h] written
@@ -639,7 +647,7 @@ public:
             {"attend_backward_keys", &k->attend_backward_keys_}, {"embed", &k->embed_}, {"embed_backward", &k->embed_backward_},
             {"cross_entropy_rows", &k->cross_entropy_rows_}, {"adamw", &k->adamw_}, {"scale", &k->scale_}, {"partial_sums", &k->partial_sums_},
             {"attend_keys_reduce", &k->attend_keys_reduce_}, {"attn_softmax", &k->attn_softmax_}, {"attn_probs", &k->attn_probs_},
-            {"attn_dscores", &k->attn_dscores_}};
+            {"attn_dscores", &k->attn_dscores_}, {"heads_permute", &k->heads_permute_}};
         std::vector<std::pair<std::string, cudaKernel_t*>> all;
         for (const auto& [name, slot] : kernels)
             all.emplace_back(name, slot);
@@ -732,7 +740,7 @@ public:
             {attend_backward_queries_, "attend_backward_queries"}, {attend_backward_keys_, "attend_backward_keys"}, {embed_, "embed"},
             {embed_backward_, "embed_backward"}, {cross_entropy_rows_, "cross_entropy_rows"}, {adamw_, "adamw"}, {scale_, "scale"},
             {partial_sums_, "partial_sums"}, {attend_keys_reduce_, "attend_keys_reduce"}, {attn_softmax_, "attn_softmax"},
-            {attn_probs_, "attn_probs"}, {attn_dscores_, "attn_dscores"}};
+            {attn_probs_, "attn_probs"}, {attn_dscores_, "attn_dscores"}, {heads_permute_, "heads_permute"}};
         for (const auto& [kernel, name] : names)
             if (kernel == k)
                 return name;
@@ -769,6 +777,7 @@ public:
     cudaKernel_t attn_softmax_ = nullptr;         ///< `attn_softmax`.
     cudaKernel_t attn_probs_ = nullptr;           ///< `attn_probs`.
     cudaKernel_t attn_dscores_ = nullptr;         ///< `attn_dscores`.
+    cudaKernel_t heads_permute_ = nullptr;        ///< `heads_permute`.
     std::array<cudaKernel_t, 4> attend_tiled_{};                    ///< `attend_tiled_D`, for heads of 16, 32, 64 and 128 channels.
     std::array<cudaKernel_t, 4> attend_backward_queries_tiled_{};   ///< `attend_backward_queries_tiled_D`.
     std::array<cudaKernel_t, 4> attend_backward_keys_tiled_{};      ///< `attend_backward_keys_tiled_D`.
@@ -856,6 +865,42 @@ inline void sum_rows(const cuda_training_backend& b, std::type_identity_t<std::s
     const detail::cuda_ops::u64 r = into.size(), rows = ys.size() / into.size();
     void* args[] = {&y, &ip, detail::cuda_ops::arg(rows), detail::cuda_ops::arg(r)};
     b.kernels->launch(b.kernels->sum_rows_, 32 * into.size(), args);   // a warp per column
+}
+
+namespace detail::cuda_ops {
+    inline void permute(const cuda_training_backend& b, const float* in, float* out, std::size_t n, std::size_t heads, std::size_t d, bool to_heads)
+    {
+        const u64 nn = n, hh = heads, dd = d;
+        int dir = to_heads ? 1 : 0;
+        void* args[] = {&in, &out, arg(nn), arg(hh), arg(dd), &dir};
+        b.kernels->launch(b.kernels->heads_permute_, n * heads * d, args);
+    }
+} // namespace detail::cuda_ops
+
+/// \brief core's `linear_heads` on the device as one product: `X Wᵀ + b` for every head at once into the kernels'
+/// scratch, row by row, then permuted to the heads' layout. \param b The backend. \param w The matrix.
+/// \param xs The `n` inputs. \param out Receives the outputs head by head. \param bias The biases, or empty.
+/// \param heads The heads.
+inline void linear_heads(const cuda_training_backend& b, const ml::dense_weights<float>& w, std::span<const float> xs, std::span<float> out,
+                         std::span<const float> bias, std::size_t heads)
+{
+    const std::size_t n = xs.size() / w.cols;
+    const auto rows = b.kernels->scratch(n * w.rows);
+    ml::linear_sequence(b, w, xs, rows, bias);
+    detail::cuda_ops::permute(b, rows.data(), out.data(), n, heads, w.rows / heads, true);
+}
+
+/// \brief core's `linear_heads_backward` on the device: the gradients permuted from the heads' layout to rows in the
+/// kernels' scratch, then `linear_sequence_backward` once for every head. \param b The backend. \param w The matrix.
+/// \param xs The inputs. \param douts The gradients, head by head. \param dxs Added into, or empty. \param dw Added
+/// into. \param db Added into, or empty. \param heads The heads.
+inline void linear_heads_backward(const cuda_training_backend& b, const ml::dense_weights<float>& w, std::span<const float> xs,
+                                  std::span<const float> douts, std::span<float> dxs, std::span<float> dw, std::span<float> db, std::size_t heads)
+{
+    const std::size_t n = xs.size() / w.cols;
+    const auto rows = b.kernels->scratch(n * w.rows);
+    detail::cuda_ops::permute(b, douts.data(), rows.data(), n, heads, w.rows / heads, false);
+    ml::linear_sequence_backward(b, w, xs, std::span<const float>(rows), dxs, dw, db);
 }
 
 /// \brief The MLP's activation on the device. \tparam C The configuration. \param b The backend.
