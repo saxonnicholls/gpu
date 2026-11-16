@@ -3,6 +3,21 @@
 All notable changes to snicholls-gpu. The format follows Keep a Changelog; versions follow Semantic Versioning.
 A version is released when its tag is on a commit where every blocking CI leg is green.
 
+## Unreleased (0.4.0)
+
+### Added
+
+- **`linear_heads` and `linear_heads_backward` on the device** (core 0.11.0): the keys' and values' projections for
+  every head in one product, permuted to the heads' layout, instead of a product per head. A whole GPT-2 small step
+  over 1024 tokens with TF32: 67.5 to 63.2 ms.
+- The documentation is built in CI and published to <https://saxonnicholls.github.io/gpu/>, as core's.
+
+### Corrected
+
+- 0.3.0's comparison with llm.c ("1.05x") was against llm.c measured beside another process on the same GPU, which
+  halved llm.c's speed. On a free GPU, both with AdamW, over 1024 tokens: llm.c 33.6 ms at batch 1 and 105 ms at
+  batch 4, against our 72.1 and 245 ms with TF32: 2.2 to 2.3 times slower.
+
 ## 0.3.0 - 2026-11-17
 
 ### Added

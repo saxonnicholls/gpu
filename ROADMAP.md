@@ -14,14 +14,15 @@ device. The milestones below are measured; nothing moves on until its numbers ar
 - Attention as matrix products on cuBLAS (tiled kernels for sequences beyond 4096 tokens), and TF32 tensor cores for
   the products as an option.
 - Driven by a whole GPT-2 small model, the CUDA backend gives PyTorch's loss on llm.c's reference batch to 4e-6, and
-  every gradient tensor to 0.07% of its largest element (TF32: 4e-4 and 0.3%). The whole step over 1024 tokens: 116 ms
-  in float, 67.7 ms with TF32, against llm.c's 64.4 ms in bfloat16 on the same GPU.
+  every gradient tensor to 0.07% of its largest element (TF32: 4e-4 and 0.3%), and ten AdamW steps give PyTorch's ten
+  losses within 1.1e-4. The whole step with AdamW over 1024 tokens, on the GPU alone: 72 ms with TF32 at batch 1 and
+  245 ms at batch 4, against llm.c's 34 and 105 ms in bfloat16 (2.2x).
 
 ## Next
 
-1. **The projections over heads as one batched product** (core's "linear over heads"): core's batched attention
-   projects keys and values head by head, a large share of the step's products.
-2. **Attention on the tensor cores beyond 4096 tokens** (flash attention's tiling with matrix instructions).
+1. **Attention without its masked half**, then **flash attention on the tensor cores**: attention's products are
+   about half of a batch-4 step, full n x n though half is masked, in small tiles.
+2. **Fewer, fused elementwise kernels**, and bfloat16 products.
 3. **Muon on the device.**
 4. **Mixed precision**: bfloat16 in the products (cuBLASLt), float master weights and optimiser state.
 5. **The rest of the linear algebra on the device** (QR, the SVD, the batched solves), so core's truncated SVD runs
