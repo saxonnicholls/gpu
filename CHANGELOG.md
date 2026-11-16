@@ -16,6 +16,13 @@ A version is released when its tag is on a commit where every blocking CI leg is
   capped blocks (GQA, MQA, QK norm before and after RoPE, both RoPE layouts, a window, a soft cap, every activation)
   with every buffer in device memory agree with core's reference. A GPT-2-small layer's training step over 128
   tokens: 2.34 ms on an RTX PRO 4000 Blackwell, against 47.5 ms staged and 640 ms on its CPU. Needs core 0.10.0.
+- **Tiled attention** for heads of 16, 32, 64 and 128 channels: a thread per query or key with its row in
+  registers, the other side through shared memory a tile at a time; the keys' gradients split over the queries into
+  partials added in a fixed order. Deterministic, and within 1e-5 normwise of core's reference over several tiles
+  (GQA, a window, a soft cap). A whole GPT-2 small step over 1024 tokens fell from 288 to 137 ms.
+- **`cuda_math::tf32`**: `cuda_backend::math` puts the `float` products on the tensor cores (inputs rounded to TF32);
+  within 3e-4 normwise of float per product. A whole GPT-2 small step over 1024 tokens: 98.5 ms, against llm.c's 64.4
+  ms in bfloat16 on the same GPU; its loss on llm.c's reference batch within 7e-4 of PyTorch's.
 - The model's other steps on the device: the embeddings and their backward (in token order), the fused classifier
   over a sequence (a warp per row), AdamW, the rescale, and the sums and squared norms (a fixed grid and tree, the
   partials summed in order: deterministic, and closer to the exact sum than a sequential one). core's

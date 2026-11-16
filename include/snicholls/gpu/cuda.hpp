@@ -19,9 +19,10 @@
 ///
 /// - `cuda_context::create(device)`: the device, its cuBLAS handle and stream; `result` with a `cuda_failure` when there
 ///   is no device.
-/// - `cuda_backend{&context}`: the backend, one pointer, trivially copyable as the concept requires. `gemm` and `gemv`
-///   run on the device; `dot`, `axpy`, `syrk` and `triangular_solve` run on the host through core's reference, for host
-///   memory (device memory there throws, until those move to the device).
+/// - `cuda_backend{&context}`: the backend, a pointer and `cuda_math` (float, or TF32 on the tensor cores), trivially
+///   copyable as the concept requires. `gemm` and `gemv` run on the device; `dot`, `axpy`, `syrk` and
+///   `triangular_solve` run on the host through core's reference, for host memory (device memory there throws, until
+///   those move to the device).
 /// - `device_buffer<T>`: `n` elements of device memory; `upload`, `download`, `span()`.
 ///
 /// \snippet cuda_demo.cpp cuda
@@ -234,6 +235,13 @@ namespace detail::cuda {
 
 } // namespace detail::cuda
 
+/// \brief How the products of `float` are computed. \ingroup gpu
+enum class cuda_math {
+    float32,   ///< In float throughout (cuBLAS's default): the reference's rounding, to the order of the sums.
+    tf32       ///< Tensor cores, the inputs rounded to TF32 (10 bits of mantissa), the sums in float: several times
+               ///< faster, each product within about 1e-3 of the float result, relative to its scale.
+};
+
 /// \brief One CUDA device with its cuBLAS handle and stream.
 ///
 /// Create it once and hand `cuda_backend{&context}` to core's free functions. Neither copyable nor movable: backends
@@ -282,11 +290,12 @@ public:
 
     /// \brief `C = alpha A B + beta C` on the device, any layout, host or device memory. Called by `cuda_backend::gemm`.
     /// \param alpha The scale of the product. \param a `m x k`. \param b `k x n`. \param beta The scale of `C`.
-    /// \param c `m x n`; may not overlap `a` or `b`.
+    /// \param c `m x n`; may not overlap `a` or `b`. \param math How a product of `float` is computed.
     /// \throws cuda_exception if a CUDA or cuBLAS call fails.
     template <typename T>
         requires(std::is_same_v<T, float> || std::is_same_v<T, double>)
-    void gemm(T alpha, linalg::matrix_view<const T> a, linalg::matrix_view<const T> b, T beta, linalg::matrix_view<T> c) const
+    void gemm(T alpha, linalg::matrix_view<const T> a, linalg::matrix_view<const T> b, T beta, linalg::matrix_view<T> c,
+              cuda_math math = cuda_math::float32) const
     {
         namespace dc = detail::cuda;
         const std::size_t m = c.extent(0), n = c.extent(1), k = a.extent(1);
@@ -294,6 +303,9 @@ public:
             return;
         const std::lock_guard lock(mutex_);
         dc::check(cudaSetDevice(device_), "cudaSetDevice");
+        if (const cublasStatus_t s = cublasSetMathMode(blas_, math == cuda_math::tf32 ? CUBLAS_TF32_TENSOR_OP_MATH : CUBLAS_DEFAULT_MATH);
+            s != CUBLAS_STATUS_SUCCESS)
+            throw cuda_exception("cublasSetMathMode", static_cast<int>(s));
         const auto A = dc::input(a), B = dc::input(b);
         // The output: in place when it is device memory in a BLAS layout; host memory in a BLAS layout, its span copied
         // (up only when it is read or has gaps to keep) and back; any other strides, a contiguous row-major device copy
@@ -418,10 +430,12 @@ private:
 
 /// \brief The `linalg::blas_backend` on a `cuda_context`: `gemm` and `gemv` on the device, the rest on the host.
 ///
-/// Trivially copyable (one pointer); pass it by value. `float` and `double` products run on the device, over device
-/// memory in place or host memory staged; any other scalar type, and the four host operations, on the host.
+/// Trivially copyable (a pointer and the choice of `cuda_math`); pass it by value. `float` and `double` products run on
+/// the device, over device memory in place or host memory staged; any other scalar type, and the four host operations,
+/// on the host. `math = cuda_math::tf32` puts the `float` products on the tensor cores.
 struct cuda_backend {
     const cuda_context* context = nullptr;   ///< The device; must outlive the backend.
+    cuda_math math = cuda_math::float32;     ///< How products of `float` are computed: in float, or on tensor cores.
 
     /// \brief `x · y`, on the host. \param x A vector. \param y Its partner. \return The dot product.
     /// \throws cuda_exception for device memory.
@@ -448,7 +462,7 @@ struct cuda_backend {
         requires(std::is_same_v<T, float> || std::is_same_v<T, double>)
     void gemv(T alpha, linalg::matrix_view<const T> a, linalg::vector_view<const T> x, T beta, linalg::vector_view<T> y) const
     {
-        context->gemm(alpha, a, linalg::as_column(x), beta, linalg::as_column(y));
+        context->gemm(alpha, a, linalg::as_column(x), beta, linalg::as_column(y), math);
     }
 
     /// \brief `y = alpha A x + beta y` for a type cuBLAS does not take, on the host.
@@ -466,7 +480,7 @@ struct cuda_backend {
         requires(std::is_same_v<T, float> || std::is_same_v<T, double>)
     void gemm(T alpha, linalg::matrix_view<const T> a, linalg::matrix_view<const T> b, T beta, linalg::matrix_view<T> c) const
     {
-        context->gemm(alpha, a, b, beta, c);
+        context->gemm(alpha, a, b, beta, c, math);
     }
 
     /// \brief `C = alpha A B + beta C` for a type cuBLAS does not take, on the host.

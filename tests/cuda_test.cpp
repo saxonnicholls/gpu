@@ -72,7 +72,7 @@ SNICHOLLS_LINALG_CONFORMANCE_BLAS(Cuda, snicholls::conformance::linalg_case<snic
 namespace {
 
 static_assert(la::blas_backend<gpu::cuda_backend, float> && la::blas_backend<gpu::cuda_backend, double>);
-static_assert(std::is_trivially_copyable_v<gpu::cuda_backend> && sizeof(gpu::cuda_backend) == sizeof(void*));
+static_assert(std::is_trivially_copyable_v<gpu::cuda_backend> && sizeof(gpu::cuda_backend) == 2 * sizeof(void*));   // the context, the math
 static_assert(!std::is_copy_constructible_v<gpu::cuda_context> && !std::is_copy_constructible_v<gpu::device_buffer<float>>);
 
 template <typename T>
@@ -140,6 +140,30 @@ TEST(GpuCuda, DeviceMemoryIsUsedInPlace)
                     .is_ok());
     for (std::size_t i = 0; i < got.size(); ++i)
         ASSERT_NEAR(got[i], want[i], tolerance<float>(d)) << i;
+}
+
+// On the tensor cores the inputs are rounded to TF32 (10 bits of mantissa): each element within a few parts in 10^4 of
+// the largest, and not the float result's bits
+TEST(GpuCuda, Tf32ProductsAreWithinTheirRoundingOfFloats)
+{
+    constexpr std::size_t m = 96, n = 80, k = 384;
+    const auto a = stream<float>(m * k, 21), b = stream<float>(k * n, 22);
+    using R = la::layout_right;
+    std::vector<float> want(m * n), got(m * n);
+    gpu::cuda_backend tf32{&shared_context()};
+    tf32.math = gpu::cuda_math::tf32;
+    ASSERT_TRUE(la::gemm(gpu::cuda_backend{&shared_context()}, 1.0f, la::matrix_view<const float, R>(a.data(), {m, k}),
+                         la::matrix_view<const float, R>(b.data(), {k, n}), 0.0f, la::matrix_view<float, R>(want.data(), {m, n}))
+                    .is_ok());
+    ASSERT_TRUE(la::gemm(tf32, 1.0f, la::matrix_view<const float, R>(a.data(), {m, k}), la::matrix_view<const float, R>(b.data(), {k, n}), 0.0f,
+                         la::matrix_view<float, R>(got.data(), {m, n}))
+                    .is_ok());
+    double diff = 0, scale = 0;
+    for (std::size_t i = 0; i < want.size(); ++i)
+        diff = std::max(diff, double(std::fabs(got[i] - want[i]))), scale = std::max(scale, double(std::fabs(want[i])));
+    std::printf("  tf32 against float: normwise %.2e\n", diff / scale);
+    EXPECT_LE(diff, 2e-3 * scale);
+    EXPECT_GT(diff, 0.0);   // the tensor cores were used: TF32 is not float
 }
 
 TEST(GpuCuda, AStridedResultKeepsItsGapsFromHostAndDeviceMemory)
