@@ -11,14 +11,17 @@ device. The milestones below are measured; nothing moves on until its numbers ar
   OpenCL kernel), and every other step of core's batched training passes as a kernel (`cuda_ops.hpp`), so a training
   step's weights, activations and gradients stay on the GPU from start to end: one GPT-2-small layer's forward and
   backward over 128 tokens in 2.34 ms, against 640 ms on its CPU.
+- Tiled attention, and TF32 tensor cores for the products as an option.
 - Driven by a whole GPT-2 small model, the CUDA backend gives PyTorch's loss on llm.c's reference batch to 4e-6, and
-  every gradient tensor to 0.07% of its largest element.
+  every gradient tensor to 0.07% of its largest element (TF32: 7e-4 and 0.7%). The whole step over 1024 tokens: 137 ms
+  in float, 98.5 ms with TF32, against llm.c's 64.4 ms in bfloat16 on the same GPU.
 
 ## Next
 
-1. **Tensor cores** through cuBLASLt (TF32, bfloat16), with a stated tolerance against core's reference per operation.
-2. **Flash attention** forward and backward, tiled for long sequences; and Muon on the device.
-3. **Mixed precision**: bfloat16 in the products, float master weights and optimiser state.
+1. **Attention on the tensor cores** (flash attention's tiling with matrix instructions), the keys' gradients first: now
+   the slowest kernel of a long sequence's step.
+2. **Muon on the device.**
+3. **Mixed precision**: bfloat16 in the products (cuBLASLt), float master weights and optimiser state.
 4. **The rest of the linear algebra on the device** (QR, the SVD, the batched solves), so core's truncated SVD runs
    there too, and every part registered in core's conformance suites.
 5. **A faster OpenCL kernel**: more outputs per work-item, vector loads, double buffering; the bits unchanged.
