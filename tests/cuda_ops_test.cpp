@@ -6,7 +6,8 @@
 //
 //  Tests for <snicholls/gpu/cuda_ops.hpp>: each training step on the device against core's own, and whole training
 //  steps (forward and backward) of GPT-2-, Llama- and nanochat-shaped blocks with every buffer in device memory,
-//  against core's reference on the host. They need a CUDA device.
+//  against core's reference on the host, and Muon's step on the device in float, TF32 and bfloat16. They need a CUDA
+//  device.
 //
 
 #include <snicholls/gpu/cuda_ops.hpp>
@@ -16,6 +17,7 @@
 #include <snicholls/core/linalg/reference.hpp>
 #include <snicholls/core/ml/embedding.hpp>
 #include <snicholls/core/ml/lm_head.hpp>
+#include <snicholls/core/ml/muon.hpp>
 #include <snicholls/core/ml/optim.hpp>
 #include <snicholls/core/ml/rope.hpp>
 #include <snicholls/core/ml/transformer_block.hpp>
@@ -426,6 +428,43 @@ TEST(GpuCudaOps, BothAttentionPathsGiveTheReferencesShortStep)
     whole_step_agrees<small>(0);   // the tiled kernels (heads of 16)
     whole_step_agrees<llama_like>(0);
     whole_step_agrees<nanochat_like>(0);   // a window
+}
+
+
+// Muon (core's ml::muon_step) with the weights, gradient, momentum and working space in device memory: its elementwise
+// steps by the kernels, its products by cuBLAS, against core's reference on the host. The momentum is the same
+// arithmetic in the same order (the same bits); the update's products sum in cuBLAS's order (float), or round their
+// operands to TF32 or bfloat16, so the weights' change is compared normwise
+TEST(GpuCudaOps, AMuonStepOnTheDeviceIsTheReferences)
+{
+    struct shape {
+        std::size_t rows, cols;
+    };
+    // Wide, tall, square, and one whose leading dimension is not a multiple of 8 (bf16 then runs the products with such an operand as TF32)
+    for (const auto& [rows, cols] : {shape{64, 192}, shape{192, 64}, shape{96, 96}, shape{40, 52}})
+        for (const auto& [math, tol] : {std::pair{gpu::cuda_math::float32, 1e-4}, std::pair{gpu::cuda_math::tf32, 1e-2},
+                                       std::pair{gpu::cuda_math::bf16, 5e-2}}) {
+            auto b = backend();
+            b.math = math;
+            const std::size_t n = rows * cols;
+            mirror w(stream(n, 31, 0.1f)), momentum{std::vector<float>(n)}, work{std::vector<float>(ml::muon_work_size(rows, cols))};
+            auto hw = w.host, hm = momentum.host, hwork = work.host;
+            const ml::muon_config<float> config{.lr = 0.02f, .momentum = 0.95f, .nesterov = true};
+            for (std::uint64_t t = 0; t < 3; ++t) {
+                const mirror g(stream(n, 40 + t, 1.0f));
+                ml::muon_step(b, w.d(), std::span<const float>(g.d()), momentum.d(), rows, cols, config, work.d());
+                ml::muon_step(la::reference, std::span<float>(hw), std::span<const float>(g.host), std::span<float>(hm), rows, cols, config,
+                              std::span<float>(hwork));
+            }
+            cudaDeviceSynchronize();
+            const auto got = w.back();
+            std::vector<float> dgot(n), dwant(n);
+            for (std::size_t i = 0; i < n; ++i)
+                dgot[i] = got[i] - w.host[i], dwant[i] = hw[i] - w.host[i];
+            const std::string what = "muon " + std::to_string(rows) + "x" + std::to_string(cols) + " math " + std::to_string(int(math));
+            EXPECT_EQ(momentum.back(), hm) << what;
+            near_normwise(dgot, dwant, tol, what);
+        }
 }
 
 } // namespace

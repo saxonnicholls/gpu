@@ -3,6 +3,17 @@
 All notable changes to snicholls-gpu. The format follows Keep a Changelog; versions follow Semantic Versioning.
 A version is released when its tag is on a commit where every blocking CI leg is green.
 
+## Unreleased
+
+### Added
+
+- **Muon on the device** (needs core's next release, whose `ml::muon_step` makes every step a call on the backend):
+  `ml::muon_step(cuda_training_backend, ...)` with the weights, gradient, momentum and working space in device memory
+  runs entirely on the GPU, the elementwise steps by the existing kernels and the Newton-Schulz products by cuBLAS
+  (bfloat16 under `cuda_math::bf16`, as nanochat). Tested against core's reference in float (normwise 4e-6), TF32
+  (5e-3) and bfloat16 (3.5e-2), the momentum to the bit. GPT-2 small's four block matrices: 12.1 ms per Muon step in
+  bfloat16, 15.6 ms in TF32, against 2.0 ms for AdamW (`cuda_ops_benchmark.cpp`, a GPU shared with a training run).
+
 ## 0.5.0 - 2026-11-17
 
 ### Added

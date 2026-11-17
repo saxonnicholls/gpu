@@ -6,17 +6,20 @@
 //
 //  Demo for <snicholls/gpu/cuda_ops.hpp>: a GPT-2-shaped block's forward pass through core's batched
 //  ml::block_forward_sequence with every weight and activation in device memory, so each step runs on the GPU, against
-//  core's reference on the host. Exits non-zero if a result is not what it documents, or if there is no CUDA device.
+//  core's reference on the host, and a Muon step (ml::muon_step) on a weight matrix in device memory. Exits non-zero if a result is not what it documents, or if there is no CUDA device.
 //
 
 #include <snicholls/gpu/cuda_ops.hpp>
 
 #include <snicholls/core/linalg/reference.hpp>
+#include <snicholls/core/ml/muon.hpp>
+#include <snicholls/core/stats/random.hpp>
 #include <snicholls/core/ml/transformer_block.hpp>
 
 #include <cmath>
 #include <cstddef>
 #include <cstdio>
+#include <span>
 #include <memory>
 #include <utility>
 #include <vector>
@@ -87,7 +90,32 @@ int main()
         worst = std::fmax(worst, std::fabs(got[i] - t[xs].host[i]) / (1 + std::fabs(t[xs].host[i])));
     std::printf("  device: %s\n  a block's forward pass over %zu tokens on the device: within %.2g of core's reference\n",
                 context->device_name().c_str(), n, static_cast<double>(worst));
-    const bool ok = worst < 1e-4f;
+    bool ok = worst < 1e-4f;
+
+    //! [muon]
+    // Muon on a weight matrix in device memory: every step of core's ml::muon_step (the momentum, the norm, five
+    // Newton-Schulz iterations, the update) on the GPU, the products by cuBLAS (bfloat16 here, as nanochat's)
+    gpu::cuda_training_backend bf16 = device;
+    bf16.math = gpu::cuda_math::bf16;
+    const std::size_t rows = 128, cols = 512;
+    gpu::device_buffer<float> mw(*context, rows * cols), mg(*context, rows * cols), mm(*context, rows * cols),
+        mwork(*context, ml::muon_work_size(rows, cols));
+    std::vector<float> hw(rows * cols, 0.0f), hg(rows * cols);
+    snicholls::stats::wyrand rng(7);   // a full-rank gradient
+    for (float& x : hg)
+        x = static_cast<float>(2 * snicholls::stats::uniform_real(rng) - 1);
+    mw.upload(hw);
+    mg.upload(hg);
+    gpu::fill_rows(device, mm.span(), 0.0f);   // the momentum starts at zero
+    ml::muon_step(bf16, mw.span(), std::span<const float>(mg.span()), mm.span(), rows, cols, ml::muon_config<float>{}, mwork.span());
+    mw.download(hw);
+    //! [muon]
+    // A first step from zero moves the weights by -lr X, X's singular values near 1: |X|_F^2 about rank = 128
+    double frob = 0;
+    for (const float x : hw)
+        frob += double(x) * double(x) / (0.02 * 0.02);
+    std::printf("  a Muon step on a 128 x 512 matrix on the device: |update / lr|_F^2 = %.1f (128 singular values near 1)\n", frob);
+    ok &= frob > 0.5 * 0.5 * 128 && frob < 1.25 * 1.25 * 128;
     std::printf(ok ? "cuda_ops demo: ok\n" : "cuda_ops demo: FAILED\n");
     return ok ? 0 : 1;
 }
