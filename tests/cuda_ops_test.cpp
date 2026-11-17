@@ -287,6 +287,32 @@ TEST(GpuCudaOps, LinearHeadsAreTheReferencesPerHeadProducts)
     near(db.back(), hdb, 1e-5f, "bias gradient");
 }
 
+// A padded head on the device (core 0.12.0): the unpadded head's loss and gradients, nothing to the padding's rows
+TEST(GpuCudaOps, APaddedHeadIsTheUnpaddedHeadsOnTheDevice)
+{
+    const auto b = backend();
+    constexpr std::size_t vocab = 500, padded = 512, d = 64, n = 32;
+    auto table = stream(padded * d, 8, 0.2f);
+    mirror head(table), hs(stream(n * d, 9)), logits{std::vector<float>(n * padded)}, losses{std::vector<float>(n)}, dhs{std::vector<float>(n * d)},
+        dhead{std::vector<float>(padded * d)};
+    std::vector<std::uint32_t> targets(n);
+    for (std::size_t t = 0; t < n; ++t)
+        targets[t] = std::uint32_t((t * 37) % vocab);
+    gpu::device_buffer<std::uint32_t> dtargets(*device().context, n);
+    dtargets.upload(targets);
+    const float loss = ml::lm_head_loss_sequence(b, ml::dense_weights<float>{head.d(), padded, d}, std::span<const float>(hs.d()),
+                                                 std::span<const std::uint32_t>(dtargets.span().data(), n), logits.d(), losses.d(), dhs.d(), dhead.d(), vocab);
+    std::vector<float> hl(n * vocab), hloss(n), hdhs(n * d), hdhead(vocab * d);
+    const float want = ml::lm_head_loss_sequence(la::reference, ml::dense_weights<float>{std::span<const float>(table).first(vocab * d), vocab, d},
+                                                 std::span<const float>(hs.host), targets, std::span<float>(hl), std::span<float>(hloss), std::span<float>(hdhs),
+                                                 std::span<float>(hdhead));
+    EXPECT_NEAR(loss, want, 1e-5f);
+    near(dhs.back(), hdhs, 1e-4f, "dhs");
+    const auto got = dhead.back();
+    near(std::vector<float>(got.begin(), got.begin() + std::ptrdiff_t(vocab * d)), hdhead, 1e-4f, "dhead");
+    EXPECT_TRUE(std::all_of(got.begin() + std::ptrdiff_t(vocab * d), got.end(), [](float e) { return e == 0.0f; }));
+}
+
 // The whole LM-head loss on the device: core's batched form through the CUDA backend's products and kernels
 TEST(GpuCudaOps, TheSequencesLossThroughTheHeadIsTheReferences)
 {

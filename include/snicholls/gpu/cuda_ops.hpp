@@ -821,20 +821,21 @@ __global__ void embed_backward(const float* dout, const unsigned* ids, float* dt
 { const u64 c = blockIdx.x * (u64)blockDim.x + threadIdx.x; if (c >= d) return;
   for (u64 t = 0; t < n; ++t) { dtable[(u64)ids[t] * d + c] += dout[t * d + c]; if (dpos) dpos[t * d + c] += dout[t * d + c]; } }
 // One warp per row: core's cross_entropy_with_gradient in place (the loss, then the row replaced by scale (softmax - onehot))
-__global__ void cross_entropy_rows(float* logits, const unsigned* targets, float* losses, u64 n, u64 V, float scale)
+// Rows of V logits, the first `classes` of them the classes (a padded vocabulary's rest are not): a warp per row
+__global__ void cross_entropy_rows(float* logits, const unsigned* targets, float* losses, u64 n, u64 V, u64 classes, float scale)
 {
     const u64 t = (blockIdx.x * (u64)blockDim.x + threadIdx.x) / 32; const int lane = threadIdx.x % 32;
     if (t >= n) return;
     float* x = logits + t * V; const unsigned target = targets[t];
-    float mx = -INFINITY; for (u64 i = lane; i < V; i += 32) mx = fmaxf(mx, x[i]);
+    float mx = -INFINITY; for (u64 i = lane; i < classes; i += 32) mx = fmaxf(mx, x[i]);
     for (int o = 16; o > 0; o /= 2) mx = fmaxf(mx, __shfl_down_sync(0xffffffffu, mx, o));
     mx = __shfl_sync(0xffffffffu, mx, 0);
-    float s = 0.0f; for (u64 i = lane; i < V; i += 32) s += expf(x[i] - mx);
+    float s = 0.0f; for (u64 i = lane; i < classes; i += 32) s += expf(x[i] - mx);
     for (int o = 16; o > 0; o /= 2) s += __shfl_down_sync(0xffffffffu, s, o);
     s = __shfl_sync(0xffffffffu, s, 0);
     const float lse = mx + logf(s), xt = x[target];
     __syncwarp();   // every lane has read x[target] before any lane overwrites the row
-    for (u64 i = lane; i < V; i += 32) x[i] = scale * (expf(x[i] - lse) - (i == target ? 1.0f : 0.0f));
+    for (u64 i = lane; i < V; i += 32) x[i] = i < classes ? scale * (expf(x[i] - lse) - (i == target ? 1.0f : 0.0f)) : 0.0f;
     if (lane == 0) losses[t] = lse - xt;
 }
 __global__ void adamw(float* p, const float* g, float* m, float* v, u64 n, float lr, float b1, float b2, float eps, float wd, float c1, float c2)
@@ -1653,18 +1654,28 @@ inline void embed_rows_backward(const cuda_training_backend& b, std::type_identi
     b.kernels->launch(b.kernels->embed_backward_, d, args);
 }
 
-/// \brief The fused classifier over a sequence on the device: each row's loss, the row replaced by its scaled gradient.
+/// \brief The fused classifier over a sequence on the device, the classes the first `classes` of each row (core
+/// 0.12.0's padded form): each row's loss, the classes replaced by their scaled gradient, the padding by 0.
 /// \param b The backend. \param logits `n · V`. \param targets `n` (device memory). \param losses `n`. \param scale The
-/// gradient's factor.
+/// gradient's factor. \param classes The classes, `classes <= V`.
 inline void cross_entropy_rows(const cuda_training_backend& b, std::span<float> logits, std::type_identity_t<std::span<const std::uint32_t>> targets,
-                               std::span<float> losses, std::type_identity_t<float> scale)
+                               std::span<float> losses, std::type_identity_t<float> scale, std::size_t classes)
 {
     float* lp = logits.data();
     const std::uint32_t* tp = targets.data();
     float* sp = losses.data();
-    const detail::cuda_ops::u64 n = targets.size(), v = targets.empty() ? 0 : logits.size() / targets.size();
-    void* args[] = {&lp, &tp, &sp, detail::cuda_ops::arg(n), detail::cuda_ops::arg(v), &scale};
+    const detail::cuda_ops::u64 n = targets.size(), v = targets.empty() ? 0 : logits.size() / targets.size(), c = classes;
+    void* args[] = {&lp, &tp, &sp, detail::cuda_ops::arg(n), detail::cuda_ops::arg(v), detail::cuda_ops::arg(c), &scale};
     b.kernels->launch(b.kernels->cross_entropy_rows_, 32 * targets.size(), args);   // a warp per row
+}
+
+/// \brief core's `cross_entropy_rows` on the device, every column a class. \param b The backend. \param logits The
+/// rows (device memory): replaced by their gradient. \param targets The targets (device memory). \param losses
+/// Receives each row's loss. \param scale The gradient's factor.
+inline void cross_entropy_rows(const cuda_training_backend& b, std::span<float> logits, std::type_identity_t<std::span<const std::uint32_t>> targets,
+                               std::span<float> losses, std::type_identity_t<float> scale)
+{
+    cross_entropy_rows(b, logits, targets, losses, scale, targets.empty() ? 0 : logits.size() / targets.size());
 }
 
 /// \brief One AdamW step over a tensor on the device. \param b The backend. \param p The parameters. \param g Their
