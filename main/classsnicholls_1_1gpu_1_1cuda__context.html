@@ -26,7 +26,7 @@
  <tbody>
  <tr id="projectrow">
   <td id="projectalign">
-   <div id="projectname">snicholls-gpu<span id="projectnumber">&#160;0.5.0</span>
+   <div id="projectname">snicholls-gpu<span id="projectnumber">&#160;0.6.0</span>
    </div>
    <div id="projectbrief">GPU backends of snicholls-core&#39;s interfaces: linalg on OpenCL</div>
   </td>
@@ -131,7 +131,7 @@ Static Public Member Functions</h2></td></tr>
 <div class="textblock"><p>One CUDA device with its cuBLAS handle and stream. </p>
 <p>Create it once and hand <span class="tt"><a class="el" href="structsnicholls_1_1gpu_1_1cuda__backend.html" title="The linalg::blas_backend on a cuda_context: gemm and gemv on the device, the rest on the host.">cuda_backend</a>{&amp;context}</span> to core's free functions. Neither copyable nor movable: backends and buffers point at it. </p>
 
-<p class="definition">Definition at line <a class="el" href="cuda_8hpp_source.html#l00259">259</a> of file <a class="el" href="cuda_8hpp_source.html">cuda.hpp</a>.</p>
+<p class="definition">Definition at line <a class="el" href="cuda_8hpp_source.html#l00262">262</a> of file <a class="el" href="cuda_8hpp_source.html">cuda.hpp</a>.</p>
 </div><a name="doc-constructors" id="doc-constructors"></a><h2 id="header-doc-constructors" class="groupheader">Constructor &amp; Destructor Documentation</h2>
 <a id="ac419d958cb39b828031a58841a257459" name="ac419d958cb39b828031a58841a257459"></a>
 <h2 class="memtitle"><span class="permalink"><a href="#ac419d958cb39b828031a58841a257459">&#9670;&#160;</a></span>~cuda_context()</h2>
@@ -158,7 +158,7 @@ Static Public Member Functions</h2></td></tr>
 
 <p>Releases the handle and the stream. </p>
 
-<p class="definition">Definition at line <a class="el" href="cuda_8hpp_source.html#l00288">288</a> of file <a class="el" href="cuda_8hpp_source.html">cuda.hpp</a>.</p>
+<p class="definition">Definition at line <a class="el" href="cuda_8hpp_source.html#l00291">291</a> of file <a class="el" href="cuda_8hpp_source.html">cuda.hpp</a>.</p>
 
 </div>
 </div>
@@ -195,7 +195,7 @@ Static Public Member Functions</h2></td></tr>
 </dl>
 <dl class="section return"><dt>Returns</dt><dd>The context, or why there is none. </dd></dl>
 
-<p class="definition">Definition at line <a class="el" href="cuda_8hpp_source.html#l00264">264</a> of file <a class="el" href="cuda_8hpp_source.html">cuda.hpp</a>.</p>
+<p class="definition">Definition at line <a class="el" href="cuda_8hpp_source.html#l00267">267</a> of file <a class="el" href="cuda_8hpp_source.html">cuda.hpp</a>.</p>
 
 </div>
 </div>
@@ -225,7 +225,7 @@ Static Public Member Functions</h2></td></tr>
 <p>The device's index. </p>
 <dl class="section return"><dt>Returns</dt><dd>The index. </dd></dl>
 
-<p class="definition">Definition at line <a class="el" href="cuda_8hpp_source.html#l00297">297</a> of file <a class="el" href="cuda_8hpp_source.html">cuda.hpp</a>.</p>
+<p class="definition">Definition at line <a class="el" href="cuda_8hpp_source.html#l00300">300</a> of file <a class="el" href="cuda_8hpp_source.html">cuda.hpp</a>.</p>
 
 </div>
 </div>
@@ -255,7 +255,7 @@ Static Public Member Functions</h2></td></tr>
 <p>The device's name. </p>
 <dl class="section return"><dt>Returns</dt><dd>The name. </dd></dl>
 
-<p class="definition">Definition at line <a class="el" href="cuda_8hpp_source.html#l00291">291</a> of file <a class="el" href="cuda_8hpp_source.html">cuda.hpp</a>.</p>
+<p class="definition">Definition at line <a class="el" href="cuda_8hpp_source.html#l00294">294</a> of file <a class="el" href="cuda_8hpp_source.html">cuda.hpp</a>.</p>
 
 </div>
 </div>
@@ -328,7 +328,7 @@ requires (std::is_same_v&lt;T, float&gt; || std::is_same_v&lt;T, double&gt;)</di
   </dd>
 </dl>
 
-<p class="definition">Definition at line <a class="el" href="cuda_8hpp_source.html#l00309">309</a> of file <a class="el" href="cuda_8hpp_source.html">cuda.hpp</a>.</p>
+<p class="definition">Definition at line <a class="el" href="cuda_8hpp_source.html#l00312">312</a> of file <a class="el" href="cuda_8hpp_source.html">cuda.hpp</a>.</p>
 
 </div>
 </div>
@@ -392,7 +392,7 @@ requires (std::is_same_v&lt;T, float&gt; || std::is_same_v&lt;T, double&gt;)</di
   </dd>
 </dl>
 
-<p class="definition">Definition at line <a class="el" href="cuda_8hpp_source.html#l00384">384</a> of file <a class="el" href="cuda_8hpp_source.html">cuda.hpp</a>.</p>
+<p class="definition">Definition at line <a class="el" href="cuda_8hpp_source.html#l00387">387</a> of file <a class="el" href="cuda_8hpp_source.html">cuda.hpp</a>.</p>
 
 </div>
 </div>
@@ -450,7 +450,7 @@ requires (std::is_same_v&lt;T, float&gt; || std::is_same_v&lt;T, double&gt;)</di
 <p>The context's stream, on which its products run (and <span class="tt"><a class="el" href="cuda__ops_8hpp.html" title="snicholls::gpu::cuda_training_backend: snicholls-core&#39;s batched training passes on an NVIDIA GPU with...">cuda_ops.hpp</a></span>'s kernels). </p>
 <dl class="section return"><dt>Returns</dt><dd>The stream. </dd></dl>
 
-<p class="definition">Definition at line <a class="el" href="cuda_8hpp_source.html#l00299">299</a> of file <a class="el" href="cuda_8hpp_source.html">cuda.hpp</a>.</p>
+<p class="definition">Definition at line <a class="el" href="cuda_8hpp_source.html#l00302">302</a> of file <a class="el" href="cuda_8hpp_source.html">cuda.hpp</a>.</p>
 
 </div>
 </div>
@@ -485,7 +485,7 @@ requires (std::is_same_v&lt;T, float&gt; || std::is_same_v&lt;T, double&gt;)</di
   </dd>
 </dl>
 
-<p class="definition">Definition at line <a class="el" href="cuda_8hpp_source.html#l00301">301</a> of file <a class="el" href="cuda_8hpp_source.html">cuda.hpp</a>.</p>
+<p class="definition">Definition at line <a class="el" href="cuda_8hpp_source.html#l00304">304</a> of file <a class="el" href="cuda_8hpp_source.html">cuda.hpp</a>.</p>
 
 </div>
 </div>

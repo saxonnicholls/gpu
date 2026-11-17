@@ -4,6 +4,7 @@ var cuda_8hpp =
     [ "snicholls::gpu::cuda_exception", "classsnicholls_1_1gpu_1_1cuda__exception.html", "classsnicholls_1_1gpu_1_1cuda__exception" ],
     [ "snicholls::gpu::cuda_context", "classsnicholls_1_1gpu_1_1cuda__context.html", "classsnicholls_1_1gpu_1_1cuda__context" ],
     [ "snicholls::gpu::device_buffer&lt; T &gt;", "classsnicholls_1_1gpu_1_1device__buffer.html", "classsnicholls_1_1gpu_1_1device__buffer" ],
+    [ "snicholls::gpu::cuda_graph", "classsnicholls_1_1gpu_1_1cuda__graph.html", "classsnicholls_1_1gpu_1_1cuda__graph" ],
     [ "snicholls::gpu::cuda_backend", "structsnicholls_1_1gpu_1_1cuda__backend.html", "structsnicholls_1_1gpu_1_1cuda__backend" ],
     [ "snicholls::gpu::cuda_error", "cuda_8hpp.html#af17b5e9cb5454316c4253bb11383bf9f", [
       [ "no_device", "cuda_8hpp.html#af17b5e9cb5454316c4253bb11383bf9fa46dde22891822cc99f96031b79ab0eac", null ],

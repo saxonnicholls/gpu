@@ -1,4 +1,4 @@
 var searchData=
 [
-  ['upload_0',['upload',['../classsnicholls_1_1gpu_1_1device__buffer.html#a23ebc2c811d87d44b588ed7d4a6a73ac',1,'snicholls::gpu::device_buffer']]]
+  ['triangular_5fsolve_0',['triangular_solve',['../structsnicholls_1_1gpu_1_1cuda__backend.html#a2f85abf2b61b37665e260dfe91ab109a',1,'snicholls::gpu::cuda_backend::triangular_solve()'],['../structsnicholls_1_1gpu_1_1opencl__backend.html#a6c1ea6f0b8dc92d9ef421915dd3ce468',1,'snicholls::gpu::opencl_backend::triangular_solve()']]]
 ];

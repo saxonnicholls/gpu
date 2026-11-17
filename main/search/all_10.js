@@ -4,7 +4,7 @@ var searchData=
   ['scale_5frows_1',['scale_rows',['../cuda__ops_8hpp.html#ab5a369b07114e198f8e2e9edf2298b15',1,'snicholls::gpu']]],
   ['scratch_2',['scratch',['../classsnicholls_1_1gpu_1_1cuda__kernels.html#a069a1fb5f87c5e9e38272936357a5889',1,'snicholls::gpu::cuda_kernels']]],
   ['scratch16_3',['scratch16',['../classsnicholls_1_1gpu_1_1cuda__kernels.html#a0a8b2fce8f54f3174688fb24b70b0f97',1,'snicholls::gpu::cuda_kernels']]],
-  ['size_4',['size',['../classsnicholls_1_1gpu_1_1device__buffer.html#abcade0583893bd49232182ba7f7bb736',1,'snicholls::gpu::device_buffer']]],
+  ['size_4',['size',['../structsnicholls_1_1gpu_1_1adamw__segment.html#a761a05d51bafbe2079a1d2f9d1e1b1b7',1,'snicholls::gpu::adamw_segment::size'],['../classsnicholls_1_1gpu_1_1device__buffer.html#abcade0583893bd49232182ba7f7bb736',1,'snicholls::gpu::device_buffer::size()']]],
   ['small_20training_20step_5',['A whole GPT-2 small training step',['../performance.html#autotoc_md7',1,'']]],
   ['snicholls_20gpu_6',['snicholls gpu',['../group__gpu.html',1,'snicholls-gpu'],['../index.html',1,'snicholls-gpu']]],
   ['snicholls_5fgpu_5frequire_5fversion_7',['SNICHOLLS_GPU_REQUIRE_VERSION',['../version_8hpp.html#aaae242c5140b2df54af07e730c5fcc9c',1,'version.hpp']]],

@@ -26,7 +26,7 @@
  <tbody>
  <tr id="projectrow">
   <td id="projectalign">
-   <div id="projectname">snicholls-gpu<span id="projectnumber">&#160;0.5.0</span>
+   <div id="projectname">snicholls-gpu<span id="projectnumber">&#160;0.6.0</span>
    </div>
    <div id="projectbrief">GPU backends of snicholls-core&#39;s interfaces: linalg on OpenCL</div>
   </td>
@@ -147,7 +147,7 @@ Public Attributes</h2></td></tr>
 <div class="textblock"><p>The <span class="tt">linalg::blas_backend</span> on a <span class="tt"><a class="el" href="classsnicholls_1_1gpu_1_1cuda__context.html" title="One CUDA device with its cuBLAS handle and stream.">cuda_context</a></span>: <span class="tt"><a class="el" href="#ab55938333927c6d15d9654b996123e8b" title="C = alpha A B + beta C, on the device.">gemm</a></span> and <span class="tt"><a class="el" href="#a2c3cb8ed9803e2957299f8588f3311ea" title="y = alpha A x + beta y, on the device as a product with one column.">gemv</a></span> on the device, the rest on the host. </p>
 <p>Trivially copyable (a pointer and the choice of <span class="tt"><a class="el" href="group__gpu.html#ga22ea844faef25bad361c431e1315d253" title="How the products of float are computed.">cuda_math</a></span>); pass it by value. <span class="tt">float</span> and <span class="tt">double</span> products run on the device, over device memory in place or host memory staged; any other scalar type, and the four host operations, on the host. <span class="tt"><a class="el" href="#ae7fba8a5f918a9f0f5648c092fd8d0d7" title="How products of float are computed: in float, or on tensor cores.">math</a> = <a class="el" href="group__gpu.html#gga22ea844faef25bad361c431e1315d253ae00ad49f2e4f0fda1539ae29b2aaef57">cuda_math::tf32</a></span> puts the <span class="tt">float</span> products on the tensor cores. </p>
 
-<p class="definition">Definition at line <a class="el" href="cuda_8hpp_source.html#l00483">483</a> of file <a class="el" href="cuda_8hpp_source.html">cuda.hpp</a>.</p>
+<p class="definition">Definition at line <a class="el" href="cuda_8hpp_source.html#l00582">582</a> of file <a class="el" href="cuda_8hpp_source.html">cuda.hpp</a>.</p>
 </div><a name="doc-func-members" id="doc-func-members"></a><h2 id="header-doc-func-members" class="groupheader">Member Function Documentation</h2>
 <a id="a0228456a479dc026f7c69fb8a11305db" name="a0228456a479dc026f7c69fb8a11305db"></a>
 <h2 class="memtitle"><span class="permalink"><a href="#a0228456a479dc026f7c69fb8a11305db">&#9670;&#160;</a></span>axpy()</h2>
@@ -199,7 +199,7 @@ template&lt;linalg::scalar T&gt; </div>
   </dd>
 </dl>
 
-<p class="definition">Definition at line <a class="el" href="cuda_8hpp_source.html#l00499">499</a> of file <a class="el" href="cuda_8hpp_source.html">cuda.hpp</a>.</p>
+<p class="definition">Definition at line <a class="el" href="cuda_8hpp_source.html#l00598">598</a> of file <a class="el" href="cuda_8hpp_source.html">cuda.hpp</a>.</p>
 
 </div>
 </div>
@@ -248,7 +248,7 @@ template&lt;linalg::scalar T&gt; </div>
   </dd>
 </dl>
 
-<p class="definition">Definition at line <a class="el" href="cuda_8hpp_source.html#l00490">490</a> of file <a class="el" href="cuda_8hpp_source.html">cuda.hpp</a>.</p>
+<p class="definition">Definition at line <a class="el" href="cuda_8hpp_source.html#l00589">589</a> of file <a class="el" href="cuda_8hpp_source.html">cuda.hpp</a>.</p>
 
 </div>
 </div>
@@ -308,7 +308,7 @@ template&lt;linalg::scalar T&gt; </div>
   </dd>
 </dl>
 
-<p class="definition">Definition at line <a class="el" href="cuda_8hpp_source.html#l00536">536</a> of file <a class="el" href="cuda_8hpp_source.html">cuda.hpp</a>.</p>
+<p class="definition">Definition at line <a class="el" href="cuda_8hpp_source.html#l00635">635</a> of file <a class="el" href="cuda_8hpp_source.html">cuda.hpp</a>.</p>
 
 </div>
 </div>
@@ -375,7 +375,7 @@ requires (std::is_same_v&lt;T, float&gt; || std::is_same_v&lt;T, double&gt;)</di
   </dd>
 </dl>
 
-<p class="definition">Definition at line <a class="el" href="cuda_8hpp_source.html#l00528">528</a> of file <a class="el" href="cuda_8hpp_source.html">cuda.hpp</a>.</p>
+<p class="definition">Definition at line <a class="el" href="cuda_8hpp_source.html#l00627">627</a> of file <a class="el" href="cuda_8hpp_source.html">cuda.hpp</a>.</p>
 
 </div>
 </div>
@@ -435,7 +435,7 @@ template&lt;linalg::scalar T&gt; </div>
   </dd>
 </dl>
 
-<p class="definition">Definition at line <a class="el" href="cuda_8hpp_source.html#l00518">518</a> of file <a class="el" href="cuda_8hpp_source.html">cuda.hpp</a>.</p>
+<p class="definition">Definition at line <a class="el" href="cuda_8hpp_source.html#l00617">617</a> of file <a class="el" href="cuda_8hpp_source.html">cuda.hpp</a>.</p>
 
 </div>
 </div>
@@ -502,7 +502,7 @@ requires (std::is_same_v&lt;T, float&gt; || std::is_same_v&lt;T, double&gt;)</di
   </dd>
 </dl>
 
-<p class="definition">Definition at line <a class="el" href="cuda_8hpp_source.html#l00510">510</a> of file <a class="el" href="cuda_8hpp_source.html">cuda.hpp</a>.</p>
+<p class="definition">Definition at line <a class="el" href="cuda_8hpp_source.html#l00609">609</a> of file <a class="el" href="cuda_8hpp_source.html">cuda.hpp</a>.</p>
 
 </div>
 </div>
@@ -568,7 +568,7 @@ template&lt;linalg::scalar T&gt; </div>
   </dd>
 </dl>
 
-<p class="definition">Definition at line <a class="el" href="cuda_8hpp_source.html#l00545">545</a> of file <a class="el" href="cuda_8hpp_source.html">cuda.hpp</a>.</p>
+<p class="definition">Definition at line <a class="el" href="cuda_8hpp_source.html#l00644">644</a> of file <a class="el" href="cuda_8hpp_source.html">cuda.hpp</a>.</p>
 
 </div>
 </div>
@@ -629,7 +629,7 @@ template&lt;linalg::scalar T&gt; </div>
   </dd>
 </dl>
 
-<p class="definition">Definition at line <a class="el" href="cuda_8hpp_source.html#l00555">555</a> of file <a class="el" href="cuda_8hpp_source.html">cuda.hpp</a>.</p>
+<p class="definition">Definition at line <a class="el" href="cuda_8hpp_source.html#l00654">654</a> of file <a class="el" href="cuda_8hpp_source.html">cuda.hpp</a>.</p>
 
 </div>
 </div>
@@ -648,7 +648,7 @@ template&lt;linalg::scalar T&gt; </div>
 
 <p>The device; must outlive the backend. </p>
 
-<p class="definition">Definition at line <a class="el" href="cuda_8hpp_source.html#l00484">484</a> of file <a class="el" href="cuda_8hpp_source.html">cuda.hpp</a>.</p>
+<p class="definition">Definition at line <a class="el" href="cuda_8hpp_source.html#l00583">583</a> of file <a class="el" href="cuda_8hpp_source.html">cuda.hpp</a>.</p>
 
 </div>
 </div>
@@ -666,7 +666,7 @@ template&lt;linalg::scalar T&gt; </div>
 
 <p>How products of <span class="tt">float</span> are computed: in float, or on tensor cores. </p>
 
-<p class="definition">Definition at line <a class="el" href="cuda_8hpp_source.html#l00485">485</a> of file <a class="el" href="cuda_8hpp_source.html">cuda.hpp</a>.</p>
+<p class="definition">Definition at line <a class="el" href="cuda_8hpp_source.html#l00584">584</a> of file <a class="el" href="cuda_8hpp_source.html">cuda.hpp</a>.</p>
 
 </div>
 </div>

@@ -26,7 +26,7 @@
  <tbody>
  <tr id="projectrow">
   <td id="projectalign">
-   <div id="projectname">snicholls-gpu<span id="projectnumber">&#160;0.5.0</span>
+   <div id="projectname">snicholls-gpu<span id="projectnumber">&#160;0.6.0</span>
    </div>
    <div id="projectbrief">GPU backends of snicholls-core&#39;s interfaces: linalg on OpenCL</div>
   </td>
@@ -107,6 +107,7 @@ $(function(){initNavTree('cuda_8hpp.html','',''); });
 <code>#include &lt;stdexcept&gt;</code><br />
 <code>#include &lt;string&gt;</code><br />
 <code>#include &lt;type_traits&gt;</code><br />
+<code>#include &lt;utility&gt;</code><br />
 <code>#include &lt;vector&gt;</code><br />
 </div>
 <p><a href="cuda_8hpp_source.html">Go to the source code of this file.</a></p>
@@ -121,6 +122,8 @@ Classes</h2></td></tr>
 <tr class="memdesc:"><td class="mdescLeft">&#160;</td><td class="mdescRight">One CUDA device with its cuBLAS handle and stream.  <a href="classsnicholls_1_1gpu_1_1cuda__context.html#details">More...</a><br /></td></tr>
 <tr class="memitem:snicholls_3A_3Agpu_3A_3Adevice_5Fbuffer_3C_20T_20_3E" id="r_snicholls_3A_3Agpu_3A_3Adevice_5Fbuffer_3C_20T_20_3E"><td class="memItemLeft" align="right" valign="top">class &#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="classsnicholls_1_1gpu_1_1device__buffer.html">snicholls::gpu::device_buffer&lt; T &gt;</a></td></tr>
 <tr class="memdesc:"><td class="mdescLeft">&#160;</td><td class="mdescRight"><span class="tt">n</span> elements of device memory, released when it goes out of scope; <span class="tt"><a class="el" href="classsnicholls_1_1gpu_1_1device__buffer.html#a56e5c402b503dec3f8e07e16e344e0a0" title="A view of the device memory, for core&#39;s functions (never dereference it on the host).">span()</a></span> is a view core's functions take.  <a href="classsnicholls_1_1gpu_1_1device__buffer.html#details">More...</a><br /></td></tr>
+<tr class="memitem:snicholls_3A_3Agpu_3A_3Acuda_5Fgraph" id="r_snicholls_3A_3Agpu_3A_3Acuda_5Fgraph"><td class="memItemLeft" align="right" valign="top">class &#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="classsnicholls_1_1gpu_1_1cuda__graph.html">snicholls::gpu::cuda_graph</a></td></tr>
+<tr class="memdesc:"><td class="mdescLeft">&#160;</td><td class="mdescRight">Work queued on a context's stream, captured once as a CUDA graph and launched again as a whole: one launch in place of each of its kernels and products.  <a href="classsnicholls_1_1gpu_1_1cuda__graph.html#details">More...</a><br /></td></tr>
 <tr class="memitem:snicholls_3A_3Agpu_3A_3Acuda_5Fbackend" id="r_snicholls_3A_3Agpu_3A_3Acuda_5Fbackend"><td class="memItemLeft" align="right" valign="top">struct &#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structsnicholls_1_1gpu_1_1cuda__backend.html">snicholls::gpu::cuda_backend</a></td></tr>
 <tr class="memdesc:"><td class="mdescLeft">&#160;</td><td class="mdescRight">The <span class="tt">linalg::blas_backend</span> on a <span class="tt"><a class="el" href="classsnicholls_1_1gpu_1_1cuda__context.html" title="One CUDA device with its cuBLAS handle and stream.">cuda_context</a></span>: <span class="tt"><a class="el" href="structsnicholls_1_1gpu_1_1cuda__backend.html#ab55938333927c6d15d9654b996123e8b" title="C = alpha A B + beta C, on the device.">gemm</a></span> and <span class="tt"><a class="el" href="structsnicholls_1_1gpu_1_1cuda__backend.html#a2c3cb8ed9803e2957299f8588f3311ea" title="y = alpha A x + beta y, on the device as a product with one column.">gemv</a></span> on the device, the rest on the host.  <a href="structsnicholls_1_1gpu_1_1cuda__backend.html#details">More...</a><br /></td></tr>
 </table><table class="memberdecls">
@@ -145,6 +148,7 @@ Enumerations</h2></td></tr>
 <li><span class="tt">cuda_context::create(device)</span>: the device, its cuBLAS handle and stream; <span class="tt">result</span> with a <span class="tt">cuda_failure</span> when there is no device.</li>
 <li><span class="tt">cuda_backend{&amp;context}</span>: the backend, a pointer and <span class="tt">cuda_math</span> (float, or TF32 on the tensor cores), trivially copyable as the concept requires. <span class="tt">gemm</span> and <span class="tt">gemv</span> run on the device; <span class="tt">dot</span>, <span class="tt">axpy</span>, <span class="tt">syrk</span> and <span class="tt">triangular_solve</span> run on the host through core's reference, for host memory (device memory there throws, until those move to the device).</li>
 <li><span class="tt">device_buffer&lt;T&gt;</span>: <span class="tt">n</span> elements of device memory; <span class="tt">upload</span>, <span class="tt">download</span>, <span class="tt">span()</span>.</li>
+<li><span class="tt">cuda_graph::capture(context, f)</span>: the work <span class="tt">f</span> queues on the context's stream as a CUDA graph, <span class="tt">launch()</span>ed again as one launch (a training step's thousands of kernels).</li>
 </ul>
 <div class="fragment"><div class="line">    <span class="keyword">auto</span> made = gpu::cuda_context::create();   <span class="comment">// device 0: its cuBLAS handle and stream</span></div>
 <div class="line">    <span class="keywordflow">if</span> (made.is_err()) {</div>
@@ -214,7 +218,7 @@ Enumerations</h2></td></tr>
 </td></tr>
 </table>
 
-<p class="definition">Definition at line <a class="el" href="cuda_8hpp_source.html#l00087">87</a> of file <a class="el" href="cuda_8hpp_source.html">cuda.hpp</a>.</p>
+<p class="definition">Definition at line <a class="el" href="cuda_8hpp_source.html#l00090">90</a> of file <a class="el" href="cuda_8hpp_source.html">cuda.hpp</a>.</p>
 
 </div>
 </div>
