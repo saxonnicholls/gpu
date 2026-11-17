@@ -23,15 +23,26 @@
 //  product). main() checks first that the two agree normwise to TF32's rounding (5e-3, as the TF32 attention paths
 //  above): the forward is the same to the bit, the backward's products differ in shape, so cuBLAS picks other TF32
 //  kernels and sums in other orders (measured up to 8e-4, the weights' gradients summed in one product instead of four).
+
+//  Then one optimiser step over a GPT-2-small block's four matrices (768 x 2304, 768 x 768, 3072 x 768, 768 x 3072;
+//  7.1M parameters) with everything in device memory: core's ml::muon_step (five Newton-Schulz iterations, three
+//  products each) with its products in float, TF32 and bfloat16, against ml::adamw_rows on the same matrices. main()
+//  first checks Muon on the device (float) against core's reference on the host for the 768 x 768 matrix (normwise
+//  5e-4 on the weights' change, measured 1.2e-4: sums of 768 products in cuBLAS's order rather than the reference's,
+//  and the quintic's slope of 3.4 near zero amplifies a small singular value's rounding over the five iterations).
 //
 
 #include <snicholls/gpu/cuda_ops.hpp>
+
+#include <snicholls/core/linalg/reference.hpp>
+#include <snicholls/core/ml/muon.hpp>
 
 #include "../tests/support/block_step.hpp"
 
 #include <benchmark/benchmark.h>
 
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <cstdint>
 #include <cstddef>
@@ -194,6 +205,72 @@ BENCHMARK(BM_Batch)
     ->ArgsProduct({{0, 1}, {0, 1}})
     ->Unit(benchmark::kMillisecond);
 
+
+// A GPT-2-small block's matrices with their gradients and both optimisers' state, on the device
+struct block_matrices {
+    static constexpr std::array<std::pair<std::size_t, std::size_t>, 4> shapes{{{768, 2304}, {768, 768}, {3072, 768}, {768, 3072}}};
+    std::vector<gpu::testing::mirror> w, g, m, v;
+    std::unique_ptr<gpu::device_buffer<float>> work;
+    block_matrices()
+    {
+        const auto& c = *device().context;
+        std::size_t most = 0;
+        for (std::uint64_t i = 0; i < shapes.size(); ++i) {
+            const std::size_t n = shapes[i].first * shapes[i].second;
+            w.emplace_back(c, gpu::testing::stream(n, 300 + i, 0.02f));
+            g.emplace_back(c, gpu::testing::stream(n, 400 + i, 1.0f));
+            m.emplace_back(c, std::vector<float>(n));
+            v.emplace_back(c, std::vector<float>(n));
+            most = std::max(most, ml::muon_work_size(shapes[i].first, shapes[i].second));
+        }
+        work = std::make_unique<gpu::device_buffer<float>>(c, most);
+    }
+    void muon(const gpu::cuda_training_backend& b)
+    {
+        const ml::muon_config<float> config{.lr = 0.02f, .momentum = 0.95f, .nesterov = true};
+        for (std::size_t i = 0; i < shapes.size(); ++i) {
+            const auto [rows, cols] = shapes[i];
+            ml::muon_step(b, w[i].d(), std::span<const float>(g[i].d()), m[i].d(), rows, cols, config,
+                          work->span().first(ml::muon_work_size(rows, cols)));
+        }
+        cudaDeviceSynchronize();
+    }
+    void adamw(const gpu::cuda_training_backend& b, std::uint64_t step)
+    {
+        const ml::adamw_config<float> config{.learning_rate = 6e-4f, .beta2 = 0.95f, .weight_decay = 0.1f};
+        for (std::size_t i = 0; i < shapes.size(); ++i)
+            gpu::adamw_rows(b, w[i].d(), std::span<const float>(g[i].d()), m[i].d(), v[i].d(), step, config);
+        cudaDeviceSynchronize();
+    }
+};
+
+void BM_Muon(benchmark::State& state)
+{
+    block_matrices bm;
+    auto b = backend_for(path::gemm_float);
+    b.math = state.range(0) == 0 ? gpu::cuda_math::float32 : state.range(0) == 1 ? gpu::cuda_math::tf32 : gpu::cuda_math::bf16;
+    bm.muon(b);   // warm: cuBLAS's handles and the bfloat16 scratch
+    for (auto _ : state)
+        bm.muon(b);
+    state.SetItemsProcessed(state.iterations() * std::int64_t(7077888));
+}
+BENCHMARK(BM_Muon)
+    ->Name("BM_Gpt2SmallBlockMatrices_MuonStep")
+    ->ArgNames({"math"})   // 0: products in float, 1: TF32, 2: bfloat16
+    ->DenseRange(0, 2)
+    ->Unit(benchmark::kMillisecond);
+
+void BM_Adamw(benchmark::State& state)
+{
+    block_matrices bm;
+    const auto b = backend_for(path::gemm_float);
+    std::uint64_t step = 1;
+    for (auto _ : state)
+        bm.adamw(b, step++);
+    state.SetItemsProcessed(state.iterations() * std::int64_t(7077888));
+}
+BENCHMARK(BM_Adamw)->Name("BM_Gpt2SmallBlockMatrices_AdamwStep")->Unit(benchmark::kMillisecond);
+
 double normwise(const std::vector<float>& got, const std::vector<float>& want)
 {
     double diff = 0, scale = 0;
@@ -226,6 +303,7 @@ bool attention_fair()
     return ok;
 }
 
+<<<<<<< HEAD
 bool batch_fair()
 {
     batch_step a(*device().context), b(*device().context);
@@ -239,6 +317,26 @@ bool batch_fair()
         ok &= e <= 5e-3;
     }
     return ok;
+}
+
+bool muon_fair()
+{
+    constexpr std::size_t rows = 768, cols = 768, n = rows * cols;
+    gpu::testing::mirror w(*device().context, gpu::testing::stream(n, 500, 0.02f)), g(*device().context, gpu::testing::stream(n, 501, 1.0f)),
+        m(*device().context, std::vector<float>(n)), work(*device().context, std::vector<float>(ml::muon_work_size(rows, cols)));
+    auto hw = w.host, hm = m.host, hwork = work.host;
+    const ml::muon_config<float> config{};
+    ml::muon_step(backend_for(path::gemm_float), w.d(), std::span<const float>(g.d()), m.d(), rows, cols, config, work.d());
+    ml::muon_step(snicholls::linalg::reference, std::span<float>(hw), std::span<const float>(g.host), std::span<float>(hm), rows, cols, config,
+                  std::span<float>(hwork));
+    const auto got = w.back();
+    std::vector<float> dgot(n), dwant(n);
+    for (std::size_t i = 0; i < n; ++i)
+        dgot[i] = got[i] - w.host[i], dwant[i] = hw[i] - w.host[i];
+    const double e = normwise(dgot, dwant);
+    std::printf("  muon 768 x 768, float on the device against the host: normwise %.2g\n", e);
+    return e <= 5e-4 && m.back() == hm;
+>>>>>>> feature/muon-device
 }
 
 bool fair()
@@ -268,7 +366,7 @@ bool fair()
 
 int main(int argc, char** argv)
 {
-    if (!fair() || !attention_fair() || !batch_fair()) {
+    if (!fair() || !attention_fair() || !batch_fair() || !muon_fair()) {
         std::fprintf(stderr, "cuda_ops benchmark: fairness check FAILED; not benchmarking\n");
         return 1;
     }

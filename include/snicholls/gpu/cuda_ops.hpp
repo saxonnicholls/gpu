@@ -31,6 +31,13 @@
 /// launch over every (row, head), positions restarting in each sequence; flash attention one launch per kernel, the
 /// sequence the grid's z; the matrix-product and tiled attention paths one sequence after another.
 ///
+/// Core's optimisers run here too: `adamw_rows` has its kernel, and `ml::muon_step` (core's `ml/muon.hpp`), whose
+/// every step is a call on the backend, runs on the device through the overloads here: the momentum and the update by
+/// `scale_rows`, `add_rows` and `copy_rows`, the norm by `sum_squares`, and the Newton-Schulz iteration's three products
+/// per step through `gemm`, so in bfloat16 under `cuda_math::bf16`, as nanochat runs it.
+///
+/// \snippet cuda_ops_demo.cpp muon
+///
 /// **Relationships.** `cuda.hpp` (the context, the products, `device_buffer`), core's `ml/transformer_block.hpp`,
 /// `ml/attention_layer.hpp`, `ml/mlp.hpp`, `ml/linear.hpp` (the operations it overloads and the reference it is checked
 /// against). Group: \ref gpu.
@@ -79,8 +86,14 @@
 /// parameter gradients 7.2 to 0.8 ms, `sum_rows` 5.6 to 2.0 ms, the embeddings' backward 3.7 to 0.8 ms, the norms'
 /// backward without its third kernel, allocation and wait).
 ///
+/// One Muon step over a GPT-2-small block's four matrices (768 x 2304, 768 x 768, 3072 x 768, 768 x 3072; 7.1M
+/// parameters, about 127 GFLOP of Newton-Schulz products) on the same device, 2026-11-17, Release, while a training run
+/// kept the GPU about 98% busy (so upper bounds): 29.8 ms with float products, 15.6 ms in TF32, 12.1 ms in bfloat16,
+/// against 2.0 ms for `adamw_rows` on the same matrices.
+///
 /// **Tests and demos.** `tests/cuda_ops_test.cpp` (each step against core's, and whole training steps of GPT-2-,
-/// Llama- and nanochat-shaped blocks against the reference), `demos/cuda_ops_demo.cpp`.
+/// Llama- and nanochat-shaped blocks against the reference; Muon's step in float, TF32 and bfloat16),
+/// `demos/cuda_ops_demo.cpp`.
 ///
 /// **Dependencies.** `cuda.hpp`, `<nvrtc.h>`, core's `ml/transformer_block.hpp`. Link `CUDA::nvrtc` too.
 ///
