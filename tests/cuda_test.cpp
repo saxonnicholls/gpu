@@ -27,6 +27,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <limits>
+#include <stdexcept>
 #include <thread>
 #include <type_traits>
 #include <utility>
@@ -210,6 +211,52 @@ TEST(GpuCuda, ADeviceProductIsQueuedAndItsResultSeenAfterwards)
     EXPECT_EQ(got, again);
     for (std::size_t i = 0; i < want.size(); ++i)
         ASSERT_NEAR(got[i], want[i], tolerance<float>(k)) << i;
+}
+
+TEST(GpuCuda, ACapturedGraphReplaysTheProductsBitsOnNewInputs)
+{
+    constexpr std::size_t m = 64, n = 96, k = 128;
+    using R = la::layout_right;
+    gpu::device_buffer<float> da(shared_context(), m * k), db(shared_context(), k * n), dc(shared_context(), m * n);
+    const auto product = [&] {
+        ASSERT_TRUE(la::gemm(gpu::cuda_backend{&shared_context(), gpu::cuda_math::tf32}, 1.0f, la::matrix_view<const float, R>(da.span().data(), {m, k}),
+                             la::matrix_view<const float, R>(db.span().data(), {k, n}), 0.0f, la::matrix_view<float, R>(dc.span().data(), {m, n}))
+                        .is_ok());
+    };
+    da.upload(stream<float>(m * k, 41)), db.upload(stream<float>(k * n, 42));
+    auto made = gpu::cuda_graph::capture(shared_context(), product);
+    ASSERT_TRUE(made.is_ok());
+    auto graph = std::move(made).unwrap();
+    EXPECT_GE(graph.nodes(), 1u);
+    for (const unsigned seed : {43u, 44u}) {   // new inputs in the same buffers, then the direct product and the replay
+        da.upload(stream<float>(m * k, seed));
+        std::vector<float> direct(m * n), replayed(m * n);
+        product();
+        dc.download(direct);
+        dc.upload(std::vector<float>(m * n, 0.0f));
+        graph.launch();
+        dc.download(replayed);
+        EXPECT_EQ(replayed, direct);
+    }
+    auto moved = std::move(graph);   // the executable moves with it
+    moved.launch();
+    shared_context().synchronize();
+}
+
+TEST(GpuCuda, ACaptureThatSynchronisesFailsAndLeavesTheStreamUsable)
+{
+    // Waiting for the stream is refused while it is captured: the capture reports the failure, and afterwards the
+    // context works as before
+    auto made = gpu::cuda_graph::capture(shared_context(), [] { (void)cudaStreamSynchronize(shared_context().stream()); });
+    EXPECT_TRUE(made.is_err());
+    gpu::device_buffer<float> d(shared_context(), 4);
+    d.upload(std::vector<float>{1, 2, 3, 4});
+    std::vector<float> back(4);
+    d.download(back);
+    EXPECT_EQ(back, (std::vector<float>{1, 2, 3, 4}));
+    EXPECT_THROW((void)gpu::cuda_graph::capture(shared_context(), [] { throw std::runtime_error("enqueue failed"); }), std::runtime_error);
+    d.download(back);
+    EXPECT_EQ(back, (std::vector<float>{1, 2, 3, 4}));
 }
 
 TEST(GpuCuda, AStridedResultKeepsItsGapsFromHostAndDeviceMemory)

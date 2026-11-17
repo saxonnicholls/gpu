@@ -30,6 +30,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <memory>
+#include <stdexcept>
 #include <span>
 #include <string>
 #include <utility>
@@ -265,6 +266,122 @@ TEST(GpuCudaOps, EmbeddingsTheClassifierAdamwAndTheReductionsAreCores)
     ml::scale_rows(la::reference, std::span<float>(hbig), 0.5f);
     cudaDeviceSynchronize();
     EXPECT_EQ(big.back(), hbig);
+}
+
+// The elementwise kernels take float4 for aligned spans (a quad a thread, then the tail) and one element a thread
+// otherwise: both paths, with tails of every length, are core's bits
+TEST(GpuCudaOps, TheElementwiseStepsAreCoresToTheBitAlignedOrNotWithAnyTail)
+{
+    const auto b = backend();
+    for (const std::size_t offset : {0u, 1u, 4u})
+        for (const std::size_t n : {0u, 1u, 3u, 4u, 7u, 1000u, 1003u}) {
+            const std::string what = "offset " + std::to_string(offset) + ", n " + std::to_string(n);
+            mirror x(stream(n + offset, 1)), a(stream(n + offset, 2));
+            auto hx = x.host;
+            const auto xs = x.d().subspan(offset), as = a.d().subspan(offset);
+            const auto hxs = std::span<float>(hx).subspan(offset);
+            const auto has = std::span<const float>(a.host).subspan(offset);
+            gpu::add_rows(b, std::span<const float>(as), xs);
+            ml::add_rows(la::reference, has, hxs);
+            gpu::scale_rows(b, xs, 0.375f);
+            ml::scale_rows(la::reference, hxs, 0.375f);
+            cudaDeviceSynchronize();
+            EXPECT_EQ(x.back(), hx) << what;
+            gpu::copy_rows(b, std::span<const float>(xs), as);
+            gpu::fill_rows(b, xs, -1.5f);
+            cudaDeviceSynchronize();
+            auto want_a = a.host;
+            std::copy(hxs.begin(), hxs.end(), want_a.begin() + std::ptrdiff_t(offset));
+            EXPECT_EQ(a.back(), want_a) << what;
+            std::fill(hxs.begin(), hxs.end(), -1.5f);
+            EXPECT_EQ(x.back(), hx) << what;
+        }
+    for (const std::size_t r : {4u, 6u, 64u})   // rows of a multiple of 4 take quads, others not
+        for (const std::size_t offset : {0u, 2u}) {
+            mirror y(stream(9 * r + offset, 3)), bias(stream(r, 4));
+            auto hy = y.host;
+            gpu::add_bias_rows(b, y.d().subspan(offset), std::span<const float>(bias.d()));
+            ml::add_bias_rows(la::reference, std::span<float>(hy).subspan(offset), std::span<const float>(bias.host));
+            cudaDeviceSynchronize();
+            EXPECT_EQ(y.back(), hy) << "bias rows of " << r << ", offset " << offset;
+        }
+}
+
+// The column sums of many rows: 32 row groups, each in order, then the groups in order
+TEST(GpuCudaOps, SumRowsOverManyRowsAndOddColumnsIsCoresToRounding)
+{
+    const auto b = backend();
+    for (const std::size_t r : {1u, 33u, 70u}) {
+        constexpr std::size_t rows = 300;
+        mirror ys(stream(rows * r, 5)), into(stream(r, 6));
+        auto hinto = into.host;
+        gpu::sum_rows(b, std::span<const float>(ys.d()), into.d());
+        ml::sum_rows(la::reference, std::span<const float>(ys.host), std::span<float>(hinto));
+        near(into.back(), hinto, 1e-5f, "sum_rows of " + std::to_string(r) + " columns");
+        const auto first = into.back();
+        into.dev->upload(into.host);
+        gpu::sum_rows(b, std::span<const float>(ys.d()), into.d());
+        EXPECT_EQ(into.back(), first);   // the same order every time
+    }
+}
+
+// The classifier with float4 rows (a vocabulary padded to a multiple of 4) and without, against core's
+TEST(GpuCudaOps, TheClassifierOverPaddedQuadRowsIsCores)
+{
+    const auto b = backend();
+    constexpr std::size_t n = 12, V = 64, classes = 61;
+    std::vector<std::uint32_t> targets(n);
+    for (std::size_t t = 0; t < n; ++t)
+        targets[t] = std::uint32_t((t * 17) % classes);
+    targets[0] = classes - 1;   // the last class, in the tail after the quads
+    gpu::device_buffer<std::uint32_t> dt(*device().context, n);
+    dt.upload(targets);
+    mirror logits(stream(n * V, 8, 4.0f)), losses{std::vector<float>(n)};
+    auto hlogits = logits.host, hlosses = losses.host;
+    gpu::cross_entropy_rows(b, logits.d(), std::span<const std::uint32_t>(dt.span()), losses.d(), 0.5f, classes);
+    ml::cross_entropy_rows(la::reference, std::span<float>(hlogits), targets, std::span<float>(hlosses), 0.5f, classes);
+    near(losses.back(), hlosses, 1e-6f, "losses");
+    near(logits.back(), hlogits, 1e-6f, "gradient");
+    for (std::size_t t = 0; t < n; ++t)
+        for (std::size_t i = classes; i < V; ++i)
+            ASSERT_EQ(logits.back()[t * V + i], 0.0f);   // the padding's gradient is 0
+}
+
+// One launch over many tensors with their own decays: each tensor's adamw_rows to the bit, the gradient scale as
+// scale_rows before the update
+TEST(GpuCudaOps, AdamwSegmentsIsAdamwRowsPerTensorInOneLaunch)
+{
+    const auto b = backend();
+    for (const bool quads : {true, false}) {
+        std::vector<gpu::adamw_segment> segs;
+        for (std::size_t k = 0; k < 40; ++k)   // more than one launch's 32
+            segs.push_back({quads ? 4 * (k % 5 + 1) : k % 7 + 1, k % 3 == 0 ? 0.1f : 0.0f});
+        std::size_t total = 0;
+        for (const auto& s : segs)
+            total += s.size;
+        mirror p(stream(total, 10)), g(stream(total, 11)), m{std::vector<float>(total)}, v{std::vector<float>(total)};
+        mirror p2(p.host), g2(g.host), m2{std::vector<float>(total)}, v2{std::vector<float>(total)};
+        const ml::adamw_config<float> c{.learning_rate = 0.01f, .beta2 = 0.95f, .weight_decay = 0.5f};   // not used by the segments
+        for (std::uint64_t step = 1; step <= 3; ++step) {
+            gpu::adamw_segments(b, p.d(), std::span<const float>(g.d()), m.d(), v.d(), step, c, segs, 0.25f);
+            gpu::scale_rows(b, g2.d(), 0.25f);
+            std::size_t at = 0;
+            for (const auto& s : segs) {
+                auto cs = c;
+                cs.weight_decay = s.weight_decay;
+                gpu::adamw_rows(b, p2.d().subspan(at, s.size), std::span<const float>(g2.d().subspan(at, s.size)), m2.d().subspan(at, s.size),
+                                v2.d().subspan(at, s.size), step, cs);
+                at += s.size;
+            }
+            g2.dev->upload(g2.host);   // the gradients unscaled again for the next step
+        }
+        EXPECT_EQ(p.back(), p2.back()) << (quads ? "quads" : "single elements");
+        EXPECT_EQ(m.back(), m2.back());
+        EXPECT_EQ(v.back(), v2.back());
+    }
+    mirror p(stream(8, 1)), g(stream(8, 2)), m{std::vector<float>(8)}, v{std::vector<float>(8)};
+    const std::vector<gpu::adamw_segment> wrong{{4, 0.0f}, {3, 0.0f}};
+    EXPECT_THROW(gpu::adamw_segments(b, p.d(), std::span<const float>(g.d()), m.d(), v.d(), 1, {}, wrong), std::invalid_argument);
 }
 
 // The projections head by head as one product and a permutation, against core's per-head loop

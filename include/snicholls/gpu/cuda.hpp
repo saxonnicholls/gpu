@@ -24,6 +24,8 @@
 ///   `triangular_solve` run on the host through core's reference, for host memory (device memory there throws, until
 ///   those move to the device).
 /// - `device_buffer<T>`: `n` elements of device memory; `upload`, `download`, `span()`.
+/// - `cuda_graph::capture(context, f)`: the work `f` queues on the context's stream as a CUDA graph, `launch()`ed
+///   again as one launch (a training step's thousands of kernels).
 ///
 /// \snippet cuda_demo.cpp cuda
 ///
@@ -79,6 +81,7 @@
 #include <stdexcept>
 #include <string>
 #include <type_traits>
+#include <utility>
 #include <vector>
 
 namespace snicholls::gpu {
@@ -473,6 +476,102 @@ public:
 private:
     T* data_ = nullptr;
     std::size_t size_ = 0;
+};
+
+/// \brief Work queued on a context's stream, captured once as a CUDA graph and launched again as a whole: one launch
+/// in place of each of its kernels and products.
+///
+/// A training step is thousands of small launches; their overhead and the gaps between them are a large part of a
+/// step. `capture` runs a function that queues work on the context's stream (`cuda_ops.hpp`'s steps, products over
+/// device memory) without executing it, and `launch` replays exactly that work: the same kernels on the same device
+/// addresses with the same arguments. So whatever changes between replays (a micro-batch's tokens, the learning rate)
+/// must live in device memory the captured work reads, written before each `launch` (`device_buffer::upload` into the
+/// same buffer).
+///
+/// The captured function must not allocate, free, wait for the stream or read device memory on the host: CUDA refuses
+/// such a call during capture (the capture mode is thread-local), and `capture` returns the failure. Run the work once
+/// uncaptured first, so that every buffer it grows (`cuda_kernels::scratch`) has its size. A replay gives the bits of
+/// the uncaptured run: it is the same work.
+///
+/// \snippet cuda_demo.cpp cuda_graph
+///
+/// **Guarantees.** Movable, not copyable; owns the graph and its executable. `launch` is queued on the context's stream
+/// and ordered with everything else on it. The context must outlive the graph.
+class cuda_graph {
+public:
+    /// \brief Captures the work `enqueue` queues on the context's stream.
+    /// \param context The device and stream. \param enqueue Called once; queues work on `context.stream()`.
+    /// \return The graph, or the failure of the capture or of its instantiation (with CUDA's code). An exception from
+    /// `enqueue` ends the capture and propagates.
+    template <typename F>
+    [[nodiscard]] static result<cuda_graph, cuda_failure> capture(const cuda_context& context, F&& enqueue)
+    {
+        cudaStream_t s = context.stream();
+        if (const cudaError_t e = cudaStreamBeginCapture(s, cudaStreamCaptureModeThreadLocal); e != cudaSuccess)
+            return err(cuda_failure{cuda_error::call_failed, static_cast<int>(e)});
+        cudaGraph_t graph = nullptr;
+        try {
+            std::forward<F>(enqueue)();
+        } catch (...) {
+            (void)cudaStreamEndCapture(s, &graph);
+            if (graph != nullptr)
+                (void)cudaGraphDestroy(graph);
+            (void)cudaGetLastError();
+            throw;
+        }
+        if (const cudaError_t e = cudaStreamEndCapture(s, &graph); e != cudaSuccess) {
+            if (graph != nullptr)
+                (void)cudaGraphDestroy(graph);
+            (void)cudaGetLastError();
+            return err(cuda_failure{cuda_error::call_failed, static_cast<int>(e)});
+        }
+        cuda_graph out(context.stream());
+        out.graph_ = graph;
+        if (const cudaError_t e = cudaGraphInstantiate(&out.exec_, graph, 0); e != cudaSuccess)
+            return err(cuda_failure{cuda_error::call_failed, static_cast<int>(e)});
+        return ok(std::move(out));
+    }
+
+    /// \brief Moves the graph. \param o Left empty.
+    cuda_graph(cuda_graph&& o) noexcept : stream_(o.stream_), graph_(std::exchange(o.graph_, nullptr)), exec_(std::exchange(o.exec_, nullptr)) {}
+    /// \brief Moves the graph, releasing this one's. \param o Left empty. \return This.
+    cuda_graph& operator=(cuda_graph&& o) noexcept
+    {
+        if (this != &o) {
+            release();
+            stream_ = o.stream_, graph_ = std::exchange(o.graph_, nullptr), exec_ = std::exchange(o.exec_, nullptr);
+        }
+        return *this;
+    }
+    cuda_graph(const cuda_graph&) = delete;              ///< Not copyable.
+    cuda_graph& operator=(const cuda_graph&) = delete;   ///< Not copyable. \return Nothing; deleted.
+    /// \brief Releases the graph and its executable.
+    ~cuda_graph() { release(); }
+
+    /// \brief Queues the captured work on the context's stream, once more. \throws cuda_exception if the launch fails.
+    void launch() const { detail::cuda::check(cudaGraphLaunch(exec_, stream_), "cudaGraphLaunch"); }
+
+    /// \brief The kernels, copies and other nodes the graph holds. \return Their count.
+    [[nodiscard]] std::size_t nodes() const
+    {
+        std::size_t n = 0;
+        detail::cuda::check(cudaGraphGetNodes(graph_, nullptr, &n), "cudaGraphGetNodes");
+        return n;
+    }
+
+private:
+    explicit cuda_graph(cudaStream_t s) noexcept : stream_(s) {}
+    void release() noexcept
+    {
+        if (exec_ != nullptr)
+            (void)cudaGraphExecDestroy(exec_);
+        if (graph_ != nullptr)
+            (void)cudaGraphDestroy(graph_);
+        exec_ = nullptr, graph_ = nullptr;
+    }
+    cudaStream_t stream_ = nullptr;
+    cudaGraph_t graph_ = nullptr;
+    cudaGraphExec_t exec_ = nullptr;
 };
 
 /// \brief The `linalg::blas_backend` on a `cuda_context`: `gemm` and `gemv` on the device, the rest on the host.

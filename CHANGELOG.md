@@ -3,6 +3,32 @@
 All notable changes to snicholls-gpu. The format follows Keep a Changelog; versions follow Semantic Versioning.
 A version is released when its tag is on a commit where every blocking CI leg is green.
 
+## Unreleased
+
+### Added
+
+- **`cuda_graph`**: the work a function queues on a context's stream captured once as a CUDA graph and `launch()`ed again
+  as one launch. A GPT-2 training micro-batch's forward and backward passes (about 4,400 kernels and products) replay
+  to the bit of the uncaptured pass; a capture that waits, allocates or reads back fails and says so.
+- **`adamw_segments`**: one AdamW step over many tensors laid end to end in one span, each with its own weight decay, in
+  one launch (one per 32 tensors), with an optional gradient scale (the clipping factor) applied as the gradients are
+  read; each tensor's `adamw_rows` to the bit. GPT-2's sixteen launches and its clipping pass become one launch.
+- `cuda_kernels::launch_tiles` (a row of two-dimensional blocks) and `cuda_kernels::partials` (the reductions' space,
+  kept between calls).
+
+### Changed
+
+- **Fewer launches, no waits in a training step**: `block_norm_rows_backward_add` is two kernels instead of three (the
+  backward recomputes the row's statistics itself), allocates nothing and no longer synchronises; `sum_values` and
+  `sum_squares` keep their partial sums between calls instead of allocating. With these, a whole forward and backward
+  pass can be captured.
+- **Faster small kernels**, deterministic as before: float4 loads and stores in `fill_rows`, `copy_rows`, `add_rows`,
+  `scale_rows`, `add_bias_rows`, AdamW and the bfloat16 conversion of the products' operands (core's bits); the column
+  sums (`sum_rows`, the norms' parameter gradients) coalesced, a block per 32 columns with 32 row groups; the
+  embeddings' backward a block per token instead of a thread per channel (still a sequential loop's bits); the
+  classifier's maximum and sum of exponentials in one online pass. GPT-2 small at batch 4 in bfloat16 on the RTX PRO 4000
+  Blackwell (shared with another job; the shortest of eleven steps per launch): these kernels 70 ms to 47 ms a step.
+
 ## 0.5.0 - 2026-11-17
 
 ### Added
