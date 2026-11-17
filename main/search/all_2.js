@@ -1,23 +1,8 @@
 var searchData=
 [
-  ['call_5ffailed_0',['call_failed',['../cuda_8hpp.html#af17b5e9cb5454316c4253bb11383bf9fac1a6dacc64a6d26d4ab04f02f70a4271',1,'call_failedsnicholls::gpu'],['../opencl_8hpp.html#abe1faa3a1086ad8b2247b47aec16d2b9ac1a6dacc64a6d26d4ab04f02f70a4271',1,'call_failedsnicholls::gpu']]],
-  ['cl_5ftarget_5fopencl_5fversion_1',['CL_TARGET_OPENCL_VERSION',['../opencl_8hpp.html#a5990dea19d4ccb046a3d81b311457add',1,'opencl.hpp']]],
-  ['code_2',['code',['../structsnicholls_1_1gpu_1_1cuda__failure.html#a4df8569c0dd45c56fd926f0b415a23e1',1,'snicholls::gpu::cuda_failure::code'],['../structsnicholls_1_1gpu_1_1opencl__failure.html#a0bea60801e2a445a8449c0e68782065b',1,'snicholls::gpu::opencl_failure::code'],['../classsnicholls_1_1gpu_1_1cuda__exception.html#a878a3717a3fd0a4b8c31f89c5618adf5',1,'snicholls::gpu::cuda_exception::code()'],['../classsnicholls_1_1gpu_1_1opencl__exception.html#a509e320a5e943f56da690ef45b166d53',1,'snicholls::gpu::opencl_exception::code()']]],
-  ['context_3',['context',['../structsnicholls_1_1gpu_1_1cuda__backend.html#a27da5ae02d32c43ac69e1e292876b108',1,'snicholls::gpu::cuda_backend::context'],['../structsnicholls_1_1gpu_1_1opencl__backend.html#ae5ad7373283bbc1336ab30bd7f741905',1,'snicholls::gpu::opencl_backend::context'],['../classsnicholls_1_1gpu_1_1cuda__kernels.html#ac35e16f87c12e3d17270af9a1fe6b285',1,'snicholls::gpu::cuda_kernels::context() const noexcept']]],
-  ['copy_5f_4',['copy_',['../classsnicholls_1_1gpu_1_1cuda__kernels.html#ac28742832ab100a69e1935ed0e0f3183',1,'snicholls::gpu::cuda_kernels']]],
-  ['copy_5frows_5',['copy_rows',['../cuda__ops_8hpp.html#a6cade22fe4810248bc6847710c433656',1,'snicholls::gpu']]],
-  ['core_5fversion_5fstring_6',['core_version_string',['../version_8hpp.html#a56fa5afc567150f8d8c65b19693d6691',1,'snicholls::gpu']]],
-  ['create_7',['create',['../classsnicholls_1_1gpu_1_1cuda__context.html#a842c0400f82953e25953c58a285c7674',1,'snicholls::gpu::cuda_context::create()'],['../classsnicholls_1_1gpu_1_1cuda__kernels.html#aa10b173aeb573f594db45dc2f6a4dc15',1,'snicholls::gpu::cuda_kernels::create()'],['../classsnicholls_1_1gpu_1_1opencl__context.html#a61d03ca7e9943617276f95da5909eb98',1,'snicholls::gpu::opencl_context::create()']]],
-  ['cross_5fentropy_5frows_8',['cross_entropy_rows',['../cuda__ops_8hpp.html#a508a4701dc70af928de7398ac0d47138',1,'snicholls::gpu']]],
-  ['cross_5fentropy_5frows_5f_9',['cross_entropy_rows_',['../classsnicholls_1_1gpu_1_1cuda__kernels.html#a15c3b153b070abc4cf8f0ca1ebd32c9e',1,'snicholls::gpu::cuda_kernels']]],
-  ['cuda_2ehpp_10',['cuda.hpp',['../cuda_8hpp.html',1,'']]],
-  ['cuda_5fbackend_11',['cuda_backend',['../structsnicholls_1_1gpu_1_1cuda__backend.html',1,'snicholls::gpu']]],
-  ['cuda_5fcontext_12',['cuda_context',['../classsnicholls_1_1gpu_1_1cuda__context.html',1,'snicholls::gpu::cuda_context'],['../classsnicholls_1_1gpu_1_1cuda__context.html#ac8120b30627a3b076d0ddd74aa03fa5a',1,'snicholls::gpu::cuda_context::cuda_context()']]],
-  ['cuda_5ferror_13',['cuda_error',['../cuda_8hpp.html#af17b5e9cb5454316c4253bb11383bf9f',1,'snicholls::gpu']]],
-  ['cuda_5fexception_14',['cuda_exception',['../classsnicholls_1_1gpu_1_1cuda__exception.html',1,'snicholls::gpu::cuda_exception'],['../classsnicholls_1_1gpu_1_1cuda__exception.html#a8acacc44cc1c3980a784aeb4d8381545',1,'snicholls::gpu::cuda_exception::cuda_exception()']]],
-  ['cuda_5ffailure_15',['cuda_failure',['../structsnicholls_1_1gpu_1_1cuda__failure.html',1,'snicholls::gpu']]],
-  ['cuda_5fkernels_16',['cuda_kernels',['../classsnicholls_1_1gpu_1_1cuda__kernels.html',1,'snicholls::gpu::cuda_kernels'],['../classsnicholls_1_1gpu_1_1cuda__kernels.html#a1ea6bbb3268b537c91446f3cc78cce41',1,'snicholls::gpu::cuda_kernels::cuda_kernels()']]],
-  ['cuda_5fmath_17',['cuda_math',['../group__gpu.html#ga22ea844faef25bad361c431e1315d253',1,'snicholls::gpu']]],
-  ['cuda_5fops_2ehpp_18',['cuda_ops.hpp',['../cuda__ops_8hpp.html',1,'']]],
-  ['cuda_5ftraining_5fbackend_19',['cuda_training_backend',['../structsnicholls_1_1gpu_1_1cuda__training__backend.html',1,'snicholls::gpu']]]
+  ['benchmarks_0',['Benchmarks',['../md__2home_2runner_2work_2gpu_2gpu_2BENCHMARKS.html',1,'']]],
+  ['block_5fnorm_5frows_1',['block_norm_rows',['../cuda__ops_8hpp.html#a5f0cc5833e96861c603038049e330bd0',1,'snicholls::gpu']]],
+  ['block_5fnorm_5frows_5fbackward_5fadd_2',['block_norm_rows_backward_add',['../cuda__ops_8hpp.html#a18a16390326978081005a3611db1e6f5',1,'snicholls::gpu']]],
+  ['build_20and_20test_3',['Build and test',['../index.html#autotoc_md2',1,'']]],
+  ['build_5ffailed_4',['build_failed',['../opencl_8hpp.html#abe1faa3a1086ad8b2247b47aec16d2b9ac44eb1121d7f23401c572e3eda70c226',1,'snicholls::gpu']]]
 ];

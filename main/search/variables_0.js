@@ -14,5 +14,6 @@ var searchData=
   ['attend_5ftiled_5f_11',['attend_tiled_',['../classsnicholls_1_1gpu_1_1cuda__kernels.html#a944fa97ff69daa8687e8a2654a7688c3',1,'snicholls::gpu::cuda_kernels']]],
   ['attn_5fdscores_5f_12',['attn_dscores_',['../classsnicholls_1_1gpu_1_1cuda__kernels.html#a939bb59e995ad43b77a7524f09e87647',1,'snicholls::gpu::cuda_kernels']]],
   ['attn_5fprobs_5f_13',['attn_probs_',['../classsnicholls_1_1gpu_1_1cuda__kernels.html#a84dc7c03886444103ec6496a6777ccf2',1,'snicholls::gpu::cuda_kernels']]],
-  ['attn_5fsoftmax_5f_14',['attn_softmax_',['../classsnicholls_1_1gpu_1_1cuda__kernels.html#a96d3dad946cac9d7d21decce08ce3302',1,'snicholls::gpu::cuda_kernels']]]
+  ['attn_5frowdot_5f_14',['attn_rowdot_',['../classsnicholls_1_1gpu_1_1cuda__kernels.html#a934cba1f61d7af6a08beec3e0ef0adf9',1,'snicholls::gpu::cuda_kernels']]],
+  ['attn_5fsoftmax_5f_15',['attn_softmax_',['../classsnicholls_1_1gpu_1_1cuda__kernels.html#a96d3dad946cac9d7d21decce08ce3302',1,'snicholls::gpu::cuda_kernels']]]
 ];

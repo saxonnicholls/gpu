@@ -1,28 +1,4 @@
 var searchData=
 [
-  ['activate_5f_0',['activate_',['../classsnicholls_1_1gpu_1_1cuda__kernels.html#ad09a4a4b8b656cff8636e4905c44c411',1,'snicholls::gpu::cuda_kernels']]],
-  ['activate_5fbackward_5f_1',['activate_backward_',['../classsnicholls_1_1gpu_1_1cuda__kernels.html#aa033a21a6952c2fdf9257af8827da709',1,'snicholls::gpu::cuda_kernels']]],
-  ['adamw_5f_2',['adamw_',['../classsnicholls_1_1gpu_1_1cuda__kernels.html#a2c733125d80385ed03f9006b0351fbba',1,'snicholls::gpu::cuda_kernels']]],
-  ['adamw_5frows_3',['adamw_rows',['../cuda__ops_8hpp.html#a72389b0a0af3e89d1173fcb7ca0bbddb',1,'snicholls::gpu']]],
-  ['add_5f_4',['add_',['../classsnicholls_1_1gpu_1_1cuda__kernels.html#a2ce9141ce5be10d611b5ed7d047559a0',1,'snicholls::gpu::cuda_kernels']]],
-  ['add_5fbias_5frows_5',['add_bias_rows',['../cuda__ops_8hpp.html#a7bf9dc8055234637f22d5102a8318d55',1,'snicholls::gpu']]],
-  ['add_5fbias_5frows_5f_6',['add_bias_rows_',['../classsnicholls_1_1gpu_1_1cuda__kernels.html#a4981c1181537e7b6ab2244e36371aac7',1,'snicholls::gpu::cuda_kernels']]],
-  ['add_5frows_7',['add_rows',['../cuda__ops_8hpp.html#ad45991b1ea7eecbd3299e5be9e07ba19',1,'snicholls::gpu']]],
-  ['and_20test_8',['Build and test',['../index.html#autotoc_md2',1,'']]],
-  ['any_9',['any',['../opencl_8hpp.html#a0856fb84f9bf325a2e42e92942c1115da100b8cad7cf2a56f6df78f171f97a1ec',1,'snicholls::gpu']]],
-  ['attend_5f_10',['attend_',['../classsnicholls_1_1gpu_1_1cuda__kernels.html#a26ab3d16b39397d64be71ff9157b1061',1,'snicholls::gpu::cuda_kernels']]],
-  ['attend_5fbackward_5fkeys_5f_11',['attend_backward_keys_',['../classsnicholls_1_1gpu_1_1cuda__kernels.html#a7411c8cac4749a0af08d17e7c1eb5c4e',1,'snicholls::gpu::cuda_kernels']]],
-  ['attend_5fbackward_5fkeys_5ftiled_5f_12',['attend_backward_keys_tiled_',['../classsnicholls_1_1gpu_1_1cuda__kernels.html#a4b0f2b57e42af2eefe22b312c6deada1',1,'snicholls::gpu::cuda_kernels']]],
-  ['attend_5fbackward_5fqueries_5f_13',['attend_backward_queries_',['../classsnicholls_1_1gpu_1_1cuda__kernels.html#a3d47fb27ec6889861e9ebff7096c3ba2',1,'snicholls::gpu::cuda_kernels']]],
-  ['attend_5fbackward_5fqueries_5ftiled_5f_14',['attend_backward_queries_tiled_',['../classsnicholls_1_1gpu_1_1cuda__kernels.html#abc03200a994124a5b5d5278f31b77525',1,'snicholls::gpu::cuda_kernels']]],
-  ['attend_5fkeys_5freduce_5f_15',['attend_keys_reduce_',['../classsnicholls_1_1gpu_1_1cuda__kernels.html#a5f7d10b8c9efcd4c6feac2815ef59329',1,'snicholls::gpu::cuda_kernels']]],
-  ['attend_5ftiled_5f_16',['attend_tiled_',['../classsnicholls_1_1gpu_1_1cuda__kernels.html#a944fa97ff69daa8687e8a2654a7688c3',1,'snicholls::gpu::cuda_kernels']]],
-  ['attention_5fattend_5frows_17',['attention_attend_rows',['../cuda__ops_8hpp.html#aac28c6a106cf8f9f465809d351a38d6a',1,'snicholls::gpu']]],
-  ['attention_5fattend_5frows_5fbackward_18',['attention_attend_rows_backward',['../cuda__ops_8hpp.html#add6d2074fa05191b747f59198afbe14f',1,'snicholls::gpu']]],
-  ['attention_5fposition_5frows_19',['attention_position_rows',['../cuda__ops_8hpp.html#a3b2651c7dab868d9e7498da9c1658e86',1,'snicholls::gpu']]],
-  ['attention_5fposition_5frows_5fbackward_20',['attention_position_rows_backward',['../cuda__ops_8hpp.html#ae4cd2b135910461a90fd0251f17219b9',1,'snicholls::gpu']]],
-  ['attn_5fdscores_5f_21',['attn_dscores_',['../classsnicholls_1_1gpu_1_1cuda__kernels.html#a939bb59e995ad43b77a7524f09e87647',1,'snicholls::gpu::cuda_kernels']]],
-  ['attn_5fprobs_5f_22',['attn_probs_',['../classsnicholls_1_1gpu_1_1cuda__kernels.html#a84dc7c03886444103ec6496a6777ccf2',1,'snicholls::gpu::cuda_kernels']]],
-  ['attn_5fsoftmax_5f_23',['attn_softmax_',['../classsnicholls_1_1gpu_1_1cuda__kernels.html#a96d3dad946cac9d7d21decce08ce3302',1,'snicholls::gpu::cuda_kernels']]],
-  ['axpy_24',['axpy',['../structsnicholls_1_1gpu_1_1cuda__backend.html#a0228456a479dc026f7c69fb8a11305db',1,'snicholls::gpu::cuda_backend::axpy()'],['../structsnicholls_1_1gpu_1_1opencl__backend.html#a5965e56acd84a19b2bc0b353588e8578',1,'snicholls::gpu::opencl_backend::axpy()']]]
+  ['2_20small_20training_20step_0',['A whole GPT-2 small training step',['../performance.html#autotoc_md7',1,'']]]
 ];

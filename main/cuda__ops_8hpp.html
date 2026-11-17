@@ -26,7 +26,7 @@
  <tbody>
  <tr id="projectrow">
   <td id="projectalign">
-   <div id="projectname">snicholls-gpu<span id="projectnumber">&#160;0.3.0</span>
+   <div id="projectname">snicholls-gpu<span id="projectnumber">&#160;0.4.0</span>
    </div>
    <div id="projectbrief">GPU backends of snicholls-core&#39;s interfaces: linalg on OpenCL</div>
   </td>
@@ -136,6 +136,10 @@ Functions</h2></td></tr>
 <tr class="memdesc:a7bf9dc8055234637f22d5102a8318d55"><td class="mdescLeft">&#160;</td><td class="mdescRight"><span class="tt">y_t += bias</span> on the device.  <br /></td></tr>
 <tr class="memitem:a74d1441a6fbbc2c43c5ded3d87b1c5e9" id="r_a74d1441a6fbbc2c43c5ded3d87b1c5e9"><td class="memItemLeft" align="right" valign="top">void&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="#a74d1441a6fbbc2c43c5ded3d87b1c5e9">snicholls::gpu::sum_rows</a> (const <a class="el" href="structsnicholls_1_1gpu_1_1cuda__training__backend.html">cuda_training_backend</a> &amp;b, std::type_identity_t&lt; std::span&lt; const float &gt; &gt; ys, std::span&lt; float &gt; into)</td></tr>
 <tr class="memdesc:a74d1441a6fbbc2c43c5ded3d87b1c5e9"><td class="mdescLeft">&#160;</td><td class="mdescRight"><span class="tt">into += Σ_t ys_t</span> on the device: a warp per column, each lane's rows in order, then the lanes in a fixed tree (deterministic; core's sequential sum to rounding).  <br /></td></tr>
+<tr class="memitem:a2315d163cb1b1feb39e86184f4e9d687" id="r_a2315d163cb1b1feb39e86184f4e9d687"><td class="memItemLeft" align="right" valign="top">void&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="#a2315d163cb1b1feb39e86184f4e9d687">snicholls::gpu::linear_heads</a> (const <a class="el" href="structsnicholls_1_1gpu_1_1cuda__training__backend.html">cuda_training_backend</a> &amp;b, const ml::dense_weights&lt; float &gt; &amp;w, std::span&lt; const float &gt; xs, std::span&lt; float &gt; out, std::span&lt; const float &gt; bias, std::size_t heads)</td></tr>
+<tr class="memdesc:a2315d163cb1b1feb39e86184f4e9d687"><td class="mdescLeft">&#160;</td><td class="mdescRight">core's <span class="tt"><a class="el" href="#a2315d163cb1b1feb39e86184f4e9d687" title="core&#39;s linear_heads on the device as one product: X Wᵀ + b for every head at once into the kernels&#39; s...">linear_heads</a></span> on the device as one product: <span class="tt">X Wᵀ + b</span> for every head at once into the kernels' scratch, row by row, then permuted to the heads' layout.  <br /></td></tr>
+<tr class="memitem:a9cf5f3cadcd6ef7941caff2c5edb983a" id="r_a9cf5f3cadcd6ef7941caff2c5edb983a"><td class="memItemLeft" align="right" valign="top">void&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="#a9cf5f3cadcd6ef7941caff2c5edb983a">snicholls::gpu::linear_heads_backward</a> (const <a class="el" href="structsnicholls_1_1gpu_1_1cuda__training__backend.html">cuda_training_backend</a> &amp;b, const ml::dense_weights&lt; float &gt; &amp;w, std::span&lt; const float &gt; xs, std::span&lt; const float &gt; douts, std::span&lt; float &gt; dxs, std::span&lt; float &gt; dw, std::span&lt; float &gt; db, std::size_t heads)</td></tr>
+<tr class="memdesc:a9cf5f3cadcd6ef7941caff2c5edb983a"><td class="mdescLeft">&#160;</td><td class="mdescRight">core's <span class="tt"><a class="el" href="#a9cf5f3cadcd6ef7941caff2c5edb983a" title="core&#39;s linear_heads_backward on the device: the gradients permuted from the heads&#39; layout to rows in ...">linear_heads_backward</a></span> on the device: the gradients permuted from the heads' layout to rows in the kernels' scratch, then <span class="tt">linear_sequence_backward</span> once for every head.  <br /></td></tr>
 <tr class="memitem:a19104cc2afb0e2d583519c8294984b5d" id="r_a19104cc2afb0e2d583519c8294984b5d"><td class="memTemplParams" colspan="2">template&lt;ml::transformer_config C&gt; </td></tr>
 <tr class="memitem:a19104cc2afb0e2d583519c8294984b5d template"><td class="memItemLeft" align="right" valign="top">void&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="#a19104cc2afb0e2d583519c8294984b5d">snicholls::gpu::mlp_activate_rows</a> (const <a class="el" href="structsnicholls_1_1gpu_1_1cuda__training__backend.html">cuda_training_backend</a> &amp;b, const ml::mlp_activations&lt; float &gt; &amp;saved)</td></tr>
 <tr class="memdesc:a19104cc2afb0e2d583519c8294984b5d"><td class="mdescLeft">&#160;</td><td class="mdescRight">The MLP's activation on the device.  <br /></td></tr>
@@ -181,7 +185,7 @@ requires std::is_same_v&lt;std::remove_const_t&lt;E&gt;, float&gt;</td></tr>
 </table>
 <a name="details" id="details"></a><h2 id="header-details" class="groupheader">Detailed Description</h2>
 <div class="textblock"><p><span class="tt"><a class="el" href="structsnicholls_1_1gpu_1_1cuda__training__backend.html" title="The CUDA backend with the training steps&#39; kernels: core&#39;s batched passes run entirely on the device o...">snicholls::gpu::cuda_training_backend</a></span>: snicholls-core's batched training passes on an NVIDIA GPU with every step on the device, so a training step's data stays there. </p>
-<p><b>Overview.</b> Core's batched passes (<span class="tt">ml::block_forward_sequence</span>, <span class="tt">ml::block_backward</span> and the attention, MLP and linear passes beneath them) make every step a call with their backend (core's TRAINING.md T9): the products, and <span class="tt">fill_rows</span>, <span class="tt">copy_rows</span>, <span class="tt">add_rows</span>, <span class="tt">add_bias_rows</span>, <span class="tt">sum_rows</span>, <span class="tt">mlp_activate_rows</span> and its backward, <span class="tt">block_norm_rows</span> and its backward, and the four attention steps. This header overloads each for <span class="tt">cuda_training_backend</span>, so with the weights, activations and gradients in <span class="tt">device_buffer</span>s the whole step runs on the GPU: the products by cuBLAS, the other steps by kernels compiled at run time (NVRTC, to the device's machine code) when <span class="tt">cuda_kernels</span> is created.</p>
+<p><b>Overview.</b> Core's batched passes (<span class="tt">ml::block_forward_sequence</span>, <span class="tt">ml::block_backward</span> and the attention, MLP and linear passes beneath them) make every step a call with their backend (core's TRAINING.md T9): the products, and <span class="tt">fill_rows</span>, <span class="tt">copy_rows</span>, <span class="tt">add_rows</span>, <span class="tt">add_bias_rows</span>, <span class="tt">sum_rows</span>, <span class="tt">mlp_activate_rows</span> and its backward, <span class="tt">block_norm_rows</span> and its backward, the four attention steps, and <span class="tt">linear_heads</span> with its backward (the keys' and values' projections as one product and a permutation, not one per head). This header overloads each for <span class="tt">cuda_training_backend</span>, so with the weights, activations and gradients in <span class="tt">device_buffer</span>s the whole step runs on the GPU: the products by cuBLAS, the other steps by kernels compiled at run time (NVRTC, to the device's machine code) when <span class="tt">cuda_kernels</span> is created.</p>
 <ul>
 <li><span class="tt">cuda_kernels::create(context)</span>: compiles the kernels for the context's device; <span class="tt">result</span> with a <span class="tt">cuda_failure</span>.</li>
 <li><span class="tt">cuda_training_backend{{&amp;context}, &amp;kernels}</span>: the backend, two pointers.</li>
@@ -236,10 +240,10 @@ requires std::is_same_v&lt;std::remove_const_t&lt;E&gt;, float&gt;</td></tr>
 <div class="line">    std::vector&lt;float&gt; got(n * d);</div>
 <div class="line">    t[xs].dev-&gt;download(got);</div>
 </div><!-- fragment --><p><b>Relationships.</b> <span class="tt"><a class="el" href="cuda_8hpp.html" title="snicholls::gpu::cuda_backend: a snicholls::linalg::blas_backend on an NVIDIA GPU through cuBLAS,...">cuda.hpp</a></span> (the context, the products, <span class="tt">device_buffer</span>), core's <span class="tt">ml/transformer_block.hpp</span>, <span class="tt">ml/attention_layer.hpp</span>, <span class="tt">ml/mlp.hpp</span>, <span class="tt">ml/linear.hpp</span> (the operations it overloads and the reference it is checked against). Group: <a class="el" href="group__gpu.html">snicholls-gpu</a>.</p>
-<p><b>Implementations.</b> The elementwise steps one thread per element; the norms a warp per row (each lane's part of a row's sums in order, then the lanes in a fixed order), the weights' and biases' gradients one thread per column summing the rows in order, so the result does not depend on scheduling; the activations with core's formulas in float. Attention, up to <span class="tt">cuda_training_backend::gemm_attention_max</span> tokens (4096), is matrix products head by head, as llm.c's: the scores <span class="tt">S = Q Kᵀ</span> through cuBLAS (the tensor cores under TF32), a softmax kernel writing the log-sum-exp, <span class="tt">Y = P V</span>; the backward recomputes <span class="tt">P</span> from the log-sum-exp and makes the four gradient products, a group's heads adding into its keys' and values' gradients in order. Longer sequences take tiled kernels for heads of 16, 32, 64 or 128 channels: a thread per query or key with its row in registers, the other side through shared memory a tile at a time, the keys' gradients split over the queries into partials added in a fixed order; other head sizes, up to 256, a warp per (token, head). Every path is deterministic. QK norm and RoPE one thread per (token, head), the norms' weight gradients summed in core's order. The kernels' working space (<span class="tt">cuda_kernels::scratch</span>) is kept between calls, so a step allocates nothing.</p>
+<p><b>Implementations.</b> The elementwise steps one thread per element; the norms a warp per row (each lane's part of a row's sums in order, then the lanes in a fixed order), the weights' and biases' gradients one thread per column summing the rows in order, so the result does not depend on scheduling; the activations with core's formulas in float. Attention under <span class="tt">cuda_math::tf32</span>, for heads of 32 or 64 channels, is <b>flash attention on the tensor cores</b> (<span class="tt">mma.sync m16n8k8</span>, TF32 in, float accumulated, as FlashAttention-2 without atomics): the forward a block per (64 queries, head), the online softmax in registers, the log-sum-exp saved, no <span class="tt">n x n</span> scores, the tiles past the diagonal or outside a window skipped; the backward one kernel for the queries' gradients and one for the keys' and values' (a block per 64 keys walking the queries that see them, a group's heads in order), both recomputing the probabilities. Otherwise, up to <span class="tt">cuda_training_backend::gemm_attention_max</span> tokens (4096), is matrix products head by head, as llm.c's: the scores <span class="tt">S = Q Kᵀ</span> through cuBLAS (the tensor cores under TF32), a softmax kernel writing the log-sum-exp, <span class="tt">Y = P V</span>; the backward recomputes <span class="tt">P</span> from the log-sum-exp and makes the four gradient products, a group's heads adding into its keys' and values' gradients in order. Longer sequences take tiled kernels for heads of 16, 32, 64 or 128 channels: a thread per query or key with its row in registers, the other side through shared memory a tile at a time, the keys' gradients split over the queries into partials added in a fixed order; other head sizes, up to 256, a warp per (token, head). Every path is deterministic. QK norm and RoPE one thread per (token, head), the norms' weight gradients summed in core's order. The kernels' working space (<span class="tt">cuda_kernels::scratch</span>) is kept between calls, so a step allocates nothing.</p>
 <p><b>Guarantees.</b> Every step is enqueued on the context's stream, in the order the pass makes them, after the previous product; the results agree with core's reference to rounding (the device's <span class="tt">expf</span>, <span class="tt">tanhf</span>, <span class="tt">sqrtf</span> differ from the host's in the last bits). One training step at a time per context.</p>
 <p><b>Errors.</b> <span class="tt">cuda_kernels::create</span> returns a <span class="tt">cuda_failure</span> (with the compiler's log on stderr) if the kernels do not compile. A launch or copy that fails throws <span class="tt">cuda_exception</span>.</p>
-<p><b>Performance.</b> <span class="tt">benchmarks/cuda_ops_benchmark.cpp</span>: a GPT-2-small layer's training step with its data on the device, against the same step staged; see <span class="tt">BENCHMARKS.md</span>. A whole GPT-2 small step (124M parameters, one sequence of 1024 tokens, forward, backward and clipping) on an RTX PRO 4000 Blackwell, 2026-11-17: 116 ms in float, 67.7 ms with <span class="tt">cuda_math::tf32</span>, against llm.c's 64.4 ms in bfloat16 (288 ms with attention a warp per (token, head), 98.5 ms with the tiled kernels under TF32, 78.3 ms before products over device memory stopped waiting for the stream).</p>
+<p><b>Performance.</b> <span class="tt">benchmarks/cuda_ops_benchmark.cpp</span>: a GPT-2-small layer's training step with its data on the device, against the same step staged; see <span class="tt">BENCHMARKS.md</span>. A whole GPT-2 small step (124M parameters, sequences of 1024 tokens, forward, backward, clipping and AdamW) on an RTX PRO 4000 Blackwell with nothing else on it, 2026-11-17, with <span class="tt">cuda_math::tf32</span>: 68.7 ms at batch 1 and 230 ms at batch 4, against llm.c's 34 and 105 ms in bfloat16; 424 ms at batch 4 in float. At batch 4: the products 131 ms, flash attention 46 ms (115 ms as matrix products), the rest 57 ms.</p>
 <p><b>Tests and demos.</b> <span class="tt">tests/cuda_ops_test.cpp</span> (each step against core's, and whole training steps of GPT-2-, Llama- and nanochat-shaped blocks against the reference), <span class="tt">demos/cuda_ops_demo.cpp</span>.</p>
 <p><b>Dependencies.</b> <span class="tt"><a class="el" href="cuda_8hpp.html" title="snicholls::gpu::cuda_backend: a snicholls::linalg::blas_backend on an NVIDIA GPU through cuBLAS,...">cuda.hpp</a></span>, <span class="tt">&lt;nvrtc.h&gt;</span>, core's <span class="tt">ml/transformer_block.hpp</span>. Link <span class="tt">CUDA::nvrtc</span> too.</p>
 <p><b>Known issues.</b> Float only (the products can be TF32). The attention's products are one call per head; its scores take <span class="tt">3 n²</span> floats of scratch. The tiled kernels for long sequences run on the CUDA cores, not the tensor cores.</p>
@@ -313,7 +317,7 @@ requires std::is_same_v&lt;std::remove_const_t&lt;E&gt;, float&gt;</td></tr>
   </dd>
 </dl>
 
-<p class="definition">Definition at line <a class="el" href="cuda__ops_8hpp_source.html#l01226">1226</a> of file <a class="el" href="cuda__ops_8hpp_source.html">cuda_ops.hpp</a>.</p>
+<p class="definition">Definition at line <a class="el" href="cuda__ops_8hpp_source.html#l01599">1599</a> of file <a class="el" href="cuda__ops_8hpp_source.html">cuda_ops.hpp</a>.</p>
 
 </div>
 </div>
@@ -359,7 +363,7 @@ requires std::is_same_v&lt;std::remove_const_t&lt;E&gt;, float&gt;</td></tr>
   </dd>
 </dl>
 
-<p class="definition">Definition at line <a class="el" href="cuda__ops_8hpp_source.html#l00840">840</a> of file <a class="el" href="cuda__ops_8hpp_source.html">cuda_ops.hpp</a>.</p>
+<p class="definition">Definition at line <a class="el" href="cuda__ops_8hpp_source.html#l01147">1147</a> of file <a class="el" href="cuda__ops_8hpp_source.html">cuda_ops.hpp</a>.</p>
 
 </div>
 </div>
@@ -405,7 +409,7 @@ requires std::is_same_v&lt;std::remove_const_t&lt;E&gt;, float&gt;</td></tr>
   </dd>
 </dl>
 
-<p class="definition">Definition at line <a class="el" href="cuda__ops_8hpp_source.html#l00830">830</a> of file <a class="el" href="cuda__ops_8hpp_source.html">cuda_ops.hpp</a>.</p>
+<p class="definition">Definition at line <a class="el" href="cuda__ops_8hpp_source.html#l01137">1137</a> of file <a class="el" href="cuda__ops_8hpp_source.html">cuda_ops.hpp</a>.</p>
 
 </div>
 </div>
@@ -451,7 +455,7 @@ template&lt;ml::transformer_config C&gt; </div>
   </dd>
 </dl>
 
-<p class="definition">Definition at line <a class="el" href="cuda__ops_8hpp_source.html#l01020">1020</a> of file <a class="el" href="cuda__ops_8hpp_source.html">cuda_ops.hpp</a>.</p>
+<p class="definition">Definition at line <a class="el" href="cuda__ops_8hpp_source.html#l01363">1363</a> of file <a class="el" href="cuda__ops_8hpp_source.html">cuda_ops.hpp</a>.</p>
 
 </div>
 </div>
@@ -509,7 +513,7 @@ template&lt;ml::transformer_config C&gt; </div>
   </dd>
 </dl>
 
-<p class="definition">Definition at line <a class="el" href="cuda__ops_8hpp_source.html#l01057">1057</a> of file <a class="el" href="cuda__ops_8hpp_source.html">cuda_ops.hpp</a>.</p>
+<p class="definition">Definition at line <a class="el" href="cuda__ops_8hpp_source.html#l01404">1404</a> of file <a class="el" href="cuda__ops_8hpp_source.html">cuda_ops.hpp</a>.</p>
 
 </div>
 </div>
@@ -567,7 +571,7 @@ template&lt;ml::transformer_config C, typename W, typename R&gt; </div>
   </dd>
 </dl>
 
-<p class="definition">Definition at line <a class="el" href="cuda__ops_8hpp_source.html#l00978">978</a> of file <a class="el" href="cuda__ops_8hpp_source.html">cuda_ops.hpp</a>.</p>
+<p class="definition">Definition at line <a class="el" href="cuda__ops_8hpp_source.html#l01321">1321</a> of file <a class="el" href="cuda__ops_8hpp_source.html">cuda_ops.hpp</a>.</p>
 
 </div>
 </div>
@@ -631,7 +635,7 @@ template&lt;ml::transformer_config C, typename W, typename R&gt; </div>
   </dd>
 </dl>
 
-<p class="definition">Definition at line <a class="el" href="cuda__ops_8hpp_source.html#l01146">1146</a> of file <a class="el" href="cuda__ops_8hpp_source.html">cuda_ops.hpp</a>.</p>
+<p class="definition">Definition at line <a class="el" href="cuda__ops_8hpp_source.html#l01519">1519</a> of file <a class="el" href="cuda__ops_8hpp_source.html">cuda_ops.hpp</a>.</p>
 
 </div>
 </div>
@@ -689,7 +693,7 @@ template&lt;ml::transformer_config C&gt; </div>
   </dd>
 </dl>
 
-<p class="definition">Definition at line <a class="el" href="cuda__ops_8hpp_source.html#l00895">895</a> of file <a class="el" href="cuda__ops_8hpp_source.html">cuda_ops.hpp</a>.</p>
+<p class="definition">Definition at line <a class="el" href="cuda__ops_8hpp_source.html#l01238">1238</a> of file <a class="el" href="cuda__ops_8hpp_source.html">cuda_ops.hpp</a>.</p>
 
 </div>
 </div>
@@ -765,7 +769,7 @@ template&lt;ml::transformer_config C&gt; </div>
   </dd>
 </dl>
 
-<p class="definition">Definition at line <a class="el" href="cuda__ops_8hpp_source.html#l00915">915</a> of file <a class="el" href="cuda__ops_8hpp_source.html">cuda_ops.hpp</a>.</p>
+<p class="definition">Definition at line <a class="el" href="cuda__ops_8hpp_source.html#l01258">1258</a> of file <a class="el" href="cuda__ops_8hpp_source.html">cuda_ops.hpp</a>.</p>
 
 </div>
 </div>
@@ -811,7 +815,7 @@ template&lt;ml::transformer_config C&gt; </div>
   </dd>
 </dl>
 
-<p class="definition">Definition at line <a class="el" href="cuda__ops_8hpp_source.html#l00820">820</a> of file <a class="el" href="cuda__ops_8hpp_source.html">cuda_ops.hpp</a>.</p>
+<p class="definition">Definition at line <a class="el" href="cuda__ops_8hpp_source.html#l01127">1127</a> of file <a class="el" href="cuda__ops_8hpp_source.html">cuda_ops.hpp</a>.</p>
 
 </div>
 </div>
@@ -869,7 +873,7 @@ template&lt;ml::transformer_config C&gt; </div>
   </dd>
 </dl>
 
-<p class="definition">Definition at line <a class="el" href="cuda__ops_8hpp_source.html#l01213">1213</a> of file <a class="el" href="cuda__ops_8hpp_source.html">cuda_ops.hpp</a>.</p>
+<p class="definition">Definition at line <a class="el" href="cuda__ops_8hpp_source.html#l01586">1586</a> of file <a class="el" href="cuda__ops_8hpp_source.html">cuda_ops.hpp</a>.</p>
 
 </div>
 </div>
@@ -927,7 +931,7 @@ template&lt;ml::transformer_config C&gt; </div>
   </dd>
 </dl>
 
-<p class="definition">Definition at line <a class="el" href="cuda__ops_8hpp_source.html#l01184">1184</a> of file <a class="el" href="cuda__ops_8hpp_source.html">cuda_ops.hpp</a>.</p>
+<p class="definition">Definition at line <a class="el" href="cuda__ops_8hpp_source.html#l01557">1557</a> of file <a class="el" href="cuda__ops_8hpp_source.html">cuda_ops.hpp</a>.</p>
 
 </div>
 </div>
@@ -985,7 +989,7 @@ template&lt;ml::transformer_config C&gt; </div>
   </dd>
 </dl>
 
-<p class="definition">Definition at line <a class="el" href="cuda__ops_8hpp_source.html#l01198">1198</a> of file <a class="el" href="cuda__ops_8hpp_source.html">cuda_ops.hpp</a>.</p>
+<p class="definition">Definition at line <a class="el" href="cuda__ops_8hpp_source.html#l01571">1571</a> of file <a class="el" href="cuda__ops_8hpp_source.html">cuda_ops.hpp</a>.</p>
 
 </div>
 </div>
@@ -1031,7 +1035,147 @@ template&lt;ml::transformer_config C&gt; </div>
   </dd>
 </dl>
 
-<p class="definition">Definition at line <a class="el" href="cuda__ops_8hpp_source.html#l00811">811</a> of file <a class="el" href="cuda__ops_8hpp_source.html">cuda_ops.hpp</a>.</p>
+<p class="definition">Definition at line <a class="el" href="cuda__ops_8hpp_source.html#l01118">1118</a> of file <a class="el" href="cuda__ops_8hpp_source.html">cuda_ops.hpp</a>.</p>
+
+</div>
+</div>
+<a id="a2315d163cb1b1feb39e86184f4e9d687" name="a2315d163cb1b1feb39e86184f4e9d687"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#a2315d163cb1b1feb39e86184f4e9d687">&#9670;&#160;</a></span>linear_heads()</h2>
+
+<div class="memitem">
+<div class="memproto">
+<table class="mlabels">
+  <tr>
+  <td class="mlabels-left">
+      <table class="memname">
+        <tr>
+          <td class="memname">void snicholls::gpu::linear_heads </td>
+          <td>(</td>
+          <td class="paramtype">const <a class="el" href="structsnicholls_1_1gpu_1_1cuda__training__backend.html">cuda_training_backend</a> &amp;</td>          <td class="paramname"><span class="paramname"><em>b</em></span>, </td>
+        </tr>
+        <tr>
+          <td class="paramkey"></td>
+          <td></td>
+          <td class="paramtype">const ml::dense_weights&lt; float &gt; &amp;</td>          <td class="paramname"><span class="paramname"><em>w</em></span>, </td>
+        </tr>
+        <tr>
+          <td class="paramkey"></td>
+          <td></td>
+          <td class="paramtype">std::span&lt; const float &gt;</td>          <td class="paramname"><span class="paramname"><em>xs</em></span>, </td>
+        </tr>
+        <tr>
+          <td class="paramkey"></td>
+          <td></td>
+          <td class="paramtype">std::span&lt; float &gt;</td>          <td class="paramname"><span class="paramname"><em>out</em></span>, </td>
+        </tr>
+        <tr>
+          <td class="paramkey"></td>
+          <td></td>
+          <td class="paramtype">std::span&lt; const float &gt;</td>          <td class="paramname"><span class="paramname"><em>bias</em></span>, </td>
+        </tr>
+        <tr>
+          <td class="paramkey"></td>
+          <td></td>
+          <td class="paramtype">std::size_t</td>          <td class="paramname"><span class="paramname"><em>heads</em></span>&#160;)</td>
+        </tr>
+      </table>
+  </td>
+  <td class="mlabels-right">
+<span class="mlabels"><span class="mlabel inline">inline</span></span>  </td>
+  </tr>
+</table>
+</div><div class="memdoc">
+
+<p>core's <span class="tt">linear_heads</span> on the device as one product: <span class="tt">X Wᵀ + b</span> for every head at once into the kernels' scratch, row by row, then permuted to the heads' layout. </p>
+<dl class="params"><dt>Parameters</dt><dd>
+  <table class="params">
+    <tr><td class="paramname">b</td><td>The backend.</td></tr>
+    <tr><td class="paramname">w</td><td>The matrix. </td></tr>
+    <tr><td class="paramname">xs</td><td>The <span class="tt">n</span> inputs.</td></tr>
+    <tr><td class="paramname">out</td><td>Receives the outputs head by head.</td></tr>
+    <tr><td class="paramname">bias</td><td>The biases, or empty. </td></tr>
+    <tr><td class="paramname">heads</td><td>The heads. </td></tr>
+  </table>
+  </dd>
+</dl>
+
+<p class="definition">Definition at line <a class="el" href="cuda__ops_8hpp_source.html#l01182">1182</a> of file <a class="el" href="cuda__ops_8hpp_source.html">cuda_ops.hpp</a>.</p>
+
+</div>
+</div>
+<a id="a9cf5f3cadcd6ef7941caff2c5edb983a" name="a9cf5f3cadcd6ef7941caff2c5edb983a"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#a9cf5f3cadcd6ef7941caff2c5edb983a">&#9670;&#160;</a></span>linear_heads_backward()</h2>
+
+<div class="memitem">
+<div class="memproto">
+<table class="mlabels">
+  <tr>
+  <td class="mlabels-left">
+      <table class="memname">
+        <tr>
+          <td class="memname">void snicholls::gpu::linear_heads_backward </td>
+          <td>(</td>
+          <td class="paramtype">const <a class="el" href="structsnicholls_1_1gpu_1_1cuda__training__backend.html">cuda_training_backend</a> &amp;</td>          <td class="paramname"><span class="paramname"><em>b</em></span>, </td>
+        </tr>
+        <tr>
+          <td class="paramkey"></td>
+          <td></td>
+          <td class="paramtype">const ml::dense_weights&lt; float &gt; &amp;</td>          <td class="paramname"><span class="paramname"><em>w</em></span>, </td>
+        </tr>
+        <tr>
+          <td class="paramkey"></td>
+          <td></td>
+          <td class="paramtype">std::span&lt; const float &gt;</td>          <td class="paramname"><span class="paramname"><em>xs</em></span>, </td>
+        </tr>
+        <tr>
+          <td class="paramkey"></td>
+          <td></td>
+          <td class="paramtype">std::span&lt; const float &gt;</td>          <td class="paramname"><span class="paramname"><em>douts</em></span>, </td>
+        </tr>
+        <tr>
+          <td class="paramkey"></td>
+          <td></td>
+          <td class="paramtype">std::span&lt; float &gt;</td>          <td class="paramname"><span class="paramname"><em>dxs</em></span>, </td>
+        </tr>
+        <tr>
+          <td class="paramkey"></td>
+          <td></td>
+          <td class="paramtype">std::span&lt; float &gt;</td>          <td class="paramname"><span class="paramname"><em>dw</em></span>, </td>
+        </tr>
+        <tr>
+          <td class="paramkey"></td>
+          <td></td>
+          <td class="paramtype">std::span&lt; float &gt;</td>          <td class="paramname"><span class="paramname"><em>db</em></span>, </td>
+        </tr>
+        <tr>
+          <td class="paramkey"></td>
+          <td></td>
+          <td class="paramtype">std::size_t</td>          <td class="paramname"><span class="paramname"><em>heads</em></span>&#160;)</td>
+        </tr>
+      </table>
+  </td>
+  <td class="mlabels-right">
+<span class="mlabels"><span class="mlabel inline">inline</span></span>  </td>
+  </tr>
+</table>
+</div><div class="memdoc">
+
+<p>core's <span class="tt">linear_heads_backward</span> on the device: the gradients permuted from the heads' layout to rows in the kernels' scratch, then <span class="tt">linear_sequence_backward</span> once for every head. </p>
+<dl class="params"><dt>Parameters</dt><dd>
+  <table class="params">
+    <tr><td class="paramname">b</td><td>The backend.</td></tr>
+    <tr><td class="paramname">w</td><td>The matrix. </td></tr>
+    <tr><td class="paramname">xs</td><td>The inputs.</td></tr>
+    <tr><td class="paramname">douts</td><td>The gradients, head by head.</td></tr>
+    <tr><td class="paramname">dxs</td><td>Added into, or empty.</td></tr>
+    <tr><td class="paramname">dw</td><td>Added into.</td></tr>
+    <tr><td class="paramname">db</td><td>Added into, or empty.</td></tr>
+    <tr><td class="paramname">heads</td><td>The heads. </td></tr>
+  </table>
+  </dd>
+</dl>
+
+<p class="definition">Definition at line <a class="el" href="cuda__ops_8hpp_source.html#l01195">1195</a> of file <a class="el" href="cuda__ops_8hpp_source.html">cuda_ops.hpp</a>.</p>
 
 </div>
 </div>
@@ -1071,7 +1215,7 @@ template&lt;ml::transformer_config C&gt; </div>
   </dd>
 </dl>
 
-<p class="definition">Definition at line <a class="el" href="cuda__ops_8hpp_source.html#l00864">864</a> of file <a class="el" href="cuda__ops_8hpp_source.html">cuda_ops.hpp</a>.</p>
+<p class="definition">Definition at line <a class="el" href="cuda__ops_8hpp_source.html#l01207">1207</a> of file <a class="el" href="cuda__ops_8hpp_source.html">cuda_ops.hpp</a>.</p>
 
 </div>
 </div>
@@ -1123,7 +1267,7 @@ template&lt;ml::transformer_config C&gt; </div>
   </dd>
 </dl>
 
-<p class="definition">Definition at line <a class="el" href="cuda__ops_8hpp_source.html#l00878">878</a> of file <a class="el" href="cuda__ops_8hpp_source.html">cuda_ops.hpp</a>.</p>
+<p class="definition">Definition at line <a class="el" href="cuda__ops_8hpp_source.html#l01221">1221</a> of file <a class="el" href="cuda__ops_8hpp_source.html">cuda_ops.hpp</a>.</p>
 
 </div>
 </div>
@@ -1169,7 +1313,7 @@ template&lt;ml::transformer_config C&gt; </div>
   </dd>
 </dl>
 
-<p class="definition">Definition at line <a class="el" href="cuda__ops_8hpp_source.html#l01242">1242</a> of file <a class="el" href="cuda__ops_8hpp_source.html">cuda_ops.hpp</a>.</p>
+<p class="definition">Definition at line <a class="el" href="cuda__ops_8hpp_source.html#l01615">1615</a> of file <a class="el" href="cuda__ops_8hpp_source.html">cuda_ops.hpp</a>.</p>
 
 </div>
 </div>
@@ -1215,7 +1359,7 @@ template&lt;ml::transformer_config C&gt; </div>
   </dd>
 </dl>
 
-<p class="definition">Definition at line <a class="el" href="cuda__ops_8hpp_source.html#l00852">852</a> of file <a class="el" href="cuda__ops_8hpp_source.html">cuda_ops.hpp</a>.</p>
+<p class="definition">Definition at line <a class="el" href="cuda__ops_8hpp_source.html#l01159">1159</a> of file <a class="el" href="cuda__ops_8hpp_source.html">cuda_ops.hpp</a>.</p>
 
 </div>
 </div>
@@ -1251,7 +1395,7 @@ requires std::is_same_v&lt;std::remove_const_t&lt;E&gt;, float&gt;</div>
 </dl>
 <dl class="section return"><dt>Returns</dt><dd>The sum. </dd></dl>
 
-<p class="definition">Definition at line <a class="el" href="cuda__ops_8hpp_source.html#l01282">1282</a> of file <a class="el" href="cuda__ops_8hpp_source.html">cuda_ops.hpp</a>.</p>
+<p class="definition">Definition at line <a class="el" href="cuda__ops_8hpp_source.html#l01655">1655</a> of file <a class="el" href="cuda__ops_8hpp_source.html">cuda_ops.hpp</a>.</p>
 
 </div>
 </div>
@@ -1287,7 +1431,7 @@ requires std::is_same_v&lt;std::remove_const_t&lt;E&gt;, float&gt;</div>
 </dl>
 <dl class="section return"><dt>Returns</dt><dd>The sum. </dd></dl>
 
-<p class="definition">Definition at line <a class="el" href="cuda__ops_8hpp_source.html#l01274">1274</a> of file <a class="el" href="cuda__ops_8hpp_source.html">cuda_ops.hpp</a>.</p>
+<p class="definition">Definition at line <a class="el" href="cuda__ops_8hpp_source.html#l01647">1647</a> of file <a class="el" href="cuda__ops_8hpp_source.html">cuda_ops.hpp</a>.</p>
 
 </div>
 </div>

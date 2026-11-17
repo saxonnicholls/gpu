@@ -1,5 +1,6 @@
 var searchData=
 [
-  ['scale_5f_0',['scale_',['../classsnicholls_1_1gpu_1_1cuda__kernels.html#ae7ab7c869d1f3c3b7757652bad94a3c0',1,'snicholls::gpu::cuda_kernels']]],
-  ['sum_5frows_5f_1',['sum_rows_',['../classsnicholls_1_1gpu_1_1cuda__kernels.html#ab50611104cbbca8e3592ecc3b6fa0ee3',1,'snicholls::gpu::cuda_kernels']]]
+  ['partial_5fsums_5f_0',['partial_sums_',['../classsnicholls_1_1gpu_1_1cuda__kernels.html#ad5f5da1eb4d046ac365d80deef40d4a6',1,'snicholls::gpu::cuda_kernels']]],
+  ['position_5f_1',['position_',['../classsnicholls_1_1gpu_1_1cuda__kernels.html#a93c864a79c8fd054f14d5fd470f97136',1,'snicholls::gpu::cuda_kernels']]],
+  ['position_5fbackward_5f_2',['position_backward_',['../classsnicholls_1_1gpu_1_1cuda__kernels.html#a5f87c30ce22dc69c8fa045196ca4bdbb',1,'snicholls::gpu::cuda_kernels']]]
 ];

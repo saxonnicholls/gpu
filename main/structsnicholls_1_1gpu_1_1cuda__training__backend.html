@@ -26,7 +26,7 @@
  <tbody>
  <tr id="projectrow">
   <td id="projectalign">
-   <div id="projectname">snicholls-gpu<span id="projectnumber">&#160;0.3.0</span>
+   <div id="projectname">snicholls-gpu<span id="projectnumber">&#160;0.4.0</span>
    </div>
    <div id="projectbrief">GPU backends of snicholls-core&#39;s interfaces: linalg on OpenCL</div>
   </td>
@@ -111,6 +111,8 @@ Inheritance diagram for snicholls::gpu::cuda_training_backend:</div>
 Public Attributes</h2></td></tr>
 <tr class="memitem:a7973568484e4ed8ade61fa88799f3ca4" id="r_a7973568484e4ed8ade61fa88799f3ca4"><td class="memItemLeft" align="right" valign="top">const <a class="el" href="classsnicholls_1_1gpu_1_1cuda__kernels.html">cuda_kernels</a> *&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="#a7973568484e4ed8ade61fa88799f3ca4">kernels</a> = nullptr</td></tr>
 <tr class="memdesc:a7973568484e4ed8ade61fa88799f3ca4"><td class="mdescLeft">&#160;</td><td class="mdescRight">The compiled kernels; must outlive the backend.  <br /></td></tr>
+<tr class="memitem:a7bf1de59a07eba4ba13f72ee2f24b7b8" id="r_a7bf1de59a07eba4ba13f72ee2f24b7b8"><td class="memItemLeft" align="right" valign="top">bool&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="#a7bf1de59a07eba4ba13f72ee2f24b7b8">flash_attention</a> = true</td></tr>
+<tr class="memdesc:a7bf1de59a07eba4ba13f72ee2f24b7b8"><td class="mdescLeft">&#160;</td><td class="mdescRight">Under <span class="tt"><a class="el" href="group__gpu.html#gga22ea844faef25bad361c431e1315d253ae00ad49f2e4f0fda1539ae29b2aaef57">cuda_math::tf32</a></span>, heads of 32 or 64 channels: flash attention on the tensor cores; false for the matrix-product path.  <br /></td></tr>
 <tr class="memitem:a776f51532ce66dcd599df7c94d77cef9" id="r_a776f51532ce66dcd599df7c94d77cef9"><td class="memItemLeft" align="right" valign="top">std::size_t&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="#a776f51532ce66dcd599df7c94d77cef9">gemm_attention_max</a> = 4096</td></tr>
 <tr class="memdesc:a776f51532ce66dcd599df7c94d77cef9"><td class="mdescLeft">&#160;</td><td class="mdescRight">The longest sequence whose attention runs as matrix products (cuBLAS, so on the tensor cores under <span class="tt"><a class="el" href="group__gpu.html#gga22ea844faef25bad361c431e1315d253ae00ad49f2e4f0fda1539ae29b2aaef57">cuda_math::tf32</a></span>), its <span class="tt">n x n</span> scores three times in the kernels' scratch; longer ones take the tiled kernels.  <br /></td></tr>
 <tr class="inherit_header pub_attribs_structsnicholls_1_1gpu_1_1cuda__backend"><td colspan="2" onclick="javascript:dynsection.toggleInherit('pub_attribs_structsnicholls_1_1gpu_1_1cuda__backend')"><span class="dynarrow"><span class="arrowhead closed"></span></span>Public Attributes inherited from <a class="el" href="structsnicholls_1_1gpu_1_1cuda__backend.html">snicholls::gpu::cuda_backend</a></td></tr>
@@ -152,8 +154,26 @@ requires (std::is_same_v&lt;T, float&gt; || std::is_same_v&lt;T, double&gt;)</td
 <a name="details" id="details"></a><h2 id="header-details" class="groupheader">Detailed Description</h2>
 <div class="textblock"><p>The CUDA backend with the training steps' kernels: core's batched passes run entirely on the device over <span class="tt"><a class="el" href="classsnicholls_1_1gpu_1_1device__buffer.html" title="n elements of device memory, released when it goes out of scope; span() is a view core&#39;s functions ta...">device_buffer</a></span> memory. Trivially copyable. </p>
 
-<p class="definition">Definition at line <a class="el" href="cuda__ops_8hpp_source.html#l00786">786</a> of file <a class="el" href="cuda__ops_8hpp_source.html">cuda_ops.hpp</a>.</p>
+<p class="definition">Definition at line <a class="el" href="cuda__ops_8hpp_source.html#l01088">1088</a> of file <a class="el" href="cuda__ops_8hpp_source.html">cuda_ops.hpp</a>.</p>
 </div><a name="doc-variable-members" id="doc-variable-members"></a><h2 id="header-doc-variable-members" class="groupheader">Member Data Documentation</h2>
+<a id="a7bf1de59a07eba4ba13f72ee2f24b7b8" name="a7bf1de59a07eba4ba13f72ee2f24b7b8"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#a7bf1de59a07eba4ba13f72ee2f24b7b8">&#9670;&#160;</a></span>flash_attention</h2>
+
+<div class="memitem">
+<div class="memproto">
+      <table class="memname">
+        <tr>
+          <td class="memname">bool snicholls::gpu::cuda_training_backend::flash_attention = true</td>
+        </tr>
+      </table>
+</div><div class="memdoc">
+
+<p>Under <span class="tt"><a class="el" href="group__gpu.html#gga22ea844faef25bad361c431e1315d253ae00ad49f2e4f0fda1539ae29b2aaef57">cuda_math::tf32</a></span>, heads of 32 or 64 channels: flash attention on the tensor cores; false for the matrix-product path. </p>
+
+<p class="definition">Definition at line <a class="el" href="cuda__ops_8hpp_source.html#l01090">1090</a> of file <a class="el" href="cuda__ops_8hpp_source.html">cuda_ops.hpp</a>.</p>
+
+</div>
+</div>
 <a id="a776f51532ce66dcd599df7c94d77cef9" name="a776f51532ce66dcd599df7c94d77cef9"></a>
 <h2 class="memtitle"><span class="permalink"><a href="#a776f51532ce66dcd599df7c94d77cef9">&#9670;&#160;</a></span>gemm_attention_max</h2>
 
@@ -168,7 +188,7 @@ requires (std::is_same_v&lt;T, float&gt; || std::is_same_v&lt;T, double&gt;)</td
 
 <p>The longest sequence whose attention runs as matrix products (cuBLAS, so on the tensor cores under <span class="tt"><a class="el" href="group__gpu.html#gga22ea844faef25bad361c431e1315d253ae00ad49f2e4f0fda1539ae29b2aaef57">cuda_math::tf32</a></span>), its <span class="tt">n x n</span> scores three times in the kernels' scratch; longer ones take the tiled kernels. </p>
 
-<p class="definition">Definition at line <a class="el" href="cuda__ops_8hpp_source.html#l00788">788</a> of file <a class="el" href="cuda__ops_8hpp_source.html">cuda_ops.hpp</a>.</p>
+<p class="definition">Definition at line <a class="el" href="cuda__ops_8hpp_source.html#l01092">1092</a> of file <a class="el" href="cuda__ops_8hpp_source.html">cuda_ops.hpp</a>.</p>
 
 </div>
 </div>
@@ -186,7 +206,7 @@ requires (std::is_same_v&lt;T, float&gt; || std::is_same_v&lt;T, double&gt;)</td
 
 <p>The compiled kernels; must outlive the backend. </p>
 
-<p class="definition">Definition at line <a class="el" href="cuda__ops_8hpp_source.html#l00787">787</a> of file <a class="el" href="cuda__ops_8hpp_source.html">cuda_ops.hpp</a>.</p>
+<p class="definition">Definition at line <a class="el" href="cuda__ops_8hpp_source.html#l01089">1089</a> of file <a class="el" href="cuda__ops_8hpp_source.html">cuda_ops.hpp</a>.</p>
 
 </div>
 </div>

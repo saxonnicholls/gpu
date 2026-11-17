@@ -26,7 +26,7 @@
  <tbody>
  <tr id="projectrow">
   <td id="projectalign">
-   <div id="projectname">snicholls-gpu<span id="projectnumber">&#160;0.3.0</span>
+   <div id="projectname">snicholls-gpu<span id="projectnumber">&#160;0.4.0</span>
    </div>
    <div id="projectbrief">GPU backends of snicholls-core&#39;s interfaces: linalg on OpenCL</div>
   </td>
@@ -94,7 +94,7 @@ $(function(){initNavTree('index.html','',''); });
 <div class="contents">
 <div class="textblock"><p><a class="anchor" id="md__2home_2runner_2work_2gpu_2gpu_2README"></a></p>
 <p><a href="https://github.com/saxonnicholls/gpu/actions/workflows/ci.yml"><img src="https://github.com/saxonnicholls/gpu/actions/workflows/ci.yml/badge.svg?branch=main" alt="CI" style="pointer-events: none;" class="inline"/></a> <a href="https://saxonnicholls.github.io/gpu/"><img src="https://img.shields.io/badge/docs-doxygen-blue" alt="Docs" class="inline"/></a></p>
-<p><b>Documentation:</b> <a href="https://saxonnicholls.github.io/gpu/">https://saxonnicholls.github.io/gpu/</a>: the newest release at the root, every version under <span class="tt">/vX.Y.Z/</span>, and the latest <span class="tt">main</span> under <span class="tt">/main/</span>.</p>
+<p><b>Documentation:</b> <a href="https://saxonnicholls.github.io/gpu/">https://saxonnicholls.github.io/gpu/</a>: the newest release at the root, every version under <span class="tt">/vX.Y.Z/</span>, and the latest <span class="tt">main</span> under <span class="tt">/main/</span>. <b>Performance:</b> <a class="el" href="performance.html#md__2home_2runner_2work_2gpu_2gpu_2docs_2performance">docs/performance.md</a>, how fast a transformer trains on each path, how it was measured, and the comparison with llm.c; the raw figures in <a class="el" href="md__2home_2runner_2work_2gpu_2gpu_2BENCHMARKS.html">BENCHMARKS.md</a>.</p>
 <p>Backends of <a href="https://github.com/saxonnicholls/core">snicholls-core</a>'s interfaces on GPUs. Core is standard-library only and never includes a device header; it states the interfaces (here <span class="tt">linalg::blas_backend</span>) and checks every implementation with its conformance suites. This library implements them on a device.</p>
 <ul>
 <li><b><span class="tt"><a class="el" href="structsnicholls_1_1gpu_1_1cuda__backend.html" title="The linalg::blas_backend on a cuda_context: gemm and gemv on the device, the rest on the host.">snicholls::gpu::cuda_backend</a></span></b> (<span class="tt"><a class="el" href="cuda_8hpp.html" title="snicholls::gpu::cuda_backend: a snicholls::linalg::blas_backend on an NVIDIA GPU through cuBLAS,...">include/snicholls/gpu/cuda.hpp</a></span>): the NVIDIA backend, cuBLAS over device memory in place (<span class="tt">device_buffer&lt;T&gt;</span>) or host memory staged; built where the CUDA toolkit is (<span class="tt">snicholls::gpu_cuda</span>).</li>

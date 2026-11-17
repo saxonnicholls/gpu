@@ -1,5 +1,8 @@
 var searchData=
 [
-  ['upload_0',['upload',['../classsnicholls_1_1gpu_1_1device__buffer.html#a23ebc2c811d87d44b588ed7d4a6a73ac',1,'snicholls::gpu::device_buffer']]],
-  ['use_1',['Use',['../index.html#autotoc_md1',1,'']]]
+  ['test_0',['Build and test',['../index.html#autotoc_md2',1,'']]],
+  ['tf32_1',['tf32',['../group__gpu.html#gga22ea844faef25bad361c431e1315d253ae00ad49f2e4f0fda1539ae29b2aaef57',1,'snicholls::gpu']]],
+  ['the_20paths_2',['The paths',['../performance.html#autotoc_md5',1,'']]],
+  ['training_20step_3',['A whole GPT-2 small training step',['../performance.html#autotoc_md7',1,'']]],
+  ['triangular_5fsolve_4',['triangular_solve',['../structsnicholls_1_1gpu_1_1cuda__backend.html#a2f85abf2b61b37665e260dfe91ab109a',1,'snicholls::gpu::cuda_backend::triangular_solve()'],['../structsnicholls_1_1gpu_1_1opencl__backend.html#a6c1ea6f0b8dc92d9ef421915dd3ce468',1,'snicholls::gpu::opencl_backend::triangular_solve()']]]
 ];

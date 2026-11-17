@@ -28,6 +28,13 @@ var NAVTREE =
     [ "Use", "index.html#autotoc_md1", null ],
     [ "Build and test", "index.html#autotoc_md2", null ],
     [ "Licence", "index.html#autotoc_md3", null ],
+    [ "Benchmarks", "md__2home_2runner_2work_2gpu_2gpu_2BENCHMARKS.html", null ],
+    [ "Performance", "performance.html", [
+      [ "The paths", "performance.html#autotoc_md5", null ],
+      [ "Attention alone", "performance.html#autotoc_md6", null ],
+      [ "A whole GPT-2 small training step", "performance.html#autotoc_md7", null ],
+      [ "Accuracy", "performance.html#autotoc_md8", null ]
+    ] ],
     [ "Topics", "topics.html", "topics" ],
     [ "Classes", "annotated.html", [
       [ "Class List", "annotated.html", "annotated_dup" ],

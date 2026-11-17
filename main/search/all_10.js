@@ -1,6 +1,24 @@
 var searchData=
 [
-  ['test_0',['Build and test',['../index.html#autotoc_md2',1,'']]],
-  ['tf32_1',['tf32',['../group__gpu.html#gga22ea844faef25bad361c431e1315d253ae00ad49f2e4f0fda1539ae29b2aaef57',1,'snicholls::gpu']]],
-  ['triangular_5fsolve_2',['triangular_solve',['../structsnicholls_1_1gpu_1_1cuda__backend.html#a2f85abf2b61b37665e260dfe91ab109a',1,'snicholls::gpu::cuda_backend::triangular_solve()'],['../structsnicholls_1_1gpu_1_1opencl__backend.html#a6c1ea6f0b8dc92d9ef421915dd3ce468',1,'snicholls::gpu::opencl_backend::triangular_solve()']]]
+  ['scale_5f_0',['scale_',['../classsnicholls_1_1gpu_1_1cuda__kernels.html#ae7ab7c869d1f3c3b7757652bad94a3c0',1,'snicholls::gpu::cuda_kernels']]],
+  ['scale_5frows_1',['scale_rows',['../cuda__ops_8hpp.html#ab5a369b07114e198f8e2e9edf2298b15',1,'snicholls::gpu']]],
+  ['scratch_2',['scratch',['../classsnicholls_1_1gpu_1_1cuda__kernels.html#a069a1fb5f87c5e9e38272936357a5889',1,'snicholls::gpu::cuda_kernels']]],
+  ['size_3',['size',['../classsnicholls_1_1gpu_1_1device__buffer.html#abcade0583893bd49232182ba7f7bb736',1,'snicholls::gpu::device_buffer']]],
+  ['small_20training_20step_4',['A whole GPT-2 small training step',['../performance.html#autotoc_md7',1,'']]],
+  ['snicholls_20gpu_5',['snicholls gpu',['../group__gpu.html',1,'snicholls-gpu'],['../index.html',1,'snicholls-gpu']]],
+  ['snicholls_5fgpu_5frequire_5fversion_6',['SNICHOLLS_GPU_REQUIRE_VERSION',['../version_8hpp.html#aaae242c5140b2df54af07e730c5fcc9c',1,'version.hpp']]],
+  ['snicholls_5fgpu_5fversion_7',['SNICHOLLS_GPU_VERSION',['../version_8hpp.html#a110514a27d0824248da5bd33a62cff8d',1,'version.hpp']]],
+  ['snicholls_5fgpu_5fversion_5fmajor_8',['SNICHOLLS_GPU_VERSION_MAJOR',['../version_8hpp.html#a82f0756a6ec221df273b3d9719c85edd',1,'version.hpp']]],
+  ['snicholls_5fgpu_5fversion_5fminor_9',['SNICHOLLS_GPU_VERSION_MINOR',['../version_8hpp.html#aab208e08b86622d4cfc5eb4a228b3329',1,'version.hpp']]],
+  ['snicholls_5fgpu_5fversion_5fpatch_10',['SNICHOLLS_GPU_VERSION_PATCH',['../version_8hpp.html#aae7c19f10fca19a8ef4b2ef567d426d7',1,'version.hpp']]],
+  ['snicholls_5fgpu_5fversion_5fstring_11',['SNICHOLLS_GPU_VERSION_STRING',['../version_8hpp.html#abdbf1079131c5d100f66237808ba558a',1,'version.hpp']]],
+  ['span_12',['span',['../classsnicholls_1_1gpu_1_1device__buffer.html#a56e5c402b503dec3f8e07e16e344e0a0',1,'snicholls::gpu::device_buffer']]],
+  ['step_13',['A whole GPT-2 small training step',['../performance.html#autotoc_md7',1,'']]],
+  ['stream_14',['stream',['../classsnicholls_1_1gpu_1_1cuda__context.html#a01301dfcca6e4e0197bbc4709786ea59',1,'snicholls::gpu::cuda_context']]],
+  ['sum_5frows_15',['sum_rows',['../cuda__ops_8hpp.html#a74d1441a6fbbc2c43c5ded3d87b1c5e9',1,'snicholls::gpu']]],
+  ['sum_5frows_5f_16',['sum_rows_',['../classsnicholls_1_1gpu_1_1cuda__kernels.html#ab50611104cbbca8e3592ecc3b6fa0ee3',1,'snicholls::gpu::cuda_kernels']]],
+  ['sum_5fsquares_17',['sum_squares',['../cuda__ops_8hpp.html#a8cfaa4ced014ce8cbf8083509a54ac41',1,'snicholls::gpu']]],
+  ['sum_5fvalues_18',['sum_values',['../cuda__ops_8hpp.html#a572a6f1d9e8a917d15c0781e004e903b',1,'snicholls::gpu']]],
+  ['synchronize_19',['synchronize',['../classsnicholls_1_1gpu_1_1cuda__context.html#a5bc161e43bce860f994cdec7327a102b',1,'snicholls::gpu::cuda_context']]],
+  ['syrk_20',['syrk',['../structsnicholls_1_1gpu_1_1cuda__backend.html#aafbacae41e8bb86fe64bf85e01b3524a',1,'snicholls::gpu::cuda_backend::syrk()'],['../structsnicholls_1_1gpu_1_1opencl__backend.html#a5333a2fa346bb5d8c91ec717387ad8ca',1,'snicholls::gpu::opencl_backend::syrk()']]]
 ];

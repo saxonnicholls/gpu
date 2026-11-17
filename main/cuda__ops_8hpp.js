@@ -16,6 +16,8 @@ var cuda__ops_8hpp =
     [ "snicholls::gpu::embed_rows", "cuda__ops_8hpp.html#a49eac91674b8e2a4ba34e81f4a8d35e0", null ],
     [ "snicholls::gpu::embed_rows_backward", "cuda__ops_8hpp.html#a781a03408a4ae2245d395b4ac228e49f", null ],
     [ "snicholls::gpu::fill_rows", "cuda__ops_8hpp.html#afce732fb4a9e3244a26b9e1a6db7d868", null ],
+    [ "snicholls::gpu::linear_heads", "cuda__ops_8hpp.html#a2315d163cb1b1feb39e86184f4e9d687", null ],
+    [ "snicholls::gpu::linear_heads_backward", "cuda__ops_8hpp.html#a9cf5f3cadcd6ef7941caff2c5edb983a", null ],
     [ "snicholls::gpu::mlp_activate_rows", "cuda__ops_8hpp.html#a19104cc2afb0e2d583519c8294984b5d", null ],
     [ "snicholls::gpu::mlp_activate_rows_backward", "cuda__ops_8hpp.html#a713381c60ecf7bb4c0430f10d06cb0e7", null ],
     [ "snicholls::gpu::scale_rows", "cuda__ops_8hpp.html#ab5a369b07114e198f8e2e9edf2298b15", null ],

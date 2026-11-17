@@ -1,9 +1,5 @@
 var searchData=
 [
-  ['launch_0',['launch',['../classsnicholls_1_1gpu_1_1cuda__kernels.html#a965add05344fa6923ff723bd8414330e',1,'snicholls::gpu::cuda_kernels']]],
-  ['launch_5fgrid_1',['launch_grid',['../classsnicholls_1_1gpu_1_1cuda__kernels.html#a9aa136fdd341bdf60a9ec293db17c4d3',1,'snicholls::gpu::cuda_kernels']]],
-  ['launch_5fgrid2_2',['launch_grid2',['../classsnicholls_1_1gpu_1_1cuda__kernels.html#a702594251419a6d368b087226273e205',1,'snicholls::gpu::cuda_kernels']]],
-  ['launch_5fgrid3_3',['launch_grid3',['../classsnicholls_1_1gpu_1_1cuda__kernels.html#a350a91d0c73d34f34706cb6897d8f804',1,'snicholls::gpu::cuda_kernels']]],
-  ['licence_4',['Licence',['../index.html#autotoc_md3',1,'']]],
-  ['log_5',['log',['../structsnicholls_1_1gpu_1_1opencl__failure.html#af2e5a892cbe4ecc33ef9363447f9de0e',1,'snicholls::gpu::opencl_failure']]]
+  ['kernels_0',['kernels',['../structsnicholls_1_1gpu_1_1cuda__training__backend.html#a7973568484e4ed8ade61fa88799f3ca4',1,'snicholls::gpu::cuda_training_backend']]],
+  ['kind_1',['kind',['../structsnicholls_1_1gpu_1_1cuda__failure.html#aae39f1bd9c2cbea853d63c19590a7810',1,'snicholls::gpu::cuda_failure::kind'],['../structsnicholls_1_1gpu_1_1opencl__failure.html#af930e9f9b754b8bff894895e48fd11e7',1,'snicholls::gpu::opencl_failure::kind']]]
 ];
