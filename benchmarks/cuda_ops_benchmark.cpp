@@ -303,7 +303,6 @@ bool attention_fair()
     return ok;
 }
 
-<<<<<<< HEAD
 bool batch_fair()
 {
     batch_step a(*device().context), b(*device().context);
@@ -336,7 +335,6 @@ bool muon_fair()
     const double e = normwise(dgot, dwant);
     std::printf("  muon 768 x 768, float on the device against the host: normwise %.2g\n", e);
     return e <= 5e-4 && m.back() == hm;
->>>>>>> feature/muon-device
 }
 
 bool fair()
