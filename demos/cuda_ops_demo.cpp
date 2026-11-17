@@ -28,7 +28,7 @@ int main()
     namespace ml = snicholls::ml;
     constexpr ml::transformer_config c{.d_model = 128, .n_heads = 4, .n_kv_heads = 4, .head_dim = 32, .d_ff = 512,
                                        .norm = ml::norm_kind::layer, .norm_eps = 1e-5, .mlp = ml::mlp_kind::gelu_tanh, .bias = true};
-    constexpr std::size_t n = 64, d = c.d_model, f = c.d_ff;
+    constexpr std::size_t n = 64, sequences = 2, d = c.d_model, f = c.d_ff;   // two sequences of 32 tokens, end to end
 
     //! [cuda_ops]
     auto ctx = gpu::cuda_context::create();
@@ -74,7 +74,7 @@ int main()
         w.attention = {W{s(wq), d, d}, W{s(wk), d, d}, W{s(wv), d, d}, W{s(wo), d, d}, s(bq), s(bk), s(bv), s(bo)};
         w.mlp = {W{s(up), f, d}, W{}, W{s(down), d, f}, s(bup), {}, s(bdown)};
         const ml::block_activations<float> act{s(x0), s(h1), s(x1), s(h2), {s(q), s(k), s(v), {}, {}, s(y), s(lse)}, s(aup), {}, s(hid)};
-        ml::block_forward_sequence<c>(backend, w, s(xs), ml::no_rope, act);
+        ml::block_forward_sequence<c>(backend, w, s(xs), ml::no_rope, act, sequences);   // the batch in one call
     };
     run(device, true);                        // the norms, residuals, activation and products on the GPU
     run(snicholls::linalg::reference, false); // core's reference on the host copies
@@ -85,8 +85,9 @@ int main()
     float worst = 0.0f;
     for (std::size_t i = 0; i < got.size(); ++i)
         worst = std::fmax(worst, std::fabs(got[i] - t[xs].host[i]) / (1 + std::fabs(t[xs].host[i])));
-    std::printf("  device: %s\n  a block's forward pass over %zu tokens on the device: within %.2g of core's reference\n",
-                context->device_name().c_str(), n, static_cast<double>(worst));
+    std::printf("  device: %s\n  a block's forward pass over %zu sequences of %zu tokens on the device, in one call: within %.2g of core's "
+                "reference\n",
+                context->device_name().c_str(), sequences, n / sequences, static_cast<double>(worst));
     const bool ok = worst < 1e-4f;
     std::printf(ok ? "cuda_ops demo: ok\n" : "cuda_ops demo: FAILED\n");
     return ok ? 0 : 1;

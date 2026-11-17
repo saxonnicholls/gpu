@@ -25,6 +25,12 @@
 ///
 /// \snippet cuda_ops_demo.cpp cuda_ops
 ///
+/// **A batch of sequences.** Core's passes take a number of sequences laid end to end (one call per layer for a whole
+/// batch); every overload here takes it too. The row-wise steps and the products run over all the rows at once
+/// (`linear_heads` one product and one permutation into each sequence's block of keys and values); QK norm and RoPE one
+/// launch over every (row, head), positions restarting in each sequence; flash attention one launch per kernel, the
+/// sequence the grid's z; the matrix-product and tiled attention paths one sequence after another.
+///
 /// **Relationships.** `cuda.hpp` (the context, the products, `device_buffer`), core's `ml/transformer_block.hpp`,
 /// `ml/attention_layer.hpp`, `ml/mlp.hpp`, `ml/linear.hpp` (the operations it overloads and the reference it is checked
 /// against). Group: \ref gpu.
@@ -268,14 +274,15 @@ __device__ void rms_backward_(float* g, const float* x, const float* w, float rs
         if (contrib) contrib[i] = g[i] * norm; g[i] = rstd * (gi - norm * mean_gn); }
 }
 // One thread per (token, head) of the queries then the keys: the raw copies, QK norm before or after RoPE, RoPE
+// over S sequences of n tokens: row r = s n + t of the queries, sequence s's block of keys (head-major within it)
 __global__ void position(float* q, float* k, float* q_raw, float* k_raw, const float* qnw, const float* knw, const float* cs, const float* sn,
-                         u64 n, int H, int KVH, int d, int qk, int rope, int half, float eps)
+                         u64 n, u64 S, int H, int KVH, int d, int qk, int rope, int half, float eps)
 {
-    const u64 idx = blockIdx.x * (u64)blockDim.x + threadIdx.x; if (idx >= n * (u64)(H + KVH)) return;
-    const u64 t = idx / (H + KVH); const int h = (int)(idx % (H + KVH));
+    const u64 idx = blockIdx.x * (u64)blockDim.x + threadIdx.x; if (idx >= S * n * (u64)(H + KVH)) return;
+    const u64 r = idx / (H + KVH), s = r / n, t = r % n; const int h = (int)(idx % (H + KVH));
     float* head; float* raw; const float* w;
-    if (h < H) { head = q + t * (u64)(H * d) + (u64)h * d; raw = q_raw ? q_raw + t * (u64)(H * d) + (u64)h * d : 0; w = qnw; }
-    else { const int hk = h - H; head = k + ((u64)hk * n + t) * d; raw = k_raw ? k_raw + t * (u64)(KVH * d) + (u64)hk * d : 0; w = knw; }
+    if (h < H) { head = q + r * (u64)(H * d) + (u64)h * d; raw = q_raw ? q_raw + r * (u64)(H * d) + (u64)h * d : 0; w = qnw; }
+    else { const int hk = h - H; head = k + s * n * (u64)(KVH * d) + ((u64)hk * n + t) * d; raw = k_raw ? k_raw + r * (u64)(KVH * d) + (u64)hk * d : 0; w = knw; }
     if (qk) for (int i = 0; i < d; ++i) raw[i] = head[i];
     if (qk == 1) rms_(head, w, d, eps);
     if (rope) rotate_(head, cs + t * (u64)(d / 2), sn + t * (u64)(d / 2), d, half, 1.0f);
@@ -283,15 +290,15 @@ __global__ void position(float* q, float* k, float* q_raw, float* k_raw, const f
 }
 // The backward of position, in place on the gradients; each head's norm-weight contributions written for an in-order sum
 __global__ void position_backward(float* gq, float* gk, const float* q_raw, const float* k_raw, const float* qnw, const float* knw,
-                                  const float* cs, const float* sn, float* cq, float* ck, u64 n, int H, int KVH, int d, int qk, int rope, int half, float eps)
+                                  const float* cs, const float* sn, float* cq, float* ck, u64 n, u64 S, int H, int KVH, int d, int qk, int rope, int half, float eps)
 {
-    const u64 idx = blockIdx.x * (u64)blockDim.x + threadIdx.x; if (idx >= n * (u64)(H + KVH)) return;
-    const u64 t = idx / (H + KVH); const int h = (int)(idx % (H + KVH));
+    const u64 idx = blockIdx.x * (u64)blockDim.x + threadIdx.x; if (idx >= S * n * (u64)(H + KVH)) return;
+    const u64 r = idx / (H + KVH), sq = r / n, t = r % n; const int h = (int)(idx % (H + KVH));
     float* g; const float* raw; const float* w; float* contrib;
-    if (h < H) { g = gq + t * (u64)(H * d) + (u64)h * d; raw = q_raw ? q_raw + t * (u64)(H * d) + (u64)h * d : 0; w = qnw;
-                 contrib = cq ? cq + (t * H + h) * (u64)d : 0; }
-    else { const int hk = h - H; g = gk + ((u64)hk * n + t) * d; raw = k_raw ? k_raw + t * (u64)(KVH * d) + (u64)hk * d : 0; w = knw;
-           contrib = ck ? ck + (t * KVH + hk) * (u64)d : 0; }
+    if (h < H) { g = gq + r * (u64)(H * d) + (u64)h * d; raw = q_raw ? q_raw + r * (u64)(H * d) + (u64)h * d : 0; w = qnw;
+                 contrib = cq ? cq + (r * H + h) * (u64)d : 0; }
+    else { const int hk = h - H; g = gk + sq * n * (u64)(KVH * d) + ((u64)hk * n + t) * d; raw = k_raw ? k_raw + r * (u64)(KVH * d) + (u64)hk * d : 0; w = knw;
+           contrib = ck ? ck + (r * KVH + hk) * (u64)d : 0; }
     const float* c = cs + t * (u64)(d / 2); const float* s = sn + t * (u64)(d / 2);
     float x[MAXD];
     if (qk == 2) { for (int i = 0; i < d; ++i) x[i] = raw[i]; if (rope) rotate_(x, c, s, d, half, 1.0f); rms_backward_(g, x, w, rstd_(x, d, eps), contrib, d); }
@@ -530,11 +537,13 @@ extern "C" __global__ void to_bf16(const float* in, unsigned short* out, u64 n, 
     SNICHOLLS_EACH(out[i] = bf16_(in[i]), { const float4 f = C4(in);
                    reinterpret_cast<uint2*>(out)[i] = make_uint2(bf16_(f.x) | ((unsigned)bf16_(f.y) << 16), bf16_(f.z) | ((unsigned)bf16_(f.w) << 16)); })
 }
-// Between rows and heads: rows[t][h d + c] and heads[h][t][c], one thread per element; to_heads picks the direction
-extern "C" __global__ void heads_permute(const float* in, float* out, u64 n, u64 heads, u64 d, int to_heads)
+// Between rows and heads: rows[s n + t][h d + c] and heads[s][h][t][c] over S sequences of n tokens, one thread per
+// element; to_heads picks the direction
+extern "C" __global__ void heads_permute(const float* in, float* out, u64 n, u64 S, u64 heads, u64 d, int to_heads)
 {
-    const u64 i = blockIdx.x * (u64)blockDim.x + threadIdx.x; if (i >= n * heads * d) return;
-    const u64 t = i / (heads * d), h = (i / d) % heads, c = i % d, at = (h * n + t) * d + c;   // i is the row-major index
+    const u64 i = blockIdx.x * (u64)blockDim.x + threadIdx.x; if (i >= S * n * heads * d) return;
+    const u64 r = i / (heads * d), s = r / n, t = r % n, h = (i / d) % heads, c = i % d;   // i is the row-major index
+    const u64 at = s * n * heads * d + (h * n + t) * d + c;
     if (to_heads) out[at] = in[i]; else out[i] = in[at];
 }
 // Attention as matrix products, one head at a time: the scores S (n x n, row t the query) come from cuBLAS; these
@@ -850,16 +859,21 @@ __device__ void flash_dkv_(const float* q, const float* k, const float* v, const
             }
     }
 }
+// The grid's z is the sequence of a batch: each sequence's rows and its block of keys and values are where its own call
+// would find them, offset by the sequences before it
 #define SNICHOLLS_FLASH(D)                                                                                                                  \
     extern "C" __global__ void __launch_bounds__(128) flash_fwd_##D(const float* q, const float* k, const float* v, float* y, float* lse,   \
         u64 n, int H, int KVH, u64 window, float scale, float cap)                                                                         \
-    { flash_fwd_<D>(q, k, v, y, lse, n, H, KVH, window, scale, cap); }                                                                     \
+    { const u64 qo = blockIdx.z * n * H * D, ko = blockIdx.z * n * KVH * D, lo = blockIdx.z * n * H;                                     \
+      flash_fwd_<D>(q + qo, k + ko, v + ko, y + qo, lse + lo, n, H, KVH, window, scale, cap); }                                            \
     extern "C" __global__ void __launch_bounds__(128) flash_dq_##D(const float* q, const float* k, const float* v, const float* lse,        \
         const float* dy, const float* Dd, float* gq, u64 n, int H, int KVH, u64 window, float scale, float cap)                            \
-    { flash_dq_<D>(q, k, v, lse, dy, Dd, gq, n, H, KVH, window, scale, cap); }                                                             \
+    { const u64 qo = blockIdx.z * n * H * D, ko = blockIdx.z * n * KVH * D, lo = blockIdx.z * n * H;                                     \
+      flash_dq_<D>(q + qo, k + ko, v + ko, lse + lo, dy + qo, Dd + lo, gq + qo, n, H, KVH, window, scale, cap); }                          \
     extern "C" __global__ void __launch_bounds__(128) flash_dkv_##D(const float* q, const float* k, const float* v, const float* lse,       \
         const float* dy, const float* Dd, float* gk, float* gv, u64 n, int H, int KVH, u64 window, float scale, float cap)                 \
-    { flash_dkv_<D>(q, k, v, lse, dy, Dd, gk, gv, n, H, KVH, window, scale, cap); }
+    { const u64 qo = blockIdx.z * n * H * D, ko = blockIdx.z * n * KVH * D, lo = blockIdx.z * n * H;                                     \
+      flash_dkv_<D>(q + qo, k + ko, v + ko, lse + lo, dy + qo, Dd + lo, gk + ko, gv + ko, n, H, KVH, window, scale, cap); }
 SNICHOLLS_FLASH(32)
 SNICHOLLS_FLASH(64)
 extern "C" {
@@ -1391,38 +1405,41 @@ inline void sum_rows(const cuda_training_backend& b, std::type_identity_t<std::s
 }
 
 namespace detail::cuda_ops {
-    inline void permute(const cuda_training_backend& b, const float* in, float* out, std::size_t n, std::size_t heads, std::size_t d, bool to_heads)
+    // n tokens in each of `sequences`
+    inline void permute(const cuda_training_backend& b, const float* in, float* out, std::size_t n, std::size_t sequences, std::size_t heads,
+                        std::size_t d, bool to_heads)
     {
-        const u64 nn = n, hh = heads, dd = d;
+        const u64 nn = n, ss = sequences, hh = heads, dd = d;
         int dir = to_heads ? 1 : 0;
-        void* args[] = {&in, &out, arg(nn), arg(hh), arg(dd), &dir};
-        b.kernels->launch(b.kernels->heads_permute_, n * heads * d, args);
+        void* args[] = {&in, &out, arg(nn), arg(ss), arg(hh), arg(dd), &dir};
+        b.kernels->launch(b.kernels->heads_permute_, sequences * n * heads * d, args);
     }
 } // namespace detail::cuda_ops
 
 /// \brief core's `linear_heads` on the device as one product: `X Wᵀ + b` for every head at once into the kernels'
 /// scratch, row by row, then permuted to the heads' layout. \param b The backend. \param w The matrix.
-/// \param xs The `n` inputs. \param out Receives the outputs head by head. \param bias The biases, or empty.
-/// \param heads The heads.
+/// \param xs The `sequences · n` inputs. \param out Receives the outputs head by head, sequence by sequence.
+/// \param bias The biases, or empty. \param heads The heads. \param sequences The sequences: one product over all of them.
 inline void linear_heads(const cuda_training_backend& b, const ml::dense_weights<float>& w, std::span<const float> xs, std::span<float> out,
-                         std::span<const float> bias, std::size_t heads)
+                         std::span<const float> bias, std::size_t heads, std::size_t sequences = 1)
 {
-    const std::size_t n = xs.size() / w.cols;
-    const auto rows = b.kernels->scratch(n * w.rows);
+    const std::size_t rows_n = xs.size() / w.cols;
+    const auto rows = b.kernels->scratch(rows_n * w.rows);
     ml::linear_sequence(b, w, xs, rows, bias);
-    detail::cuda_ops::permute(b, rows.data(), out.data(), n, heads, w.rows / heads, true);
+    detail::cuda_ops::permute(b, rows.data(), out.data(), rows_n / sequences, sequences, heads, w.rows / heads, true);
 }
 
 /// \brief core's `linear_heads_backward` on the device: the gradients permuted from the heads' layout to rows in the
 /// kernels' scratch, then `linear_sequence_backward` once for every head. \param b The backend. \param w The matrix.
 /// \param xs The inputs. \param douts The gradients, head by head. \param dxs Added into, or empty. \param dw Added
-/// into. \param db Added into, or empty. \param heads The heads.
+/// into. \param db Added into, or empty. \param heads The heads. \param sequences The sequences.
 inline void linear_heads_backward(const cuda_training_backend& b, const ml::dense_weights<float>& w, std::span<const float> xs,
-                                  std::span<const float> douts, std::span<float> dxs, std::span<float> dw, std::span<float> db, std::size_t heads)
+                                  std::span<const float> douts, std::span<float> dxs, std::span<float> dw, std::span<float> db, std::size_t heads,
+                                  std::size_t sequences = 1)
 {
     const std::size_t n = xs.size() / w.cols;
     const auto rows = b.kernels->scratch(n * w.rows);
-    detail::cuda_ops::permute(b, douts.data(), rows.data(), n, heads, w.rows / heads, false);
+    detail::cuda_ops::permute(b, douts.data(), rows.data(), n / sequences, sequences, heads, w.rows / heads, false);
     ml::linear_sequence_backward(b, w, xs, std::span<const float>(rows), dxs, dw, db);
 }
 
@@ -1538,14 +1555,15 @@ namespace detail::cuda_ops {
 
 /// \brief QK norm and RoPE of every token's heads on the device, after the raw copies.
 /// \tparam C The configuration. \param b The backend. \param w The weights (the norms', device memory).
-/// \param act The activations (device memory). \param n The tokens. \param rope_src The rope source (host memory).
+/// \param act The activations (device memory). \param n The tokens of each sequence. \param rope_src The rope source
+/// (host memory). \param sequences The sequences, one thread per (token, head) over all of them.
 template <ml::transformer_config C, typename W, typename R>
 void attention_position_rows(const cuda_training_backend& b, const ml::attention_weights<W, float>& w,
-                             const ml::attention_activations<float>& act, std::size_t n, const R& rope_src)
+                             const ml::attention_activations<float>& act, std::size_t n, const R& rope_src, std::size_t sequences = 1)
 {
     namespace dc = detail::cuda_ops;
     if constexpr (C.qk_norm == ml::qk_norm_kind::none && C.rope == ml::rope_kind::none) {
-        (void)b, (void)w, (void)act, (void)n, (void)rope_src;   // nothing to do
+        (void)b, (void)w, (void)act, (void)n, (void)rope_src, (void)sequences;   // nothing to do
     } else {
         static_assert(C.head_dim <= 256, "snicholls::gpu: the device kernels take heads of at most 256 channels");
         const dc::rope_rows<C, R> table(*b.context, rope_src, n);
@@ -1557,12 +1575,12 @@ void attention_position_rows(const cuda_training_backend& b, const ml::attention
         const float* kn = dc::data_or_null(w.k_norm);
         const float* cs = table.cos.span().data();
         const float* sn = table.sin.span().data();
-        const dc::u64 nn = n;
+        const dc::u64 nn = n, ss = sequences;
         int H = int(C.n_heads), KVH = int(C.n_kv_heads), d = int(C.head_dim), qk = dc::qk_mode<C>, rope = C.rope == ml::rope_kind::none ? 0 : 1,
             half = C.layout() == ml::rope_layout::half ? 1 : 0;
         float eps = ml::norm_eps_v<C, float>;
-        void* args[] = {&q, &k, &qr, &kr, &qn, &kn, &cs, &sn, dc::arg(nn), &H, &KVH, &d, &qk, &rope, &half, &eps};
-        b.kernels->launch(b.kernels->position_, n * (C.n_heads + C.n_kv_heads), args);
+        void* args[] = {&q, &k, &qr, &kr, &qn, &kn, &cs, &sn, dc::arg(nn), dc::arg(ss), &H, &KVH, &d, &qk, &rope, &half, &eps};
+        b.kernels->launch(b.kernels->position_, sequences * n * (C.n_heads + C.n_kv_heads), args);
         dc::sync(b);   // the uploaded table is freed on return
     }
 }
@@ -1579,59 +1597,79 @@ namespace detail::cuda_ops {
     }
 } // namespace detail::cuda_ops
 
-/// \brief Every token's heads over its visible keys on the device: `act.y` and `act.lse`. \tparam C The configuration.
-/// \param b The backend. \param act The activations (device memory). \param n The tokens.
+/// \brief Every token's heads over the visible keys of its own sequence on the device: `act.y` and `act.lse`.
+/// \tparam C The configuration. \param b The backend. \param act The activations (device memory), laid out per sequence
+/// as core's `attention_activations` says. \param n The tokens of each sequence. \param sequences The sequences: flash
+/// attention takes them all in one launch (the grid's z); the other paths run sequence by sequence.
 template <ml::transformer_config C>
-void attention_attend_rows(const cuda_training_backend& b, const ml::attention_activations<float>& act, std::size_t n)
+void attention_attend_rows(const cuda_training_backend& b, const ml::attention_activations<float>& act, std::size_t n, std::size_t sequences = 1)
 {
     namespace dc = detail::cuda_ops;
     static_assert(C.head_dim <= 256, "snicholls::gpu: the device kernels take heads of at most 256 channels");
-    const float* q = act.q.data();
-    const float* k = act.k.data();
-    const float* v = act.v.data();
-    float* y = act.y.data();
-    float* lse = act.lse.data();
+    constexpr std::size_t qn = C.q_size(), kn = C.kv_size();
     const dc::u64 nn = n, window = C.window;
     int H = int(C.n_heads), KVH = int(C.n_kv_heads), d = int(C.head_dim);
     float scale = 1.0f / snicholls::math::sqrt(float(C.head_dim)), cap = ml::attention_softcap_v<C, float>;
     if (dc::flash<C.head_dim> >= 0 && b.math != cuda_math::float32 && b.flash_attention) {
-        // Flash attention on the tensor cores: a block per (64 queries, head)
+        // Flash attention on the tensor cores: a block per (64 queries, head, sequence)
+        const float* q = act.q.data();
+        const float* k = act.k.data();
+        const float* v = act.v.data();
+        float* y = act.y.data();
+        float* lse = act.lse.data();
         void* args[] = {&q, &k, &v, &y, &lse, dc::arg(nn), &H, &KVH, dc::arg(window), &scale, &cap};
-        b.kernels->launch_grid2(b.kernels->flash_fwd_[std::size_t(dc::flash<C.head_dim>)], unsigned((n + 63) / 64), C.n_heads, 128, args);
-    } else if (n <= b.gemm_attention_max) {
-        // Per head: S = scale Q_h K^T, the softmax in place (lse written), Y_h = P V
-        constexpr std::size_t dh = C.head_dim, hd = C.n_heads * C.head_dim, group = C.n_heads / C.n_kv_heads;
-        float* S = b.kernels->scratch(n * n).data();
-        for (std::size_t h = 0; h < C.n_heads; ++h) {
-            const std::size_t kvh = h / group;
-            b.context->gemm(scale, dc::in(q + h * dh, n, dh, hd, 1), dc::in(k + kvh * n * dh, dh, n, 1, dh), 0.0f, dc::out(S, n, n, n, 1), b.math);
-            int hh = int(h);
-            void* args[] = {&S, &lse, dc::arg(nn), &H, &hh, dc::arg(window), &cap};
-            b.kernels->launch(b.kernels->attn_softmax_, 32 * n, args);
-            b.context->gemm(1.0f, dc::in(S, n, n, n, 1), dc::in(v + kvh * n * dh, n, dh, dh, 1), 0.0f, dc::out(y + h * dh, n, dh, hd, 1), b.math);
+        b.kernels->launch_grid3(b.kernels->flash_fwd_[std::size_t(dc::flash<C.head_dim>)], unsigned((n + 63) / 64), C.n_heads, sequences, 128, args);
+        return;
+    }
+    for (std::size_t s = 0; s < sequences; ++s) {
+        const float* q = act.q.data() + s * n * qn;
+        const float* k = act.k.data() + s * n * kn;
+        const float* v = act.v.data() + s * n * kn;
+        float* y = act.y.data() + s * n * qn;
+        float* lse = act.lse.data() + s * n * C.n_heads;
+        if (n <= b.gemm_attention_max) {
+            // Per head: S = scale Q_h K^T, the softmax in place (lse written), Y_h = P V
+            constexpr std::size_t dh = C.head_dim, hd = C.n_heads * C.head_dim, group = C.n_heads / C.n_kv_heads;
+            float* S = b.kernels->scratch(n * n).data();
+            for (std::size_t h = 0; h < C.n_heads; ++h) {
+                const std::size_t kvh = h / group;
+                b.context->gemm(scale, dc::in(q + h * dh, n, dh, hd, 1), dc::in(k + kvh * n * dh, dh, n, 1, dh), 0.0f, dc::out(S, n, n, n, 1), b.math);
+                int hh = int(h);
+                void* args[] = {&S, &lse, dc::arg(nn), &H, &hh, dc::arg(window), &cap};
+                b.kernels->launch(b.kernels->attn_softmax_, 32 * n, args);
+                b.context->gemm(1.0f, dc::in(S, n, n, n, 1), dc::in(v + kvh * n * dh, n, dh, dh, 1), 0.0f, dc::out(y + h * dh, n, dh, hd, 1), b.math);
+            }
+        } else if constexpr (dc::tiled<C.head_dim> >= 0) {
+            void* args[] = {&q, &k, &v, &y, &lse, dc::arg(nn), &H, &KVH, dc::arg(window), &scale, &cap};
+            b.kernels->launch_grid2(b.kernels->attend_tiled_[dc::tiled<C.head_dim>], unsigned((n + 63) / 64), C.n_heads, 64, args);
+        } else {
+            void* args[] = {&q, &k, &v, &y, &lse, dc::arg(nn), &H, &KVH, &d, dc::arg(window), &scale, &cap};
+            b.kernels->launch(b.kernels->attend_, 32 * n * C.n_heads, args);   // a warp per (token, head)
         }
-    } else if constexpr (dc::tiled<C.head_dim> >= 0) {
-        void* args[] = {&q, &k, &v, &y, &lse, dc::arg(nn), &H, &KVH, dc::arg(window), &scale, &cap};
-        b.kernels->launch_grid2(b.kernels->attend_tiled_[dc::tiled<C.head_dim>], unsigned((n + 63) / 64), C.n_heads, 64, args);
-    } else {
-        void* args[] = {&q, &k, &v, &y, &lse, dc::arg(nn), &H, &KVH, &d, dc::arg(window), &scale, &cap};
-        b.kernels->launch(b.kernels->attend_, 32 * n * C.n_heads, args);   // a warp per (token, head)
     }
 }
 
 /// \brief The backward pass of the heads on the device, deterministic: the queries' gradients written, the keys' and
 /// values' added in core's order. \tparam C The configuration. \param b The backend. \param act The activations.
-/// \param dy The heads' output gradients. \param grads The gradients. \param n The tokens.
+/// \param dy The heads' output gradients. \param grads The gradients. \param n The tokens of each sequence.
+/// \param sequences The sequences: flash attention's kernels take them all in one launch each, the other paths run
+/// sequence by sequence.
 template <ml::transformer_config C>
 void attention_attend_rows_backward(const cuda_training_backend& b, const ml::attention_activations<float>& act,
-                                    std::type_identity_t<std::span<const float>> dy, const ml::attention_gradients<float>& grads, std::size_t n)
+                                    std::type_identity_t<std::span<const float>> dy, const ml::attention_gradients<float>& grads, std::size_t n,
+                                    std::size_t sequences = 1)
 {
     namespace dc = detail::cuda_ops;
+    constexpr std::size_t qn = C.q_size(), kn = C.kv_size();
+    const dc::u64 nn = n, window = C.window;
+    int H = int(C.n_heads), KVH = int(C.n_kv_heads), d = int(C.head_dim);
+    float scale = 1.0f / snicholls::math::sqrt(float(C.head_dim)), cap = ml::attention_softcap_v<C, float>;
     if (dc::flash<C.head_dim> >= 0 && b.math != cuda_math::float32 && b.flash_attention) {
-        // Flash attention's backward on the tensor cores: D = dy . y per (token, head), then the queries' gradients (a block
-        // per 64 queries) and the keys' and values' (a block per 64 keys, added into)
+        // Flash attention's backward on the tensor cores: D = dy . y per (token, head) over every row, then the queries'
+        // gradients (a block per 64 queries, head and sequence) and the keys' and values' (a block per 64 keys, key-value
+        // head and sequence, added into)
         constexpr std::size_t fi = std::size_t(dc::flash<C.head_dim>);
-        float* Dd = b.kernels->scratch(n * C.n_heads).data();
+        float* Dd = b.kernels->scratch(sequences * n * C.n_heads).data();
         const float* q = act.q.data();
         const float* k = act.k.data();
         const float* v = act.v.data();
@@ -1641,115 +1679,103 @@ void attention_attend_rows_backward(const cuda_training_backend& b, const ml::at
         float* gq = grads.q.data();
         float* gk = grads.k.data();
         float* gv = grads.v.data();
-        const dc::u64 nn = n, window = C.window;
-        int H = int(C.n_heads), KVH = int(C.n_kv_heads), d = int(C.head_dim);
-        float scale = 1.0f / snicholls::math::sqrt(float(C.head_dim)), cap = ml::attention_softcap_v<C, float>;
-        void* a0[] = {&g, &y, &Dd, dc::arg(nn), &H, &d};
-        b.kernels->launch(b.kernels->attn_rowdot_, 32 * n * C.n_heads, a0);
+        const dc::u64 rows = sequences * n;
+        void* a0[] = {&g, &y, &Dd, dc::arg(rows), &H, &d};
+        b.kernels->launch(b.kernels->attn_rowdot_, 32 * rows * C.n_heads, a0);
         const float* cD = Dd;
         void* a1[] = {&q, &k, &v, &lse, &g, &cD, &gq, dc::arg(nn), &H, &KVH, dc::arg(window), &scale, &cap};
-        b.kernels->launch_grid2(b.kernels->flash_dq_[fi], unsigned((n + 63) / 64), C.n_heads, 128, a1);
+        b.kernels->launch_grid3(b.kernels->flash_dq_[fi], unsigned((n + 63) / 64), C.n_heads, sequences, 128, a1);
         void* a2[] = {&q, &k, &v, &lse, &g, &cD, &gk, &gv, dc::arg(nn), &H, &KVH, dc::arg(window), &scale, &cap};
-        b.kernels->launch_grid2(b.kernels->flash_dkv_[fi], unsigned((n + 63) / 64), C.n_kv_heads, 128, a2);
+        b.kernels->launch_grid3(b.kernels->flash_dkv_[fi], unsigned((n + 63) / 64), C.n_kv_heads, sequences, 128, a2);
         return;
     }
-    if (n <= b.gemm_attention_max) {
-        // Per head, from the saved lse (nothing else kept): S = scale Q_h K^T, P from S, dV += P^T dY_h, dP = dY_h V^T,
-        // dS from dP, dQ_h = scale dS K, dK += scale dS^T Q_h. A group's heads add into its keys' and values'
-        // gradients in order.
-        constexpr std::size_t dh = C.head_dim, hd = C.n_heads * C.head_dim, group = C.n_heads / C.n_kv_heads;
-        const auto space = b.kernels->scratch(3 * n * n);
-        float* S = space.data();
-        float* P = S + n * n;
-        float* dP = P + n * n;
-        const float* q = act.q.data();
-        const float* k = act.k.data();
-        const float* v = act.v.data();
-        const float* y = act.y.data();
-        const float* lse = act.lse.data();
-        const float* g = dy.data();
-        const dc::u64 nn = n, window = C.window;
-        int H = int(C.n_heads), d = int(C.head_dim);
-        const float scale = 1.0f / snicholls::math::sqrt(float(C.head_dim));
-        float cap = ml::attention_softcap_v<C, float>;
-        for (std::size_t h = 0; h < C.n_heads; ++h) {
-            const std::size_t kvh = h / group;
-            const float* qh = q + h * dh;
-            const float* gh = g + h * dh;
-            const float* kk = k + kvh * n * dh;
-            const float* vv = v + kvh * n * dh;
-            int hh = int(h);
-            b.context->gemm(scale, dc::in(qh, n, dh, hd, 1), dc::in(kk, dh, n, 1, dh), 0.0f, dc::out(S, n, n, n, 1), b.math);
-            const float* cS = S;
-            void* a1[] = {&cS, &P, &lse, dc::arg(nn), &H, &hh, dc::arg(window), &cap};
-            b.kernels->launch(b.kernels->attn_probs_, n * n, a1);
-            b.context->gemm(1.0f, dc::in(P, n, n, 1, n), dc::in(gh, n, dh, hd, 1), 1.0f, dc::out(grads.v.data() + kvh * n * dh, n, dh, dh, 1), b.math);
-            b.context->gemm(1.0f, dc::in(gh, n, dh, hd, 1), dc::in(vv, dh, n, 1, dh), 0.0f, dc::out(dP, n, n, n, 1), b.math);
-            const float* cP = P;
-            void* a2[] = {&dP, &cP, &cS, &g, &y, dc::arg(nn), &H, &hh, &d, &cap};
-            b.kernels->launch(b.kernels->attn_dscores_, 32 * n, a2);
-            b.context->gemm(scale, dc::in(dP, n, n, n, 1), dc::in(kk, n, dh, dh, 1), 0.0f, dc::out(grads.q.data() + h * dh, n, dh, hd, 1), b.math);
-            b.context->gemm(scale, dc::in(dP, n, n, 1, n), dc::in(qh, n, dh, hd, 1), 1.0f, dc::out(grads.k.data() + kvh * n * dh, n, dh, dh, 1), b.math);
+    for (std::size_t s = 0; s < sequences; ++s) {
+        const float* q = act.q.data() + s * n * qn;
+        const float* k = act.k.data() + s * n * kn;
+        const float* v = act.v.data() + s * n * kn;
+        const float* y = act.y.data() + s * n * qn;
+        const float* lse = act.lse.data() + s * n * C.n_heads;
+        const float* g = dy.data() + s * n * qn;
+        float* gq = grads.q.data() + s * n * qn;
+        float* gk = grads.k.data() + s * n * kn;
+        float* gv = grads.v.data() + s * n * kn;
+        if (n <= b.gemm_attention_max) {
+            // Per head, from the saved lse (nothing else kept): S = scale Q_h K^T, P from S, dV += P^T dY_h, dP = dY_h V^T,
+            // dS from dP, dQ_h = scale dS K, dK += scale dS^T Q_h. A group's heads add into its keys' and values'
+            // gradients in order.
+            constexpr std::size_t dh = C.head_dim, hd = C.n_heads * C.head_dim, group = C.n_heads / C.n_kv_heads;
+            const auto space = b.kernels->scratch(3 * n * n);
+            float* S = space.data();
+            float* P = S + n * n;
+            float* dP = P + n * n;
+            for (std::size_t h = 0; h < C.n_heads; ++h) {
+                const std::size_t kvh = h / group;
+                const float* qh = q + h * dh;
+                const float* gh = g + h * dh;
+                const float* kk = k + kvh * n * dh;
+                const float* vv = v + kvh * n * dh;
+                int hh = int(h);
+                b.context->gemm(scale, dc::in(qh, n, dh, hd, 1), dc::in(kk, dh, n, 1, dh), 0.0f, dc::out(S, n, n, n, 1), b.math);
+                const float* cS = S;
+                void* a1[] = {&cS, &P, &lse, dc::arg(nn), &H, &hh, dc::arg(window), &cap};
+                b.kernels->launch(b.kernels->attn_probs_, n * n, a1);
+                b.context->gemm(1.0f, dc::in(P, n, n, 1, n), dc::in(gh, n, dh, hd, 1), 1.0f, dc::out(gv + kvh * n * dh, n, dh, dh, 1), b.math);
+                b.context->gemm(1.0f, dc::in(gh, n, dh, hd, 1), dc::in(vv, dh, n, 1, dh), 0.0f, dc::out(dP, n, n, n, 1), b.math);
+                const float* cP = P;
+                void* a2[] = {&dP, &cP, &cS, &g, &y, dc::arg(nn), &H, &hh, &d, &cap};
+                b.kernels->launch(b.kernels->attn_dscores_, 32 * n, a2);
+                b.context->gemm(scale, dc::in(dP, n, n, n, 1), dc::in(kk, n, dh, dh, 1), 0.0f, dc::out(gq + h * dh, n, dh, hd, 1), b.math);
+                b.context->gemm(scale, dc::in(dP, n, n, 1, n), dc::in(qh, n, dh, hd, 1), 1.0f, dc::out(gk + kvh * n * dh, n, dh, dh, 1), b.math);
+            }
+            continue;
         }
-        return;
-    }
-    // The heads' D = dy . y, then the key splits' partials: the kernels' scratch
-    constexpr std::size_t D_ = C.head_dim;
-    const std::size_t splits = std::clamp<std::size_t>(n / 128, 1, 8), part = C.n_kv_heads * n * D_;
-    const auto space = b.kernels->scratch(n * C.n_heads + (dc::tiled<D_> >= 0 ? 2 * splits * part : 0));
-    const float* q = act.q.data();
-    const float* k = act.k.data();
-    const float* v = act.v.data();
-    const float* y = act.y.data();
-    const float* lse = act.lse.data();
-    const float* g = dy.data();
-    float* gq = grads.q.data();
-    float* gk = grads.k.data();
-    float* gv = grads.v.data();
-    float* dp = space.data();
-    const dc::u64 nn = n, window = C.window;
-    int H = int(C.n_heads), KVH = int(C.n_kv_heads), d = int(C.head_dim);
-    float scale = 1.0f / snicholls::math::sqrt(float(C.head_dim)), cap = ml::attention_softcap_v<C, float>;
-    const float* dc_ = dp;
-    if constexpr (dc::tiled<C.head_dim> >= 0) {
-        constexpr int i = dc::tiled<C.head_dim>;
-        void* a1[] = {&q, &k, &v, &y, &lse, &g, &gq, &dp, dc::arg(nn), &H, &KVH, dc::arg(window), &scale, &cap};
-        b.kernels->launch_grid2(b.kernels->attend_backward_queries_tiled_[i], unsigned((n + 63) / 64), C.n_heads, 64, a1);
-        float* pk = space.data() + n * C.n_heads;
-        float* pv = pk + splits * part;
-        void* a2[] = {&q, &k, &v, &lse, &g, &dc_, &pk, &pv, dc::arg(nn), &H, &KVH, dc::arg(window), &scale, &cap};
-        b.kernels->launch_grid3(b.kernels->attend_backward_keys_tiled_[i], unsigned((n + 31) / 32), C.n_kv_heads, splits, 32, a2);
-        const float* cpk = pk;
-        const float* cpv = pv;
-        const dc::u64 m = part;
-        int z = int(splits);
-        void* a3[] = {&gk, &gv, &cpk, &cpv, dc::arg(m), &z};
-        b.kernels->launch(b.kernels->attend_keys_reduce_, part, a3);
-    } else {
-        void* a1[] = {&q, &k, &v, &y, &lse, &g, &gq, &dp, dc::arg(nn), &H, &KVH, &d, dc::arg(window), &scale, &cap};
-        b.kernels->launch(b.kernels->attend_backward_queries_, 32 * n * C.n_heads, a1);
-        void* a2[] = {&q, &k, &v, &lse, &g, &dc_, &gk, &gv, dc::arg(nn), &H, &KVH, &d, dc::arg(window), &scale, &cap};
-        b.kernels->launch(b.kernels->attend_backward_keys_, 32 * n * C.n_kv_heads, a2);
+        // The heads' D = dy . y, then the key splits' partials: the kernels' scratch
+        constexpr std::size_t D_ = C.head_dim;
+        const std::size_t splits = std::clamp<std::size_t>(n / 128, 1, 8), part = C.n_kv_heads * n * D_;
+        const auto space = b.kernels->scratch(n * C.n_heads + (dc::tiled<D_> >= 0 ? 2 * splits * part : 0));
+        float* dp = space.data();
+        const float* dc_ = dp;
+        if constexpr (dc::tiled<C.head_dim> >= 0) {
+            constexpr int i = dc::tiled<C.head_dim>;
+            void* a1[] = {&q, &k, &v, &y, &lse, &g, &gq, &dp, dc::arg(nn), &H, &KVH, dc::arg(window), &scale, &cap};
+            b.kernels->launch_grid2(b.kernels->attend_backward_queries_tiled_[i], unsigned((n + 63) / 64), C.n_heads, 64, a1);
+            float* pk = space.data() + n * C.n_heads;
+            float* pv = pk + splits * part;
+            void* a2[] = {&q, &k, &v, &lse, &g, &dc_, &pk, &pv, dc::arg(nn), &H, &KVH, dc::arg(window), &scale, &cap};
+            b.kernels->launch_grid3(b.kernels->attend_backward_keys_tiled_[i], unsigned((n + 31) / 32), C.n_kv_heads, splits, 32, a2);
+            const float* cpk = pk;
+            const float* cpv = pv;
+            const dc::u64 m = part;
+            int z = int(splits);
+            void* a3[] = {&gk, &gv, &cpk, &cpv, dc::arg(m), &z};
+            b.kernels->launch(b.kernels->attend_keys_reduce_, part, a3);
+        } else {
+            void* a1[] = {&q, &k, &v, &y, &lse, &g, &gq, &dp, dc::arg(nn), &H, &KVH, &d, dc::arg(window), &scale, &cap};
+            b.kernels->launch(b.kernels->attend_backward_queries_, 32 * n * C.n_heads, a1);
+            void* a2[] = {&q, &k, &v, &lse, &g, &dc_, &gk, &gv, dc::arg(nn), &H, &KVH, &d, dc::arg(window), &scale, &cap};
+            b.kernels->launch(b.kernels->attend_backward_keys_, 32 * n * C.n_kv_heads, a2);
+        }
     }
 }
 
 /// \brief The backward pass of QK norm and RoPE on the device, in place on `grads.q` and `grads.k`; the norm weights'
 /// gradients summed over heads and positions in core's order. \tparam C The configuration. \param b The backend.
-/// \param w The weights. \param act The activations. \param grads The gradients. \param n The tokens.
-/// \param rope_src The rope source (host memory).
+/// \param w The weights. \param act The activations. \param grads The gradients. \param n The tokens of each sequence.
+/// \param rope_src The rope source (host memory). \param sequences The sequences.
 template <ml::transformer_config C, typename W, typename R>
 void attention_position_rows_backward(const cuda_training_backend& b, const ml::attention_weights<W, float>& w,
                                       const ml::attention_activations<float>& act, const ml::attention_gradients<float>& grads,
-                                      std::size_t n, const R& rope_src)
+                                      std::size_t n, const R& rope_src, std::size_t sequences = 1)
 {
     namespace dc = detail::cuda_ops;
     if constexpr (C.qk_norm == ml::qk_norm_kind::none && C.rope == ml::rope_kind::none) {
-        (void)b, (void)w, (void)act, (void)grads, (void)n, (void)rope_src;
+        (void)b, (void)w, (void)act, (void)grads, (void)n, (void)rope_src, (void)sequences;
     } else {
         constexpr bool qk = C.qk_norm != ml::qk_norm_kind::none;
         const dc::rope_rows<C, R> table(*b.context, rope_src, n);
-        device_buffer<float> cq(*b.context, qk && !grads.q_norm.empty() ? n * C.n_heads * C.head_dim : 0),
-            ck(*b.context, qk && !grads.k_norm.empty() ? n * C.n_kv_heads * C.head_dim : 0);
+        const std::size_t rows = sequences * n;   // the norms' contributions by (row, head), summed in core's order
+        device_buffer<float> cq(*b.context, qk && !grads.q_norm.empty() ? rows * C.n_heads * C.head_dim : 0),
+            ck(*b.context, qk && !grads.k_norm.empty() ? rows * C.n_kv_heads * C.head_dim : 0);
         float* gq = grads.q.data();
         float* gk = grads.k.data();
         const float* qr = dc::data_or_null(act.q_raw);
@@ -1760,12 +1786,12 @@ void attention_position_rows_backward(const cuda_training_backend& b, const ml::
         const float* sn = table.sin.span().data();
         float* cqp = dc::mutable_or_null(cq.span());
         float* ckp = dc::mutable_or_null(ck.span());
-        const dc::u64 nn = n;
+        const dc::u64 nn = n, ss = sequences;
         int H = int(C.n_heads), KVH = int(C.n_kv_heads), d = int(C.head_dim), mode = dc::qk_mode<C>, rope = C.rope == ml::rope_kind::none ? 0 : 1,
             half = C.layout() == ml::rope_layout::half ? 1 : 0;
         float eps = ml::norm_eps_v<C, float>;
-        void* args[] = {&gq, &gk, &qr, &kr, &qn, &kn, &cs, &sn, &cqp, &ckp, dc::arg(nn), &H, &KVH, &d, &mode, &rope, &half, &eps};
-        b.kernels->launch(b.kernels->position_backward_, n * (C.n_heads + C.n_kv_heads), args);
+        void* args[] = {&gq, &gk, &qr, &kr, &qn, &kn, &cs, &sn, &cqp, &ckp, dc::arg(nn), dc::arg(ss), &H, &KVH, &d, &mode, &rope, &half, &eps};
+        b.kernels->launch(b.kernels->position_backward_, rows * (C.n_heads + C.n_kv_heads), args);
         if (cqp != nullptr)   // the rows are (token, head) in core's order: summed in that order
             sum_rows(b, std::span<const float>(cq.span()), grads.q_norm);
         if (ckp != nullptr)

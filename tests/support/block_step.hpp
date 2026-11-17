@@ -58,10 +58,12 @@ struct mirror {
 };
 
 
-// Every parameter and buffer of one block's training step, mirrored on the device
-template <ml::transformer_config C, std::size_t N = 24>
+// Every parameter and buffer of one block's training step over S sequences of N tokens end to end, mirrored on the
+// device; n is every row of the batch
+template <ml::transformer_config C, std::size_t N = 24, std::size_t S = 1>
 struct step {
-    static constexpr std::size_t n = N, d = C.d_model, f = C.d_ff, qn = C.q_size(), kn = C.kv_size();
+    static constexpr std::size_t tokens = N, sequences = S;
+    static constexpr std::size_t n = N * S, d = C.d_model, f = C.d_ff, qn = C.q_size(), kn = C.kv_size();
     static constexpr bool layer = C.norm == ml::norm_kind::layer, swiglu = C.mlp == ml::mlp_kind::swiglu, qk = C.qk_norm != ml::qk_norm_kind::none,
                           bias = C.bias;
     std::vector<mirror> m;
@@ -106,6 +108,22 @@ struct step {
     {
         return {s(x0, dev), s(h1, dev), s(x1, dev), s(h2, dev), {s(q, dev), s(k, dev), s(v, dev), s(qr, dev), s(kr, dev), s(y, dev), s(lse, dev)},
                 s(aup, dev), s(agate, dev), s(hidden, dev)};
+    }
+    // Sequence i alone: every per-row buffer's slice, the weights' gradients shared
+    ml::block_activations<float> act(bool dev, std::size_t i)
+    {
+        auto a = act(dev);
+        for (std::span<float>* f : {&a.x0, &a.h1, &a.x1, &a.h2, &a.attention.q, &a.attention.k, &a.attention.v, &a.attention.q_raw,
+                                    &a.attention.k_raw, &a.attention.y, &a.attention.lse, &a.mlp_up, &a.mlp_gate, &a.mlp_hidden})
+            *f = f->empty() ? *f : f->subspan(i * f->size() / S, f->size() / S);
+        return a;
+    }
+    ml::block_gradients<float> grads(bool dev, std::size_t i)
+    {
+        auto g = grads(dev);
+        for (std::span<float>* f : {&g.attention.q, &g.attention.k, &g.attention.v, &g.attention.y, &g.mlp.scratch, &g.scratch})
+            *f = f->subspan(i * f->size() / S, f->size() / S);
+        return g;
     }
     ml::block_gradients<float> grads(bool dev)
     {
