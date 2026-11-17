@@ -154,13 +154,16 @@ namespace detail::cuda {
     };
 
     inline cublasStatus_t gemm(cublasHandle_t h, cublasOperation_t ta, cublasOperation_t tb, int m, int n, int k, const float* alpha,
-                               const float* a, int lda, const float* b, int ldb, const float* beta, float* c, int ldc)
+                               const float* a, int lda, const float* b, int ldb, const float* beta, float* c, int ldc, bool bf16 = false)
     {
+        if (bf16)   // float in and out, bfloat16 on the tensor cores inside, the sums in float
+            return cublasGemmEx(h, ta, tb, m, n, k, alpha, a, CUDA_R_32F, lda, b, CUDA_R_32F, ldb, beta, c, CUDA_R_32F, ldc,
+                                CUBLAS_COMPUTE_32F_FAST_16BF, CUBLAS_GEMM_DEFAULT);
         return cublasSgemm(h, ta, tb, m, n, k, alpha, a, lda, b, ldb, beta, c, ldc);
     }
 
     inline cublasStatus_t gemm(cublasHandle_t h, cublasOperation_t ta, cublasOperation_t tb, int m, int n, int k, const double* alpha,
-                               const double* a, int lda, const double* b, int ldb, const double* beta, double* c, int ldc)
+                               const double* a, int lda, const double* b, int ldb, const double* beta, double* c, int ldc, bool = false)
     {
         return cublasDgemm(h, ta, tb, m, n, k, alpha, a, lda, b, ldb, beta, c, ldc);
     }
@@ -241,8 +244,12 @@ namespace detail::cuda {
 /// \brief How the products of `float` are computed. \ingroup gpu
 enum class cuda_math {
     float32,   ///< In float throughout (cuBLAS's default): the reference's rounding, to the order of the sums.
-    tf32       ///< Tensor cores, the inputs rounded to TF32 (10 bits of mantissa), the sums in float: several times
+    tf32,      ///< Tensor cores, the inputs rounded to TF32 (10 bits of mantissa), the sums in float: several times
                ///< faster, each product within about 1e-3 of the float result, relative to its scale.
+    bf16       ///< Tensor cores in bfloat16 (7 bits of mantissa), the sums in float: about twice TF32's rate. Through
+               ///< `cuda_training_backend` the operands are rounded to bfloat16 by a kernel and multiplied as such
+               ///< (`cuda_context::gemm_bf16`); through `cuda_backend` alone (no kernels) cuBLAS is only allowed
+               ///< bfloat16 (`CUBLAS_COMPUTE_32F_FAST_16BF`) and may use TF32.
 };
 
 /// \brief One CUDA device with its cuBLAS handle and stream.
@@ -343,11 +350,11 @@ public:
         };
         if (!c_row)   // C column-major: C = alpha op(A) op(B) + beta C
             dc::check(dc::gemm(blas_, op(A.row_major, false), op(B.row_major, false), static_cast<int>(m), static_cast<int>(n), ik, &alpha,
-                               A.data, A.ld, B.data, B.ld, &beta, cp, static_cast<int>(c_ld)),
+                               A.data, A.ld, B.data, B.ld, &beta, cp, static_cast<int>(c_ld), math == cuda_math::bf16),
                       "cublas gemm");
         else          // C row-major: its column-major array is Cᵀ = alpha Bᵀ Aᵀ + beta Cᵀ
             dc::check(dc::gemm(blas_, op(B.row_major, true), op(A.row_major, true), static_cast<int>(n), static_cast<int>(m), ik, &alpha,
-                               B.data, B.ld, A.data, A.ld, &beta, cp, static_cast<int>(c_ld)),
+                               B.data, B.ld, A.data, A.ld, &beta, cp, static_cast<int>(c_ld), math == cuda_math::bf16),
                       "cublas gemm");
         // Wait only for a staged copy: it is copied back or freed below. Device memory in place stays queued on the
         // stream, so the device runs the next step while the host enqueues it
@@ -366,6 +373,38 @@ public:
                     whole[i * c.stride(0) + j * c.stride(1)] = result[i * n + j];
             dc::check(cudaMemcpy(c.data_handle(), whole.data(), span * sizeof(T), cudaMemcpyDefault), "cudaMemcpy");
         }
+    }
+
+    /// \brief `C = alpha A B + beta C` with `A` and `B` in bfloat16 (their bits as `std::uint16_t`) and `C` in float, on
+    /// the tensor cores with float sums; queued on the stream. `cuda_training_backend` converts float operands into
+    /// these under `cuda_math::bf16`.
+    /// \param alpha The scale. \param a `m x k`. \param b `k x n`. \param beta The scale of `C`. \param c `m x n`.
+    /// \throws std::invalid_argument unless every operand is device memory in a BLAS layout; cuda_exception if a call
+    /// fails.
+    void gemm_bf16(float alpha, linalg::matrix_view<const std::uint16_t> a, linalg::matrix_view<const std::uint16_t> b, float beta,
+                   linalg::matrix_view<float> c) const
+    {
+        namespace dc = detail::cuda;
+        const std::size_t m = c.extent(0), n = c.extent(1), k = a.extent(1);
+        if (m == 0 || n == 0)
+            return;
+        bool ar = false, br = false, cr = false;
+        std::size_t lda = 0, ldb = 0, ldc = 0;
+        if (!dc::blas_layout(a, ar, lda) || !dc::blas_layout(b, br, ldb) || !dc::blas_layout(c, cr, ldc) || !dc::on_device(a.data_handle())
+            || !dc::on_device(b.data_handle()) || !dc::on_device(c.data_handle()))
+            throw std::invalid_argument("snicholls::gpu::cuda_context::gemm_bf16: every operand must be device memory in a BLAS layout");
+        const std::lock_guard lock(mutex_);
+        dc::check(cudaSetDevice(device_), "cudaSetDevice");
+        auto op = [](bool row_major, bool want_transposed) { return row_major != want_transposed ? CUBLAS_OP_T : CUBLAS_OP_N; };
+        const auto ex = [&](cublasOperation_t ta, cublasOperation_t tb, std::size_t mm, std::size_t nn, const void* x, std::size_t ldx, const void* y,
+                            std::size_t ldy) {
+            return cublasGemmEx(blas_, ta, tb, int(mm), int(nn), int(k), &alpha, x, CUDA_R_16BF, int(ldx), y, CUDA_R_16BF, int(ldy), &beta,
+                                c.data_handle(), CUDA_R_32F, int(ldc), CUBLAS_COMPUTE_32F, CUBLAS_GEMM_DEFAULT);
+        };
+        if (!cr)
+            dc::check(ex(op(ar, false), op(br, false), m, n, a.data_handle(), lda, b.data_handle(), ldb), "cublas gemm bf16");
+        else   // C row-major: Cᵀ = Bᵀ Aᵀ, as in gemm
+            dc::check(ex(op(br, true), op(ar, true), n, m, b.data_handle(), ldb, a.data_handle(), lda), "cublas gemm bf16");
     }
 
 private:

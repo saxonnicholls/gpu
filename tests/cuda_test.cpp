@@ -167,6 +167,28 @@ TEST(GpuCuda, Tf32ProductsAreWithinTheirRoundingOfFloats)
 }
 
 // A product over device memory is queued, not waited for: a download after it, or synchronize(), sees its result
+// Through the plain backend (no kernels) bfloat16 is only allowed to cuBLAS, which may use TF32: within bfloat16's
+// rounding of float either way (cuda_ops_test checks the training backend's explicit bfloat16)
+TEST(GpuCuda, Bf16ProductsAreWithinTheirRoundingOfFloats)
+{
+    constexpr std::size_t m = 96, n = 80, k = 384;
+    const auto a = stream<float>(m * k, 21), b = stream<float>(k * n, 22);
+    using R = la::layout_right;
+    std::vector<float> want(m * n), got(m * n);
+    gpu::cuda_backend bf{&shared_context()};
+    bf.math = gpu::cuda_math::bf16;
+    ASSERT_TRUE(la::gemm(gpu::cuda_backend{&shared_context()}, 1.0f, la::matrix_view<const float, R>(a.data(), {m, k}),
+                         la::matrix_view<const float, R>(b.data(), {k, n}), 0.0f, la::matrix_view<float, R>(want.data(), {m, n}))
+                    .is_ok());
+    ASSERT_TRUE(la::gemm(bf, 1.0f, la::matrix_view<const float, R>(a.data(), {m, k}), la::matrix_view<const float, R>(b.data(), {k, n}), 0.0f,
+                         la::matrix_view<float, R>(got.data(), {m, n}))
+                    .is_ok());
+    double diff = 0, scale = 0;
+    for (std::size_t i = 0; i < want.size(); ++i)
+        diff = std::max(diff, double(std::fabs(got[i] - want[i]))), scale = std::max(scale, double(std::fabs(want[i])));
+    EXPECT_LE(diff, 2e-2 * scale);
+}
+
 TEST(GpuCuda, ADeviceProductIsQueuedAndItsResultSeenAfterwards)
 {
     constexpr std::size_t m = 256, n = 256, k = 256;

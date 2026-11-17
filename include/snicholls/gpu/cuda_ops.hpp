@@ -472,6 +472,13 @@ extern "C" __global__ void attend_keys_reduce(float* gk, float* gv, const float*
     for (int z = 0; z < splits; ++z) { a += pk[z * m + i]; b += pv[z * m + i]; }
     gk[i] = a; gv[i] = b;
 }
+// float to bfloat16, rounding to nearest even (a NaN stays a NaN)
+extern "C" __global__ void to_bf16(const float* in, unsigned short* out, u64 n)
+{
+    const u64 i = blockIdx.x * (u64)blockDim.x + threadIdx.x; if (i >= n) return;
+    const unsigned b = __float_as_uint(in[i]);
+    out[i] = (b & 0x7fffffffu) > 0x7f800000u ? (unsigned short)((b >> 16) | 0x40u) : (unsigned short)((b + 0x7fffu + ((b >> 16) & 1u)) >> 16);
+}
 // Between rows and heads: rows[t][h d + c] and heads[h][t][c], one thread per element; to_heads picks the direction
 extern "C" __global__ void heads_permute(const float* in, float* out, u64 n, u64 heads, u64 d, int to_heads)
 {
@@ -924,7 +931,7 @@ public:
             {"attend_backward_keys", &k->attend_backward_keys_}, {"embed", &k->embed_}, {"embed_backward", &k->embed_backward_},
             {"cross_entropy_rows", &k->cross_entropy_rows_}, {"adamw", &k->adamw_}, {"scale", &k->scale_}, {"partial_sums", &k->partial_sums_},
             {"attend_keys_reduce", &k->attend_keys_reduce_}, {"attn_softmax", &k->attn_softmax_}, {"attn_probs", &k->attn_probs_},
-            {"attn_dscores", &k->attn_dscores_}, {"heads_permute", &k->heads_permute_}};
+            {"attn_dscores", &k->attn_dscores_}, {"heads_permute", &k->heads_permute_}, {"to_bf16", &k->to_bf16_}};
         std::vector<std::pair<std::string, cudaKernel_t*>> all;
         for (const auto& [name, slot] : kernels)
             all.emplace_back(name, slot);
@@ -1011,6 +1018,15 @@ public:
         return scratch_->span().first(floats);
     }
 
+    /// \brief Working space of at least `n` 16-bit values, kept between calls like `scratch`: the bfloat16 operands of
+    /// the products under `cuda_math::bf16`. \param n The size. \return The space.
+    [[nodiscard]] std::span<std::uint16_t> scratch16(std::size_t n) const
+    {
+        if (!scratch16_ || scratch16_->span().size() < n)
+            scratch16_ = std::make_unique<device_buffer<std::uint16_t>>(*context_, n);
+        return scratch16_->span().first(n);
+    }
+
     /// \brief The context. \return It.
     [[nodiscard]] const cuda_context& context() const noexcept { return *context_; }
 
@@ -1024,7 +1040,7 @@ public:
             {attend_backward_queries_, "attend_backward_queries"}, {attend_backward_keys_, "attend_backward_keys"}, {embed_, "embed"},
             {embed_backward_, "embed_backward"}, {cross_entropy_rows_, "cross_entropy_rows"}, {adamw_, "adamw"}, {scale_, "scale"},
             {partial_sums_, "partial_sums"}, {attend_keys_reduce_, "attend_keys_reduce"}, {attn_softmax_, "attn_softmax"},
-            {attn_probs_, "attn_probs"}, {attn_dscores_, "attn_dscores"}, {heads_permute_, "heads_permute"}};
+            {attn_probs_, "attn_probs"}, {attn_dscores_, "attn_dscores"}, {heads_permute_, "heads_permute"}, {to_bf16_, "to_bf16"}};
         for (const auto& [kernel, name] : names)
             if (kernel == k)
                 return name;
@@ -1067,6 +1083,7 @@ public:
     cudaKernel_t attn_probs_ = nullptr;           ///< `attn_probs`.
     cudaKernel_t attn_dscores_ = nullptr;         ///< `attn_dscores`.
     cudaKernel_t heads_permute_ = nullptr;        ///< `heads_permute`.
+    cudaKernel_t to_bf16_ = nullptr;              ///< `to_bf16`.
     std::array<cudaKernel_t, 4> attend_tiled_{};                    ///< `attend_tiled_D`, for heads of 16, 32, 64 and 128 channels.
     std::array<cudaKernel_t, 4> attend_backward_queries_tiled_{};   ///< `attend_backward_queries_tiled_D`.
     std::array<cudaKernel_t, 4> attend_backward_keys_tiled_{};      ///< `attend_backward_keys_tiled_D`.
@@ -1081,6 +1098,7 @@ private:
     const cuda_context* context_;
     cudaLibrary_t library_ = nullptr;
     mutable std::unique_ptr<device_buffer<float>> scratch_;
+    mutable std::unique_ptr<device_buffer<std::uint16_t>> scratch16_;
 };
 
 /// \brief The CUDA backend with the training steps' kernels: core's batched passes run entirely on the device over
@@ -1092,12 +1110,67 @@ struct cuda_training_backend : cuda_backend {
     std::size_t gemm_attention_max = 4096;   ///< The longest sequence whose attention runs as matrix products (cuBLAS,
                                              ///< so on the tensor cores under `cuda_math::tf32`), its `n x n` scores
                                              ///< three times in the kernels' scratch; longer ones take the tiled kernels.
+
+    /// \brief `C = alpha A B + beta C` in float: under `cuda_math::bf16`, with every operand device memory in a BLAS
+    /// layout whose leading dimensions are multiples of 8, `A` and `B` rounded to bfloat16 by a kernel and multiplied on
+    /// the tensor cores with float sums (other products under bf16 run as TF32); otherwise `cuda_backend::gemm`. \param alpha The scale. \param a `m x k`. \param b `k x n`.
+    /// \param beta The scale of `C`. \param c `m x n`. \throws cuda_exception if a call fails.
+    void gemm(float alpha, linalg::matrix_view<const float> a, linalg::matrix_view<const float> b, float beta, linalg::matrix_view<float> c) const;
+
+    /// \brief Any other product: `cuda_backend`'s. \param alpha The scale. \param a `m x k`. \param b `k x n`.
+    /// \param beta The scale of `C`. \param c `m x n`.
+    template <linalg::scalar T>
+    void gemm(T alpha, linalg::matrix_view<const T> a, linalg::matrix_view<const T> b, T beta, linalg::matrix_view<T> c) const
+    {
+        cuda_backend::gemm(alpha, a, b, beta, c);
+    }
 };
 
 static_assert(linalg::blas_backend<cuda_training_backend, float> && std::is_trivially_copyable_v<cuda_training_backend>);
 
 namespace detail::cuda_ops {
     using u64 = unsigned long long;
+
+    // An operand's bfloat16 copy in the 16-bit scratch from `at`, with the view's own shape and strides
+    inline linalg::matrix_view<const std::uint16_t> to_bf16(const cuda_training_backend& b, linalg::matrix_view<const float> v, std::span<std::uint16_t> at)
+    {
+        const std::size_t span = v.mapping().required_span_size();
+        const float* in = v.data_handle();
+        unsigned short* out = reinterpret_cast<unsigned short*>(at.data());
+        u64 n = span;
+        void* args[] = {&in, &out, &n};
+        b.kernels->launch(b.kernels->to_bf16_, span, args);
+        return linalg::matrix_view<const std::uint16_t>(at.data(), {v.extent(0), v.extent(1)}, {v.stride(0), v.stride(1)});
+    }
+} // namespace detail::cuda_ops
+
+inline void cuda_training_backend::gemm(float alpha, linalg::matrix_view<const float> a, linalg::matrix_view<const float> b, float beta,
+                                        linalg::matrix_view<float> c) const
+{
+    const auto device = [](const void* p) { return detail::cuda::on_device(p); };
+    // The tensor cores take bfloat16 from leading dimensions that are multiples of 8; elsewhere cuBLAS falls back to a
+    // slow kernel, so such a product (an odd vocabulary's head) runs as TF32 instead
+    const auto aligned = [](const auto& v) {
+        bool row = false;
+        std::size_t ld = 0;
+        return detail::cuda::blas_layout(v, row, ld) && ld % 8 == 0;
+    };
+    if (math == cuda_math::bf16 && device(a.data_handle()) && device(b.data_handle()) && device(c.data_handle()) && aligned(a) && aligned(b)
+        && aligned(c) && a.extent(1) % 8 == 0) {
+        const std::size_t na = a.mapping().required_span_size(), nb = b.mapping().required_span_size();
+        const auto space = kernels->scratch16(na + nb);
+        context->gemm_bf16(alpha, detail::cuda_ops::to_bf16(*this, a, space.first(na)), detail::cuda_ops::to_bf16(*this, b, space.subspan(na, nb)), beta, c);
+        return;
+    }
+    if (math == cuda_math::bf16) {
+        cuda_backend tf32{context, cuda_math::tf32};
+        tf32.gemm(alpha, a, b, beta, c);
+        return;
+    }
+    cuda_backend::gemm(alpha, a, b, beta, c);
+}
+
+namespace detail::cuda_ops {
     inline void sync(const cuda_training_backend& b) { cuda::check(cudaStreamSynchronize(b.context->stream()), "cudaStreamSynchronize"); }
     template <typename T>
     void* arg(const T& v) { return const_cast<void*>(static_cast<const void*>(&v)); }
@@ -1372,7 +1445,7 @@ void attention_attend_rows(const cuda_training_backend& b, const ml::attention_a
     const dc::u64 nn = n, window = C.window;
     int H = int(C.n_heads), KVH = int(C.n_kv_heads), d = int(C.head_dim);
     float scale = 1.0f / snicholls::math::sqrt(float(C.head_dim)), cap = ml::attention_softcap_v<C, float>;
-    if (dc::flash<C.head_dim> >= 0 && b.math == cuda_math::tf32 && b.flash_attention) {
+    if (dc::flash<C.head_dim> >= 0 && b.math != cuda_math::float32 && b.flash_attention) {
         // Flash attention on the tensor cores: a block per (64 queries, head)
         void* args[] = {&q, &k, &v, &y, &lse, dc::arg(nn), &H, &KVH, dc::arg(window), &scale, &cap};
         b.kernels->launch_grid2(b.kernels->flash_fwd_[std::size_t(dc::flash<C.head_dim>)], unsigned((n + 63) / 64), C.n_heads, 128, args);
@@ -1405,7 +1478,7 @@ void attention_attend_rows_backward(const cuda_training_backend& b, const ml::at
                                     std::type_identity_t<std::span<const float>> dy, const ml::attention_gradients<float>& grads, std::size_t n)
 {
     namespace dc = detail::cuda_ops;
-    if (dc::flash<C.head_dim> >= 0 && b.math == cuda_math::tf32 && b.flash_attention) {
+    if (dc::flash<C.head_dim> >= 0 && b.math != cuda_math::float32 && b.flash_attention) {
         // Flash attention's backward on the tensor cores: D = dy . y per (token, head), then the queries' gradients (a block
         // per 64 queries) and the keys' and values' (a block per 64 keys, added into)
         constexpr std::size_t fi = std::size_t(dc::flash<C.head_dim>);

@@ -161,12 +161,14 @@ void whole_step_agrees(std::size_t gemm_attention_max = 4096, gpu::cuda_math mat
     run(st, la::reference, false);   // the reference, on the host copies
     cudaDeviceSynchronize();
     using S = step<C, N>;
-    if (math == gpu::cuda_math::tf32) {   // TF32 rounds every product's inputs to 10 bits: normwise, a few parts in 10^3
-        near_normwise(st.m[S::xs].back(), st.m[S::xs].host, 2e-3, "output (tf32)");
-        near_normwise(st.m[S::dxs].back(), st.m[S::dxs].host, 3e-3, "input gradient (tf32)");
+    if (math != gpu::cuda_math::float32) {   // TF32 rounds the products' inputs to 10 bits, bfloat16 to 7: normwise
+        const double f = math == gpu::cuda_math::bf16 ? 8.0 : 1.0;
+        near_normwise(st.m[S::xs].back(), st.m[S::xs].host, 2e-3 * f, "output (reduced precision)");
+        near_normwise(st.m[S::dxs].back(), st.m[S::dxs].host, 3e-3 * f, "input gradient (reduced precision)");
         for (int i = S::gn1w; i <= S::gbdown; ++i)
             if (i != S::gbk || C.attention_softcap > 0)
-                near_normwise(st.m[std::size_t(i)].back(), st.m[std::size_t(i)].host, 5e-3, "parameter gradient (tf32) " + std::to_string(i - S::gn1w));
+                near_normwise(st.m[std::size_t(i)].back(), st.m[std::size_t(i)].host, 5e-3 * f,
+                              "parameter gradient (reduced precision) " + std::to_string(i - S::gn1w));
         return;
     }
     if constexpr (N <= 24) {
@@ -364,6 +366,33 @@ TEST(GpuCudaOps, FlashAttentionOnTheTensorCoresIsTheReferencesToTf32)
     whole_step_agrees<gpt2_heads, 150>(4096, gpu::cuda_math::tf32);
     whole_step_agrees<gpt2_heads, 24>(4096, gpu::cuda_math::tf32);
     whole_step_agrees<flash_mix, 130>(4096, gpu::cuda_math::tf32);
+}
+
+// bfloat16 products through the training backend: operands rounded by a kernel, so not TF32's bits, and within
+// bfloat16's rounding of float, for one product and for whole training steps
+TEST(GpuCudaOps, Bf16ProductsAreBfloat16AndWholeStepsWithinItsRounding)
+{
+    constexpr std::size_t m = 96, n = 80, k = 384;
+    mirror a(stream(m * k, 21)), b(stream(k * n, 22)), want{std::vector<float>(m * n)}, got{std::vector<float>(m * n)}, tf{std::vector<float>(m * n)};
+    auto be = backend();
+    const auto run = [&](gpu::cuda_math math, mirror& out) {
+        be.math = math;
+        be.gemm(1.0f, la::matrix_view<const float>(a.d().data(), {m, k}, {k, 1}), la::matrix_view<const float>(b.d().data(), {k, n}, {n, 1}), 0.0f,
+                la::matrix_view<float>(out.d().data(), {m, n}, {n, 1}));
+    };
+    run(gpu::cuda_math::float32, want);
+    run(gpu::cuda_math::bf16, got);
+    run(gpu::cuda_math::tf32, tf);
+    const auto w = want.back(), g = got.back();
+    double diff = 0, scale = 0;
+    for (std::size_t i = 0; i < w.size(); ++i)
+        diff = std::max(diff, double(std::fabs(g[i] - w[i]))), scale = std::max(scale, double(std::fabs(w[i])));
+    std::printf("  bf16 against float: normwise %.2e\n", diff / scale);
+    EXPECT_LE(diff, 2e-2 * scale);
+    EXPECT_GT(diff, 1e-3 * scale);   // bfloat16's rounding, coarser than TF32's
+    EXPECT_NE(g, tf.back());
+    whole_step_agrees<gpt2_heads, 150>(4096, gpu::cuda_math::bf16);
+    whole_step_agrees<flash_mix, 130>(4096, gpu::cuda_math::bf16);
 }
 
 TEST(GpuCudaOps, BothAttentionPathsGiveTheReferencesShortStep)

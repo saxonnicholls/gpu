@@ -3,6 +3,18 @@
 All notable changes to snicholls-gpu. The format follows Keep a Changelog; versions follow Semantic Versioning.
 A version is released when its tag is on a commit where every blocking CI leg is green.
 
+## Unreleased (0.5.0)
+
+### Added
+
+- **`cuda_math::bf16`**: through `cuda_training_backend`, each product's float operands are rounded to bfloat16 by a
+  kernel (to nearest even) and multiplied on the tensor cores with float sums (`cuda_context::gemm_bf16`); master
+  weights, gradients and optimiser state stay float, and attention takes the flash kernels. GPT-2 small's MLP and
+  attention products 1.6 to 1.9 times TF32's speed, the conversions included; a product within 2.3e-3 normwise of float,
+  a whole training step within about 1e-2. Products whose leading dimensions are not multiples of 8 (GPT-2's 50,257-row
+  head) run as TF32, since cuBLAS's bfloat16 falls back to a slow kernel there. cuBLAS's own
+  `CUBLAS_COMPUTE_32F_FAST_16BF` was tried first: on the Blackwell it chose TF32 kernels, giving TF32's bits.
+
 ## 0.4.0 - 2026-11-17
 
 ### Added
