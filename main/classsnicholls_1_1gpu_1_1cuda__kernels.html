@@ -26,7 +26,7 @@
  <tbody>
  <tr id="projectrow">
   <td id="projectalign">
-   <div id="projectname">snicholls-gpu<span id="projectnumber">&#160;0.4.0</span>
+   <div id="projectname">snicholls-gpu<span id="projectnumber">&#160;0.5.0</span>
    </div>
    <div id="projectbrief">GPU backends of snicholls-core&#39;s interfaces: linalg on OpenCL</div>
   </td>
@@ -117,6 +117,8 @@ Public Member Functions</h2></td></tr>
 <tr class="memdesc:a350a91d0c73d34f34706cb6897d8f804"><td class="mdescLeft">&#160;</td><td class="mdescRight">Launches a kernel over a three-dimensional grid.  <br /></td></tr>
 <tr class="memitem:a069a1fb5f87c5e9e38272936357a5889" id="r_a069a1fb5f87c5e9e38272936357a5889"><td class="memItemLeft" align="right" valign="top">std::span&lt; float &gt;&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="#a069a1fb5f87c5e9e38272936357a5889">scratch</a> (std::size_t floats) const</td></tr>
 <tr class="memdesc:a069a1fb5f87c5e9e38272936357a5889"><td class="mdescLeft">&#160;</td><td class="mdescRight">Working space in device memory of at least <span class="tt">floats</span> floats, kept between calls and grown when asked for more: the kernels' scratch, so a step allocates nothing. Its contents are the caller's until the next call; the kernels are for one host thread at a time, as their context's one stream is.  <br /></td></tr>
+<tr class="memitem:a0a8b2fce8f54f3174688fb24b70b0f97" id="r_a0a8b2fce8f54f3174688fb24b70b0f97"><td class="memItemLeft" align="right" valign="top">std::span&lt; std::uint16_t &gt;&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="#a0a8b2fce8f54f3174688fb24b70b0f97">scratch16</a> (std::size_t n) const</td></tr>
+<tr class="memdesc:a0a8b2fce8f54f3174688fb24b70b0f97"><td class="mdescLeft">&#160;</td><td class="mdescRight">Working space of at least <span class="tt">n</span> 16-bit values, kept between calls like <span class="tt"><a class="el" href="#a069a1fb5f87c5e9e38272936357a5889" title="Working space in device memory of at least floats floats, kept between calls and grown when asked for...">scratch</a></span>: the bfloat16 operands of the products under <span class="tt"><a class="el" href="group__gpu.html#gga22ea844faef25bad361c431e1315d253afe2904d9fb3b0f4a81c92b03dec11424">cuda_math::bf16</a></span>.  <br /></td></tr>
 <tr class="memitem:ac35e16f87c12e3d17270af9a1fe6b285" id="r_ac35e16f87c12e3d17270af9a1fe6b285"><td class="memItemLeft" align="right" valign="top">const <a class="el" href="classsnicholls_1_1gpu_1_1cuda__context.html">cuda_context</a> &amp;&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="#ac35e16f87c12e3d17270af9a1fe6b285">context</a> () const noexcept</td></tr>
 <tr class="memdesc:ac35e16f87c12e3d17270af9a1fe6b285"><td class="mdescLeft">&#160;</td><td class="mdescRight">The context.  <br /></td></tr>
 <tr class="memitem:a08fa53a61d4f31264e05e914a93817f3" id="r_a08fa53a61d4f31264e05e914a93817f3"><td class="memItemLeft" align="right" valign="top">const char *&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="#a08fa53a61d4f31264e05e914a93817f3">name_of</a> (cudaKernel_t k) const noexcept</td></tr>
@@ -165,7 +167,7 @@ Public Attributes</h2></td></tr>
 <tr class="memitem:a467c8a5f4e9de6e783b0a2ba41f257b2" id="r_a467c8a5f4e9de6e783b0a2ba41f257b2"><td class="memItemLeft" align="right" valign="top">cudaKernel_t&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="#a467c8a5f4e9de6e783b0a2ba41f257b2">embed_backward_</a> = nullptr</td></tr>
 <tr class="memdesc:a467c8a5f4e9de6e783b0a2ba41f257b2"><td class="mdescLeft">&#160;</td><td class="mdescRight"><span class="tt">embed_backward</span>.  <br /></td></tr>
 <tr class="memitem:a15c3b153b070abc4cf8f0ca1ebd32c9e" id="r_a15c3b153b070abc4cf8f0ca1ebd32c9e"><td class="memItemLeft" align="right" valign="top">cudaKernel_t&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="#a15c3b153b070abc4cf8f0ca1ebd32c9e">cross_entropy_rows_</a> = nullptr</td></tr>
-<tr class="memdesc:a15c3b153b070abc4cf8f0ca1ebd32c9e"><td class="mdescLeft">&#160;</td><td class="mdescRight"><span class="tt"><a class="el" href="cuda__ops_8hpp.html#a508a4701dc70af928de7398ac0d47138" title="The fused classifier over a sequence on the device: each row&#39;s loss, the row replaced by its scaled g...">cross_entropy_rows</a></span>.  <br /></td></tr>
+<tr class="memdesc:a15c3b153b070abc4cf8f0ca1ebd32c9e"><td class="mdescLeft">&#160;</td><td class="mdescRight"><span class="tt"><a class="el" href="cuda__ops_8hpp.html#a8bef0fc07ee42ac60535e5988df224d5" title="The fused classifier over a sequence on the device, the classes the first classes of each row (core 0...">cross_entropy_rows</a></span>.  <br /></td></tr>
 <tr class="memitem:a2c733125d80385ed03f9006b0351fbba" id="r_a2c733125d80385ed03f9006b0351fbba"><td class="memItemLeft" align="right" valign="top">cudaKernel_t&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="#a2c733125d80385ed03f9006b0351fbba">adamw_</a> = nullptr</td></tr>
 <tr class="memdesc:a2c733125d80385ed03f9006b0351fbba"><td class="mdescLeft">&#160;</td><td class="mdescRight"><span class="tt">adamw</span>.  <br /></td></tr>
 <tr class="memitem:ae7ab7c869d1f3c3b7757652bad94a3c0" id="r_ae7ab7c869d1f3c3b7757652bad94a3c0"><td class="memItemLeft" align="right" valign="top">cudaKernel_t&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="#ae7ab7c869d1f3c3b7757652bad94a3c0">scale_</a> = nullptr</td></tr>
@@ -182,6 +184,8 @@ Public Attributes</h2></td></tr>
 <tr class="memdesc:a939bb59e995ad43b77a7524f09e87647"><td class="mdescLeft">&#160;</td><td class="mdescRight"><span class="tt">attn_dscores</span>.  <br /></td></tr>
 <tr class="memitem:aa665b0ddd79e166606dce87f37d54c7f" id="r_aa665b0ddd79e166606dce87f37d54c7f"><td class="memItemLeft" align="right" valign="top">cudaKernel_t&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="#aa665b0ddd79e166606dce87f37d54c7f">heads_permute_</a> = nullptr</td></tr>
 <tr class="memdesc:aa665b0ddd79e166606dce87f37d54c7f"><td class="mdescLeft">&#160;</td><td class="mdescRight"><span class="tt">heads_permute</span>.  <br /></td></tr>
+<tr class="memitem:a4d20c88b05502b0a72268f867903b7f7" id="r_a4d20c88b05502b0a72268f867903b7f7"><td class="memItemLeft" align="right" valign="top">cudaKernel_t&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="#a4d20c88b05502b0a72268f867903b7f7">to_bf16_</a> = nullptr</td></tr>
+<tr class="memdesc:a4d20c88b05502b0a72268f867903b7f7"><td class="mdescLeft">&#160;</td><td class="mdescRight"><span class="tt">to_bf16</span>.  <br /></td></tr>
 <tr class="memitem:a944fa97ff69daa8687e8a2654a7688c3" id="r_a944fa97ff69daa8687e8a2654a7688c3"><td class="memItemLeft" align="right" valign="top">std::array&lt; cudaKernel_t, 4 &gt;&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="#a944fa97ff69daa8687e8a2654a7688c3">attend_tiled_</a> {}</td></tr>
 <tr class="memdesc:a944fa97ff69daa8687e8a2654a7688c3"><td class="mdescLeft">&#160;</td><td class="mdescRight"><span class="tt">attend_tiled_D</span>, for heads of 16, 32, 64 and 128 channels.  <br /></td></tr>
 <tr class="memitem:abc03200a994124a5b5d5278f31b77525" id="r_abc03200a994124a5b5d5278f31b77525"><td class="memItemLeft" align="right" valign="top">std::array&lt; cudaKernel_t, 4 &gt;&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="#abc03200a994124a5b5d5278f31b77525">attend_backward_queries_tiled_</a> {}</td></tr>
@@ -200,7 +204,7 @@ Public Attributes</h2></td></tr>
 <a name="details" id="details"></a><h2 id="header-details" class="groupheader">Detailed Description</h2>
 <div class="textblock"><p>The kernels of the training steps, compiled for one context's device, and their working space. </p>
 
-<p class="definition">Definition at line <a class="el" href="cuda__ops_8hpp_source.html#l00879">879</a> of file <a class="el" href="cuda__ops_8hpp_source.html">cuda_ops.hpp</a>.</p>
+<p class="definition">Definition at line <a class="el" href="cuda__ops_8hpp_source.html#l00887">887</a> of file <a class="el" href="cuda__ops_8hpp_source.html">cuda_ops.hpp</a>.</p>
 </div><a name="doc-constructors" id="doc-constructors"></a><h2 id="header-doc-constructors" class="groupheader">Constructor &amp; Destructor Documentation</h2>
 <a id="a98963e80910fe8b077fd173ac3d1dda4" name="a98963e80910fe8b077fd173ac3d1dda4"></a>
 <h2 class="memtitle"><span class="permalink"><a href="#a98963e80910fe8b077fd173ac3d1dda4">&#9670;&#160;</a></span>~cuda_kernels()</h2>
@@ -227,7 +231,7 @@ Public Attributes</h2></td></tr>
 
 <p>Unloads the kernels. </p>
 
-<p class="definition">Definition at line <a class="el" href="cuda__ops_8hpp_source.html#l00957">957</a> of file <a class="el" href="cuda__ops_8hpp_source.html">cuda_ops.hpp</a>.</p>
+<p class="definition">Definition at line <a class="el" href="cuda__ops_8hpp_source.html#l00965">965</a> of file <a class="el" href="cuda__ops_8hpp_source.html">cuda_ops.hpp</a>.</p>
 
 </div>
 </div>
@@ -258,7 +262,7 @@ Public Attributes</h2></td></tr>
 <p>The context. </p>
 <dl class="section return"><dt>Returns</dt><dd>It. </dd></dl>
 
-<p class="definition">Definition at line <a class="el" href="cuda__ops_8hpp_source.html#l01015">1015</a> of file <a class="el" href="cuda__ops_8hpp_source.html">cuda_ops.hpp</a>.</p>
+<p class="definition">Definition at line <a class="el" href="cuda__ops_8hpp_source.html#l01032">1032</a> of file <a class="el" href="cuda__ops_8hpp_source.html">cuda_ops.hpp</a>.</p>
 
 </div>
 </div>
@@ -294,7 +298,7 @@ Public Attributes</h2></td></tr>
 </dl>
 <dl class="section return"><dt>Returns</dt><dd>The kernels, or why they did not compile (the log on stderr). </dd></dl>
 
-<p class="definition">Definition at line <a class="el" href="cuda__ops_8hpp_source.html#l00884">884</a> of file <a class="el" href="cuda__ops_8hpp_source.html">cuda_ops.hpp</a>.</p>
+<p class="definition">Definition at line <a class="el" href="cuda__ops_8hpp_source.html#l00892">892</a> of file <a class="el" href="cuda__ops_8hpp_source.html">cuda_ops.hpp</a>.</p>
 
 </div>
 </div>
@@ -346,7 +350,7 @@ Public Attributes</h2></td></tr>
   </dd>
 </dl>
 
-<p class="definition">Definition at line <a class="el" href="cuda__ops_8hpp_source.html#l00965">965</a> of file <a class="el" href="cuda__ops_8hpp_source.html">cuda_ops.hpp</a>.</p>
+<p class="definition">Definition at line <a class="el" href="cuda__ops_8hpp_source.html#l00973">973</a> of file <a class="el" href="cuda__ops_8hpp_source.html">cuda_ops.hpp</a>.</p>
 
 </div>
 </div>
@@ -404,7 +408,7 @@ Public Attributes</h2></td></tr>
   </dd>
 </dl>
 
-<p class="definition">Definition at line <a class="el" href="cuda__ops_8hpp_source.html#l00978">978</a> of file <a class="el" href="cuda__ops_8hpp_source.html">cuda_ops.hpp</a>.</p>
+<p class="definition">Definition at line <a class="el" href="cuda__ops_8hpp_source.html#l00986">986</a> of file <a class="el" href="cuda__ops_8hpp_source.html">cuda_ops.hpp</a>.</p>
 
 </div>
 </div>
@@ -468,7 +472,7 @@ Public Attributes</h2></td></tr>
   </dd>
 </dl>
 
-<p class="definition">Definition at line <a class="el" href="cuda__ops_8hpp_source.html#l00988">988</a> of file <a class="el" href="cuda__ops_8hpp_source.html">cuda_ops.hpp</a>.</p>
+<p class="definition">Definition at line <a class="el" href="cuda__ops_8hpp_source.html#l00996">996</a> of file <a class="el" href="cuda__ops_8hpp_source.html">cuda_ops.hpp</a>.</p>
 
 </div>
 </div>
@@ -538,7 +542,7 @@ Public Attributes</h2></td></tr>
   </dd>
 </dl>
 
-<p class="definition">Definition at line <a class="el" href="cuda__ops_8hpp_source.html#l00993">993</a> of file <a class="el" href="cuda__ops_8hpp_source.html">cuda_ops.hpp</a>.</p>
+<p class="definition">Definition at line <a class="el" href="cuda__ops_8hpp_source.html#l01001">1001</a> of file <a class="el" href="cuda__ops_8hpp_source.html">cuda_ops.hpp</a>.</p>
 
 </div>
 </div>
@@ -574,7 +578,7 @@ Public Attributes</h2></td></tr>
 </dl>
 <dl class="section return"><dt>Returns</dt><dd>Its name. </dd></dl>
 
-<p class="definition">Definition at line <a class="el" href="cuda__ops_8hpp_source.html#l01018">1018</a> of file <a class="el" href="cuda__ops_8hpp_source.html">cuda_ops.hpp</a>.</p>
+<p class="definition">Definition at line <a class="el" href="cuda__ops_8hpp_source.html#l01035">1035</a> of file <a class="el" href="cuda__ops_8hpp_source.html">cuda_ops.hpp</a>.</p>
 
 </div>
 </div>
@@ -638,7 +642,43 @@ Public Attributes</h2></td></tr>
 </dl>
 <dl class="section return"><dt>Returns</dt><dd>The space. </dd></dl>
 
-<p class="definition">Definition at line <a class="el" href="cuda__ops_8hpp_source.html#l01007">1007</a> of file <a class="el" href="cuda__ops_8hpp_source.html">cuda_ops.hpp</a>.</p>
+<p class="definition">Definition at line <a class="el" href="cuda__ops_8hpp_source.html#l01015">1015</a> of file <a class="el" href="cuda__ops_8hpp_source.html">cuda_ops.hpp</a>.</p>
+
+</div>
+</div>
+<a id="a0a8b2fce8f54f3174688fb24b70b0f97" name="a0a8b2fce8f54f3174688fb24b70b0f97"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#a0a8b2fce8f54f3174688fb24b70b0f97">&#9670;&#160;</a></span>scratch16()</h2>
+
+<div class="memitem">
+<div class="memproto">
+<table class="mlabels">
+  <tr>
+  <td class="mlabels-left">
+      <table class="memname">
+        <tr>
+          <td class="memname">std::span&lt; std::uint16_t &gt; snicholls::gpu::cuda_kernels::scratch16 </td>
+          <td>(</td>
+          <td class="paramtype">std::size_t</td>          <td class="paramname"><span class="paramname"><em>n</em></span></td><td>)</td>
+          <td> const</td>
+        </tr>
+      </table>
+  </td>
+  <td class="mlabels-right">
+<span class="mlabels"><span class="mlabel inline">inline</span><span class="mlabel nodiscard">nodiscard</span></span>  </td>
+  </tr>
+</table>
+</div><div class="memdoc">
+
+<p>Working space of at least <span class="tt">n</span> 16-bit values, kept between calls like <span class="tt"><a class="el" href="#a069a1fb5f87c5e9e38272936357a5889" title="Working space in device memory of at least floats floats, kept between calls and grown when asked for...">scratch</a></span>: the bfloat16 operands of the products under <span class="tt"><a class="el" href="group__gpu.html#gga22ea844faef25bad361c431e1315d253afe2904d9fb3b0f4a81c92b03dec11424">cuda_math::bf16</a></span>. </p>
+<dl class="params"><dt>Parameters</dt><dd>
+  <table class="params">
+    <tr><td class="paramname">n</td><td>The size. </td></tr>
+  </table>
+  </dd>
+</dl>
+<dl class="section return"><dt>Returns</dt><dd>The space. </dd></dl>
+
+<p class="definition">Definition at line <a class="el" href="cuda__ops_8hpp_source.html#l01024">1024</a> of file <a class="el" href="cuda__ops_8hpp_source.html">cuda_ops.hpp</a>.</p>
 
 </div>
 </div>
@@ -657,7 +697,7 @@ Public Attributes</h2></td></tr>
 
 <p><span class="tt">activate</span>. </p>
 
-<p class="definition">Definition at line <a class="el" href="cuda__ops_8hpp_source.html#l01049">1049</a> of file <a class="el" href="cuda__ops_8hpp_source.html">cuda_ops.hpp</a>.</p>
+<p class="definition">Definition at line <a class="el" href="cuda__ops_8hpp_source.html#l01066">1066</a> of file <a class="el" href="cuda__ops_8hpp_source.html">cuda_ops.hpp</a>.</p>
 
 </div>
 </div>
@@ -675,7 +715,7 @@ Public Attributes</h2></td></tr>
 
 <p><span class="tt">activate_backward</span>. </p>
 
-<p class="definition">Definition at line <a class="el" href="cuda__ops_8hpp_source.html#l01050">1050</a> of file <a class="el" href="cuda__ops_8hpp_source.html">cuda_ops.hpp</a>.</p>
+<p class="definition">Definition at line <a class="el" href="cuda__ops_8hpp_source.html#l01067">1067</a> of file <a class="el" href="cuda__ops_8hpp_source.html">cuda_ops.hpp</a>.</p>
 
 </div>
 </div>
@@ -693,7 +733,7 @@ Public Attributes</h2></td></tr>
 
 <p><span class="tt">adamw</span>. </p>
 
-<p class="definition">Definition at line <a class="el" href="cuda__ops_8hpp_source.html#l01062">1062</a> of file <a class="el" href="cuda__ops_8hpp_source.html">cuda_ops.hpp</a>.</p>
+<p class="definition">Definition at line <a class="el" href="cuda__ops_8hpp_source.html#l01079">1079</a> of file <a class="el" href="cuda__ops_8hpp_source.html">cuda_ops.hpp</a>.</p>
 
 </div>
 </div>
@@ -711,7 +751,7 @@ Public Attributes</h2></td></tr>
 
 <p><span class="tt">add</span>. </p>
 
-<p class="definition">Definition at line <a class="el" href="cuda__ops_8hpp_source.html#l01046">1046</a> of file <a class="el" href="cuda__ops_8hpp_source.html">cuda_ops.hpp</a>.</p>
+<p class="definition">Definition at line <a class="el" href="cuda__ops_8hpp_source.html#l01063">1063</a> of file <a class="el" href="cuda__ops_8hpp_source.html">cuda_ops.hpp</a>.</p>
 
 </div>
 </div>
@@ -729,7 +769,7 @@ Public Attributes</h2></td></tr>
 
 <p><span class="tt"><a class="el" href="cuda__ops_8hpp.html#a7bf9dc8055234637f22d5102a8318d55" title="y_t += bias on the device.">add_bias_rows</a></span>. </p>
 
-<p class="definition">Definition at line <a class="el" href="cuda__ops_8hpp_source.html#l01047">1047</a> of file <a class="el" href="cuda__ops_8hpp_source.html">cuda_ops.hpp</a>.</p>
+<p class="definition">Definition at line <a class="el" href="cuda__ops_8hpp_source.html#l01064">1064</a> of file <a class="el" href="cuda__ops_8hpp_source.html">cuda_ops.hpp</a>.</p>
 
 </div>
 </div>
@@ -747,7 +787,7 @@ Public Attributes</h2></td></tr>
 
 <p><span class="tt">attend</span>. </p>
 
-<p class="definition">Definition at line <a class="el" href="cuda__ops_8hpp_source.html#l01056">1056</a> of file <a class="el" href="cuda__ops_8hpp_source.html">cuda_ops.hpp</a>.</p>
+<p class="definition">Definition at line <a class="el" href="cuda__ops_8hpp_source.html#l01073">1073</a> of file <a class="el" href="cuda__ops_8hpp_source.html">cuda_ops.hpp</a>.</p>
 
 </div>
 </div>
@@ -765,7 +805,7 @@ Public Attributes</h2></td></tr>
 
 <p><span class="tt">attend_backward_keys</span>. </p>
 
-<p class="definition">Definition at line <a class="el" href="cuda__ops_8hpp_source.html#l01058">1058</a> of file <a class="el" href="cuda__ops_8hpp_source.html">cuda_ops.hpp</a>.</p>
+<p class="definition">Definition at line <a class="el" href="cuda__ops_8hpp_source.html#l01075">1075</a> of file <a class="el" href="cuda__ops_8hpp_source.html">cuda_ops.hpp</a>.</p>
 
 </div>
 </div>
@@ -783,7 +823,7 @@ Public Attributes</h2></td></tr>
 
 <p><span class="tt">attend_backward_keys_tiled_D</span>. </p>
 
-<p class="definition">Definition at line <a class="el" href="cuda__ops_8hpp_source.html#l01072">1072</a> of file <a class="el" href="cuda__ops_8hpp_source.html">cuda_ops.hpp</a>.</p>
+<p class="definition">Definition at line <a class="el" href="cuda__ops_8hpp_source.html#l01090">1090</a> of file <a class="el" href="cuda__ops_8hpp_source.html">cuda_ops.hpp</a>.</p>
 
 </div>
 </div>
@@ -801,7 +841,7 @@ Public Attributes</h2></td></tr>
 
 <p><span class="tt">attend_backward_queries</span>. </p>
 
-<p class="definition">Definition at line <a class="el" href="cuda__ops_8hpp_source.html#l01057">1057</a> of file <a class="el" href="cuda__ops_8hpp_source.html">cuda_ops.hpp</a>.</p>
+<p class="definition">Definition at line <a class="el" href="cuda__ops_8hpp_source.html#l01074">1074</a> of file <a class="el" href="cuda__ops_8hpp_source.html">cuda_ops.hpp</a>.</p>
 
 </div>
 </div>
@@ -819,7 +859,7 @@ Public Attributes</h2></td></tr>
 
 <p><span class="tt">attend_backward_queries_tiled_D</span>. </p>
 
-<p class="definition">Definition at line <a class="el" href="cuda__ops_8hpp_source.html#l01071">1071</a> of file <a class="el" href="cuda__ops_8hpp_source.html">cuda_ops.hpp</a>.</p>
+<p class="definition">Definition at line <a class="el" href="cuda__ops_8hpp_source.html#l01089">1089</a> of file <a class="el" href="cuda__ops_8hpp_source.html">cuda_ops.hpp</a>.</p>
 
 </div>
 </div>
@@ -837,7 +877,7 @@ Public Attributes</h2></td></tr>
 
 <p><span class="tt">attend_keys_reduce</span>. </p>
 
-<p class="definition">Definition at line <a class="el" href="cuda__ops_8hpp_source.html#l01065">1065</a> of file <a class="el" href="cuda__ops_8hpp_source.html">cuda_ops.hpp</a>.</p>
+<p class="definition">Definition at line <a class="el" href="cuda__ops_8hpp_source.html#l01082">1082</a> of file <a class="el" href="cuda__ops_8hpp_source.html">cuda_ops.hpp</a>.</p>
 
 </div>
 </div>
@@ -855,7 +895,7 @@ Public Attributes</h2></td></tr>
 
 <p><span class="tt">attend_tiled_D</span>, for heads of 16, 32, 64 and 128 channels. </p>
 
-<p class="definition">Definition at line <a class="el" href="cuda__ops_8hpp_source.html#l01070">1070</a> of file <a class="el" href="cuda__ops_8hpp_source.html">cuda_ops.hpp</a>.</p>
+<p class="definition">Definition at line <a class="el" href="cuda__ops_8hpp_source.html#l01088">1088</a> of file <a class="el" href="cuda__ops_8hpp_source.html">cuda_ops.hpp</a>.</p>
 
 </div>
 </div>
@@ -873,7 +913,7 @@ Public Attributes</h2></td></tr>
 
 <p><span class="tt">attn_dscores</span>. </p>
 
-<p class="definition">Definition at line <a class="el" href="cuda__ops_8hpp_source.html#l01068">1068</a> of file <a class="el" href="cuda__ops_8hpp_source.html">cuda_ops.hpp</a>.</p>
+<p class="definition">Definition at line <a class="el" href="cuda__ops_8hpp_source.html#l01085">1085</a> of file <a class="el" href="cuda__ops_8hpp_source.html">cuda_ops.hpp</a>.</p>
 
 </div>
 </div>
@@ -891,7 +931,7 @@ Public Attributes</h2></td></tr>
 
 <p><span class="tt">attn_probs</span>. </p>
 
-<p class="definition">Definition at line <a class="el" href="cuda__ops_8hpp_source.html#l01067">1067</a> of file <a class="el" href="cuda__ops_8hpp_source.html">cuda_ops.hpp</a>.</p>
+<p class="definition">Definition at line <a class="el" href="cuda__ops_8hpp_source.html#l01084">1084</a> of file <a class="el" href="cuda__ops_8hpp_source.html">cuda_ops.hpp</a>.</p>
 
 </div>
 </div>
@@ -909,7 +949,7 @@ Public Attributes</h2></td></tr>
 
 <p><span class="tt">attn_rowdot</span>. </p>
 
-<p class="definition">Definition at line <a class="el" href="cuda__ops_8hpp_source.html#l01076">1076</a> of file <a class="el" href="cuda__ops_8hpp_source.html">cuda_ops.hpp</a>.</p>
+<p class="definition">Definition at line <a class="el" href="cuda__ops_8hpp_source.html#l01094">1094</a> of file <a class="el" href="cuda__ops_8hpp_source.html">cuda_ops.hpp</a>.</p>
 
 </div>
 </div>
@@ -927,7 +967,7 @@ Public Attributes</h2></td></tr>
 
 <p><span class="tt">attn_softmax</span>. </p>
 
-<p class="definition">Definition at line <a class="el" href="cuda__ops_8hpp_source.html#l01066">1066</a> of file <a class="el" href="cuda__ops_8hpp_source.html">cuda_ops.hpp</a>.</p>
+<p class="definition">Definition at line <a class="el" href="cuda__ops_8hpp_source.html#l01083">1083</a> of file <a class="el" href="cuda__ops_8hpp_source.html">cuda_ops.hpp</a>.</p>
 
 </div>
 </div>
@@ -945,7 +985,7 @@ Public Attributes</h2></td></tr>
 
 <p><span class="tt">copy</span>. </p>
 
-<p class="definition">Definition at line <a class="el" href="cuda__ops_8hpp_source.html#l01045">1045</a> of file <a class="el" href="cuda__ops_8hpp_source.html">cuda_ops.hpp</a>.</p>
+<p class="definition">Definition at line <a class="el" href="cuda__ops_8hpp_source.html#l01062">1062</a> of file <a class="el" href="cuda__ops_8hpp_source.html">cuda_ops.hpp</a>.</p>
 
 </div>
 </div>
@@ -961,9 +1001,9 @@ Public Attributes</h2></td></tr>
       </table>
 </div><div class="memdoc">
 
-<p><span class="tt"><a class="el" href="cuda__ops_8hpp.html#a508a4701dc70af928de7398ac0d47138" title="The fused classifier over a sequence on the device: each row&#39;s loss, the row replaced by its scaled g...">cross_entropy_rows</a></span>. </p>
+<p><span class="tt"><a class="el" href="cuda__ops_8hpp.html#a8bef0fc07ee42ac60535e5988df224d5" title="The fused classifier over a sequence on the device, the classes the first classes of each row (core 0...">cross_entropy_rows</a></span>. </p>
 
-<p class="definition">Definition at line <a class="el" href="cuda__ops_8hpp_source.html#l01061">1061</a> of file <a class="el" href="cuda__ops_8hpp_source.html">cuda_ops.hpp</a>.</p>
+<p class="definition">Definition at line <a class="el" href="cuda__ops_8hpp_source.html#l01078">1078</a> of file <a class="el" href="cuda__ops_8hpp_source.html">cuda_ops.hpp</a>.</p>
 
 </div>
 </div>
@@ -981,7 +1021,7 @@ Public Attributes</h2></td></tr>
 
 <p><span class="tt">embed</span>. </p>
 
-<p class="definition">Definition at line <a class="el" href="cuda__ops_8hpp_source.html#l01059">1059</a> of file <a class="el" href="cuda__ops_8hpp_source.html">cuda_ops.hpp</a>.</p>
+<p class="definition">Definition at line <a class="el" href="cuda__ops_8hpp_source.html#l01076">1076</a> of file <a class="el" href="cuda__ops_8hpp_source.html">cuda_ops.hpp</a>.</p>
 
 </div>
 </div>
@@ -999,7 +1039,7 @@ Public Attributes</h2></td></tr>
 
 <p><span class="tt">embed_backward</span>. </p>
 
-<p class="definition">Definition at line <a class="el" href="cuda__ops_8hpp_source.html#l01060">1060</a> of file <a class="el" href="cuda__ops_8hpp_source.html">cuda_ops.hpp</a>.</p>
+<p class="definition">Definition at line <a class="el" href="cuda__ops_8hpp_source.html#l01077">1077</a> of file <a class="el" href="cuda__ops_8hpp_source.html">cuda_ops.hpp</a>.</p>
 
 </div>
 </div>
@@ -1017,7 +1057,7 @@ Public Attributes</h2></td></tr>
 
 <p><span class="tt">fill</span>. </p>
 
-<p class="definition">Definition at line <a class="el" href="cuda__ops_8hpp_source.html#l01044">1044</a> of file <a class="el" href="cuda__ops_8hpp_source.html">cuda_ops.hpp</a>.</p>
+<p class="definition">Definition at line <a class="el" href="cuda__ops_8hpp_source.html#l01061">1061</a> of file <a class="el" href="cuda__ops_8hpp_source.html">cuda_ops.hpp</a>.</p>
 
 </div>
 </div>
@@ -1035,7 +1075,7 @@ Public Attributes</h2></td></tr>
 
 <p><span class="tt">flash_dkv_D</span>. </p>
 
-<p class="definition">Definition at line <a class="el" href="cuda__ops_8hpp_source.html#l01075">1075</a> of file <a class="el" href="cuda__ops_8hpp_source.html">cuda_ops.hpp</a>.</p>
+<p class="definition">Definition at line <a class="el" href="cuda__ops_8hpp_source.html#l01093">1093</a> of file <a class="el" href="cuda__ops_8hpp_source.html">cuda_ops.hpp</a>.</p>
 
 </div>
 </div>
@@ -1053,7 +1093,7 @@ Public Attributes</h2></td></tr>
 
 <p><span class="tt">flash_dq_D</span>. </p>
 
-<p class="definition">Definition at line <a class="el" href="cuda__ops_8hpp_source.html#l01074">1074</a> of file <a class="el" href="cuda__ops_8hpp_source.html">cuda_ops.hpp</a>.</p>
+<p class="definition">Definition at line <a class="el" href="cuda__ops_8hpp_source.html#l01092">1092</a> of file <a class="el" href="cuda__ops_8hpp_source.html">cuda_ops.hpp</a>.</p>
 
 </div>
 </div>
@@ -1071,7 +1111,7 @@ Public Attributes</h2></td></tr>
 
 <p><span class="tt">flash_fwd_D</span>, for heads of 32 and 64 channels. </p>
 
-<p class="definition">Definition at line <a class="el" href="cuda__ops_8hpp_source.html#l01073">1073</a> of file <a class="el" href="cuda__ops_8hpp_source.html">cuda_ops.hpp</a>.</p>
+<p class="definition">Definition at line <a class="el" href="cuda__ops_8hpp_source.html#l01091">1091</a> of file <a class="el" href="cuda__ops_8hpp_source.html">cuda_ops.hpp</a>.</p>
 
 </div>
 </div>
@@ -1089,7 +1129,7 @@ Public Attributes</h2></td></tr>
 
 <p><span class="tt">heads_permute</span>. </p>
 
-<p class="definition">Definition at line <a class="el" href="cuda__ops_8hpp_source.html#l01069">1069</a> of file <a class="el" href="cuda__ops_8hpp_source.html">cuda_ops.hpp</a>.</p>
+<p class="definition">Definition at line <a class="el" href="cuda__ops_8hpp_source.html#l01086">1086</a> of file <a class="el" href="cuda__ops_8hpp_source.html">cuda_ops.hpp</a>.</p>
 
 </div>
 </div>
@@ -1107,7 +1147,7 @@ Public Attributes</h2></td></tr>
 
 <p><span class="tt">norm_param_grads</span>. </p>
 
-<p class="definition">Definition at line <a class="el" href="cuda__ops_8hpp_source.html#l01053">1053</a> of file <a class="el" href="cuda__ops_8hpp_source.html">cuda_ops.hpp</a>.</p>
+<p class="definition">Definition at line <a class="el" href="cuda__ops_8hpp_source.html#l01070">1070</a> of file <a class="el" href="cuda__ops_8hpp_source.html">cuda_ops.hpp</a>.</p>
 
 </div>
 </div>
@@ -1125,7 +1165,7 @@ Public Attributes</h2></td></tr>
 
 <p><span class="tt">norm_rows</span>. </p>
 
-<p class="definition">Definition at line <a class="el" href="cuda__ops_8hpp_source.html#l01051">1051</a> of file <a class="el" href="cuda__ops_8hpp_source.html">cuda_ops.hpp</a>.</p>
+<p class="definition">Definition at line <a class="el" href="cuda__ops_8hpp_source.html#l01068">1068</a> of file <a class="el" href="cuda__ops_8hpp_source.html">cuda_ops.hpp</a>.</p>
 
 </div>
 </div>
@@ -1143,7 +1183,7 @@ Public Attributes</h2></td></tr>
 
 <p><span class="tt">norm_rows_backward_add</span>. </p>
 
-<p class="definition">Definition at line <a class="el" href="cuda__ops_8hpp_source.html#l01052">1052</a> of file <a class="el" href="cuda__ops_8hpp_source.html">cuda_ops.hpp</a>.</p>
+<p class="definition">Definition at line <a class="el" href="cuda__ops_8hpp_source.html#l01069">1069</a> of file <a class="el" href="cuda__ops_8hpp_source.html">cuda_ops.hpp</a>.</p>
 
 </div>
 </div>
@@ -1161,7 +1201,7 @@ Public Attributes</h2></td></tr>
 
 <p><span class="tt">partial_sums</span>. </p>
 
-<p class="definition">Definition at line <a class="el" href="cuda__ops_8hpp_source.html#l01064">1064</a> of file <a class="el" href="cuda__ops_8hpp_source.html">cuda_ops.hpp</a>.</p>
+<p class="definition">Definition at line <a class="el" href="cuda__ops_8hpp_source.html#l01081">1081</a> of file <a class="el" href="cuda__ops_8hpp_source.html">cuda_ops.hpp</a>.</p>
 
 </div>
 </div>
@@ -1179,7 +1219,7 @@ Public Attributes</h2></td></tr>
 
 <p><span class="tt">position</span>. </p>
 
-<p class="definition">Definition at line <a class="el" href="cuda__ops_8hpp_source.html#l01054">1054</a> of file <a class="el" href="cuda__ops_8hpp_source.html">cuda_ops.hpp</a>.</p>
+<p class="definition">Definition at line <a class="el" href="cuda__ops_8hpp_source.html#l01071">1071</a> of file <a class="el" href="cuda__ops_8hpp_source.html">cuda_ops.hpp</a>.</p>
 
 </div>
 </div>
@@ -1197,7 +1237,7 @@ Public Attributes</h2></td></tr>
 
 <p><span class="tt">position_backward</span>. </p>
 
-<p class="definition">Definition at line <a class="el" href="cuda__ops_8hpp_source.html#l01055">1055</a> of file <a class="el" href="cuda__ops_8hpp_source.html">cuda_ops.hpp</a>.</p>
+<p class="definition">Definition at line <a class="el" href="cuda__ops_8hpp_source.html#l01072">1072</a> of file <a class="el" href="cuda__ops_8hpp_source.html">cuda_ops.hpp</a>.</p>
 
 </div>
 </div>
@@ -1215,7 +1255,7 @@ Public Attributes</h2></td></tr>
 
 <p><span class="tt">scale</span>. </p>
 
-<p class="definition">Definition at line <a class="el" href="cuda__ops_8hpp_source.html#l01063">1063</a> of file <a class="el" href="cuda__ops_8hpp_source.html">cuda_ops.hpp</a>.</p>
+<p class="definition">Definition at line <a class="el" href="cuda__ops_8hpp_source.html#l01080">1080</a> of file <a class="el" href="cuda__ops_8hpp_source.html">cuda_ops.hpp</a>.</p>
 
 </div>
 </div>
@@ -1233,7 +1273,25 @@ Public Attributes</h2></td></tr>
 
 <p><span class="tt"><a class="el" href="cuda__ops_8hpp.html#a74d1441a6fbbc2c43c5ded3d87b1c5e9" title="into += Σ_t ys_t on the device: a warp per column, each lane&#39;s rows in order, then the lanes in a fix...">sum_rows</a></span>. </p>
 
-<p class="definition">Definition at line <a class="el" href="cuda__ops_8hpp_source.html#l01048">1048</a> of file <a class="el" href="cuda__ops_8hpp_source.html">cuda_ops.hpp</a>.</p>
+<p class="definition">Definition at line <a class="el" href="cuda__ops_8hpp_source.html#l01065">1065</a> of file <a class="el" href="cuda__ops_8hpp_source.html">cuda_ops.hpp</a>.</p>
+
+</div>
+</div>
+<a id="a4d20c88b05502b0a72268f867903b7f7" name="a4d20c88b05502b0a72268f867903b7f7"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#a4d20c88b05502b0a72268f867903b7f7">&#9670;&#160;</a></span>to_bf16_</h2>
+
+<div class="memitem">
+<div class="memproto">
+      <table class="memname">
+        <tr>
+          <td class="memname">cudaKernel_t snicholls::gpu::cuda_kernels::to_bf16_ = nullptr</td>
+        </tr>
+      </table>
+</div><div class="memdoc">
+
+<p><span class="tt">to_bf16</span>. </p>
+
+<p class="definition">Definition at line <a class="el" href="cuda__ops_8hpp_source.html#l01087">1087</a> of file <a class="el" href="cuda__ops_8hpp_source.html">cuda_ops.hpp</a>.</p>
 
 </div>
 </div>

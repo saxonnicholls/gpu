@@ -11,6 +11,7 @@ var cuda_8hpp =
     ] ],
     [ "snicholls::gpu::cuda_math", "group__gpu.html#ga22ea844faef25bad361c431e1315d253", [
       [ "float32", "cuda_8hpp.html#gga22ea844faef25bad361c431e1315d253ad33ec2b0bbea6d471a4706cea030e1e3", null ],
-      [ "tf32", "cuda_8hpp.html#gga22ea844faef25bad361c431e1315d253ae00ad49f2e4f0fda1539ae29b2aaef57", null ]
+      [ "tf32", "cuda_8hpp.html#gga22ea844faef25bad361c431e1315d253ae00ad49f2e4f0fda1539ae29b2aaef57", null ],
+      [ "bf16", "cuda_8hpp.html#gga22ea844faef25bad361c431e1315d253afe2904d9fb3b0f4a81c92b03dec11424", null ]
     ] ]
 ];

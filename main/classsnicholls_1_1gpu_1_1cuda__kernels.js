@@ -10,6 +10,7 @@ var classsnicholls_1_1gpu_1_1cuda__kernels =
     [ "name_of", "classsnicholls_1_1gpu_1_1cuda__kernels.html#a08fa53a61d4f31264e05e914a93817f3", null ],
     [ "operator=", "classsnicholls_1_1gpu_1_1cuda__kernels.html#a58d40193d9d05b1ed5ab3c3602db37c5", null ],
     [ "scratch", "classsnicholls_1_1gpu_1_1cuda__kernels.html#a069a1fb5f87c5e9e38272936357a5889", null ],
+    [ "scratch16", "classsnicholls_1_1gpu_1_1cuda__kernels.html#a0a8b2fce8f54f3174688fb24b70b0f97", null ],
     [ "activate_", "classsnicholls_1_1gpu_1_1cuda__kernels.html#ad09a4a4b8b656cff8636e4905c44c411", null ],
     [ "activate_backward_", "classsnicholls_1_1gpu_1_1cuda__kernels.html#aa033a21a6952c2fdf9257af8827da709", null ],
     [ "adamw_", "classsnicholls_1_1gpu_1_1cuda__kernels.html#a2c733125d80385ed03f9006b0351fbba", null ],
@@ -42,5 +43,6 @@ var classsnicholls_1_1gpu_1_1cuda__kernels =
     [ "position_", "classsnicholls_1_1gpu_1_1cuda__kernels.html#a93c864a79c8fd054f14d5fd470f97136", null ],
     [ "position_backward_", "classsnicholls_1_1gpu_1_1cuda__kernels.html#a5f87c30ce22dc69c8fa045196ca4bdbb", null ],
     [ "scale_", "classsnicholls_1_1gpu_1_1cuda__kernels.html#ae7ab7c869d1f3c3b7757652bad94a3c0", null ],
-    [ "sum_rows_", "classsnicholls_1_1gpu_1_1cuda__kernels.html#ab50611104cbbca8e3592ecc3b6fa0ee3", null ]
+    [ "sum_rows_", "classsnicholls_1_1gpu_1_1cuda__kernels.html#ab50611104cbbca8e3592ecc3b6fa0ee3", null ],
+    [ "to_bf16_", "classsnicholls_1_1gpu_1_1cuda__kernels.html#a4d20c88b05502b0a72268f867903b7f7", null ]
 ];

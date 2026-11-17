@@ -5,6 +5,7 @@ var classsnicholls_1_1gpu_1_1cuda__context =
     [ "device", "classsnicholls_1_1gpu_1_1cuda__context.html#a9d855ed9d3afd5ad5e19fb2203b3aa6d", null ],
     [ "device_name", "classsnicholls_1_1gpu_1_1cuda__context.html#a1f46b359093dcd16f94b17e3619bf190", null ],
     [ "gemm", "classsnicholls_1_1gpu_1_1cuda__context.html#ac9a8c89ca05c15a174144db3ebe8425a", null ],
+    [ "gemm_bf16", "classsnicholls_1_1gpu_1_1cuda__context.html#a06becae80266ae35cd47600ff4d67b2f", null ],
     [ "operator=", "classsnicholls_1_1gpu_1_1cuda__context.html#a02de3a51591d8c4a095ff94a307627d8", null ],
     [ "stream", "classsnicholls_1_1gpu_1_1cuda__context.html#a01301dfcca6e4e0197bbc4709786ea59", null ],
     [ "synchronize", "classsnicholls_1_1gpu_1_1cuda__context.html#a5bc161e43bce860f994cdec7327a102b", null ]

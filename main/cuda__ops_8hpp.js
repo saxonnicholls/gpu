@@ -13,6 +13,7 @@ var cuda__ops_8hpp =
     [ "snicholls::gpu::block_norm_rows_backward_add", "cuda__ops_8hpp.html#a18a16390326978081005a3611db1e6f5", null ],
     [ "snicholls::gpu::copy_rows", "cuda__ops_8hpp.html#a6cade22fe4810248bc6847710c433656", null ],
     [ "snicholls::gpu::cross_entropy_rows", "cuda__ops_8hpp.html#a508a4701dc70af928de7398ac0d47138", null ],
+    [ "snicholls::gpu::cross_entropy_rows", "cuda__ops_8hpp.html#a8bef0fc07ee42ac60535e5988df224d5", null ],
     [ "snicholls::gpu::embed_rows", "cuda__ops_8hpp.html#a49eac91674b8e2a4ba34e81f4a8d35e0", null ],
     [ "snicholls::gpu::embed_rows_backward", "cuda__ops_8hpp.html#a781a03408a4ae2245d395b4ac228e49f", null ],
     [ "snicholls::gpu::fill_rows", "cuda__ops_8hpp.html#afce732fb4a9e3244a26b9e1a6db7d868", null ],

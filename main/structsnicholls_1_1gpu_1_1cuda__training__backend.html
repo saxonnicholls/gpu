@@ -26,7 +26,7 @@
  <tbody>
  <tr id="projectrow">
   <td id="projectalign">
-   <div id="projectname">snicholls-gpu<span id="projectnumber">&#160;0.4.0</span>
+   <div id="projectname">snicholls-gpu<span id="projectnumber">&#160;0.5.0</span>
    </div>
    <div id="projectbrief">GPU backends of snicholls-core&#39;s interfaces: linalg on OpenCL</div>
   </td>
@@ -107,22 +107,13 @@ Inheritance diagram for snicholls::gpu::cuda_training_backend:</div>
   </map>
 </div></div>
 <table class="memberdecls">
-<tr class="heading"><td colspan="2"><h2 id="header-pub-attribs" class="groupheader"><a id="pub-attribs" name="pub-attribs"></a>
-Public Attributes</h2></td></tr>
-<tr class="memitem:a7973568484e4ed8ade61fa88799f3ca4" id="r_a7973568484e4ed8ade61fa88799f3ca4"><td class="memItemLeft" align="right" valign="top">const <a class="el" href="classsnicholls_1_1gpu_1_1cuda__kernels.html">cuda_kernels</a> *&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="#a7973568484e4ed8ade61fa88799f3ca4">kernels</a> = nullptr</td></tr>
-<tr class="memdesc:a7973568484e4ed8ade61fa88799f3ca4"><td class="mdescLeft">&#160;</td><td class="mdescRight">The compiled kernels; must outlive the backend.  <br /></td></tr>
-<tr class="memitem:a7bf1de59a07eba4ba13f72ee2f24b7b8" id="r_a7bf1de59a07eba4ba13f72ee2f24b7b8"><td class="memItemLeft" align="right" valign="top">bool&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="#a7bf1de59a07eba4ba13f72ee2f24b7b8">flash_attention</a> = true</td></tr>
-<tr class="memdesc:a7bf1de59a07eba4ba13f72ee2f24b7b8"><td class="mdescLeft">&#160;</td><td class="mdescRight">Under <span class="tt"><a class="el" href="group__gpu.html#gga22ea844faef25bad361c431e1315d253ae00ad49f2e4f0fda1539ae29b2aaef57">cuda_math::tf32</a></span>, heads of 32 or 64 channels: flash attention on the tensor cores; false for the matrix-product path.  <br /></td></tr>
-<tr class="memitem:a776f51532ce66dcd599df7c94d77cef9" id="r_a776f51532ce66dcd599df7c94d77cef9"><td class="memItemLeft" align="right" valign="top">std::size_t&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="#a776f51532ce66dcd599df7c94d77cef9">gemm_attention_max</a> = 4096</td></tr>
-<tr class="memdesc:a776f51532ce66dcd599df7c94d77cef9"><td class="mdescLeft">&#160;</td><td class="mdescRight">The longest sequence whose attention runs as matrix products (cuBLAS, so on the tensor cores under <span class="tt"><a class="el" href="group__gpu.html#gga22ea844faef25bad361c431e1315d253ae00ad49f2e4f0fda1539ae29b2aaef57">cuda_math::tf32</a></span>), its <span class="tt">n x n</span> scores three times in the kernels' scratch; longer ones take the tiled kernels.  <br /></td></tr>
-<tr class="inherit_header pub_attribs_structsnicholls_1_1gpu_1_1cuda__backend"><td colspan="2" onclick="javascript:dynsection.toggleInherit('pub_attribs_structsnicholls_1_1gpu_1_1cuda__backend')"><span class="dynarrow"><span class="arrowhead closed"></span></span>Public Attributes inherited from <a class="el" href="structsnicholls_1_1gpu_1_1cuda__backend.html">snicholls::gpu::cuda_backend</a></td></tr>
-<tr class="memitem:a27da5ae02d32c43ac69e1e292876b108 inherit pub_attribs_structsnicholls_1_1gpu_1_1cuda__backend" id="r_a27da5ae02d32c43ac69e1e292876b108"><td class="memItemLeft" align="right" valign="top">const <a class="el" href="classsnicholls_1_1gpu_1_1cuda__context.html">cuda_context</a> *&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structsnicholls_1_1gpu_1_1cuda__backend.html#a27da5ae02d32c43ac69e1e292876b108">context</a> = nullptr</td></tr>
-<tr class="memdesc:a27da5ae02d32c43ac69e1e292876b108 inherit pub_attribs_structsnicholls_1_1gpu_1_1cuda__backend"><td class="mdescLeft">&#160;</td><td class="mdescRight">The device; must outlive the backend.  <br /></td></tr>
-<tr class="memitem:ae7fba8a5f918a9f0f5648c092fd8d0d7 inherit pub_attribs_structsnicholls_1_1gpu_1_1cuda__backend" id="r_ae7fba8a5f918a9f0f5648c092fd8d0d7"><td class="memItemLeft" align="right" valign="top"><a class="el" href="group__gpu.html#ga22ea844faef25bad361c431e1315d253">cuda_math</a>&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structsnicholls_1_1gpu_1_1cuda__backend.html#ae7fba8a5f918a9f0f5648c092fd8d0d7">math</a> = <a class="el" href="group__gpu.html#gga22ea844faef25bad361c431e1315d253ad33ec2b0bbea6d471a4706cea030e1e3">cuda_math::float32</a></td></tr>
-<tr class="memdesc:ae7fba8a5f918a9f0f5648c092fd8d0d7 inherit pub_attribs_structsnicholls_1_1gpu_1_1cuda__backend"><td class="mdescLeft">&#160;</td><td class="mdescRight">How products of <span class="tt">float</span> are computed: in float, or on tensor cores.  <br /></td></tr>
-</table><table class="memberdecls">
-<tr class="heading"><td colspan="2"><h2 id="header-inherited" class="groupheader"><a id="inherited" name="inherited"></a>
-Additional Inherited Members</h2></td></tr>
+<tr class="heading"><td colspan="2"><h2 id="header-pub-methods" class="groupheader"><a id="pub-methods" name="pub-methods"></a>
+Public Member Functions</h2></td></tr>
+<tr class="memitem:a2beeae680bd18188b1632118e700f852" id="r_a2beeae680bd18188b1632118e700f852"><td class="memItemLeft" align="right" valign="top">void&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="#a2beeae680bd18188b1632118e700f852">gemm</a> (float alpha, linalg::matrix_view&lt; const float &gt; a, linalg::matrix_view&lt; const float &gt; b, float beta, linalg::matrix_view&lt; float &gt; c) const</td></tr>
+<tr class="memdesc:a2beeae680bd18188b1632118e700f852"><td class="mdescLeft">&#160;</td><td class="mdescRight"><span class="tt">C = alpha A B + beta C</span> in float: under <span class="tt"><a class="el" href="group__gpu.html#gga22ea844faef25bad361c431e1315d253afe2904d9fb3b0f4a81c92b03dec11424">cuda_math::bf16</a></span>, with every operand device memory in a BLAS layout whose leading dimensions are multiples of 8, <span class="tt">A</span> and <span class="tt">B</span> rounded to bfloat16 by a kernel and multiplied on the tensor cores with float sums (other products under bf16 run as TF32); otherwise <span class="tt"><a class="el" href="structsnicholls_1_1gpu_1_1cuda__backend.html#ab55938333927c6d15d9654b996123e8b" title="C = alpha A B + beta C, on the device.">cuda_backend::gemm</a></span>.  <br /></td></tr>
+<tr class="memitem:a80697788520deaa80be0f714efdd6f28" id="r_a80697788520deaa80be0f714efdd6f28"><td class="memTemplParams" colspan="2">template&lt;linalg::scalar T&gt; </td></tr>
+<tr class="memitem:a80697788520deaa80be0f714efdd6f28 template"><td class="memItemLeft" align="right" valign="top">void&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="#a80697788520deaa80be0f714efdd6f28">gemm</a> (T alpha, linalg::matrix_view&lt; const T &gt; a, linalg::matrix_view&lt; const T &gt; b, T beta, linalg::matrix_view&lt; T &gt; c) const</td></tr>
+<tr class="memdesc:a80697788520deaa80be0f714efdd6f28"><td class="mdescLeft">&#160;</td><td class="mdescRight">Any other product: <span class="tt"><a class="el" href="structsnicholls_1_1gpu_1_1cuda__backend.html" title="The linalg::blas_backend on a cuda_context: gemm and gemv on the device, the rest on the host.">cuda_backend</a></span>'s.  <br /></td></tr>
 <tr class="inherit_header pub_methods_structsnicholls_1_1gpu_1_1cuda__backend"><td colspan="2" onclick="javascript:dynsection.toggleInherit('pub_methods_structsnicholls_1_1gpu_1_1cuda__backend')"><span class="dynarrow"><span class="arrowhead closed"></span></span>Public Member Functions inherited from <a class="el" href="structsnicholls_1_1gpu_1_1cuda__backend.html">snicholls::gpu::cuda_backend</a></td></tr>
 <tr class="memitem:a7c5a1d76b88c6096f49d2847ec1abbb6 inherit pub_methods_structsnicholls_1_1gpu_1_1cuda__backend" id="r_a7c5a1d76b88c6096f49d2847ec1abbb6"><td class="memTemplParams" colspan="2">template&lt;linalg::scalar T&gt; </td></tr>
 <tr class="memitem:a7c5a1d76b88c6096f49d2847ec1abbb6 inherit pub_methods_structsnicholls_1_1gpu_1_1cuda__backend template"><td class="memItemLeft" align="right" valign="top">T&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structsnicholls_1_1gpu_1_1cuda__backend.html#a7c5a1d76b88c6096f49d2847ec1abbb6">dot</a> (linalg::vector_view&lt; const T &gt; x, linalg::vector_view&lt; const T &gt; y) const</td></tr>
@@ -150,12 +141,151 @@ requires (std::is_same_v&lt;T, float&gt; || std::is_same_v&lt;T, double&gt;)</td
 <tr class="memitem:a2f85abf2b61b37665e260dfe91ab109a inherit pub_methods_structsnicholls_1_1gpu_1_1cuda__backend" id="r_a2f85abf2b61b37665e260dfe91ab109a"><td class="memTemplParams" colspan="2">template&lt;linalg::scalar T&gt; </td></tr>
 <tr class="memitem:a2f85abf2b61b37665e260dfe91ab109a inherit pub_methods_structsnicholls_1_1gpu_1_1cuda__backend template"><td class="memItemLeft" align="right" valign="top">result&lt; void, linalg::error &gt;&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structsnicholls_1_1gpu_1_1cuda__backend.html#a2f85abf2b61b37665e260dfe91ab109a">triangular_solve</a> (linalg::matrix_view&lt; const T &gt; t, linalg::matrix_view&lt; T &gt; b, linalg::triangle which, linalg::diagonal diag) const</td></tr>
 <tr class="memdesc:a2f85abf2b61b37665e260dfe91ab109a inherit pub_methods_structsnicholls_1_1gpu_1_1cuda__backend"><td class="mdescLeft">&#160;</td><td class="mdescRight">Solves <span class="tt">T X = B</span> in place for a triangular <span class="tt">T</span>, on the host.  <br /></td></tr>
+</table><table class="memberdecls">
+<tr class="heading"><td colspan="2"><h2 id="header-pub-attribs" class="groupheader"><a id="pub-attribs" name="pub-attribs"></a>
+Public Attributes</h2></td></tr>
+<tr class="memitem:a7973568484e4ed8ade61fa88799f3ca4" id="r_a7973568484e4ed8ade61fa88799f3ca4"><td class="memItemLeft" align="right" valign="top">const <a class="el" href="classsnicholls_1_1gpu_1_1cuda__kernels.html">cuda_kernels</a> *&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="#a7973568484e4ed8ade61fa88799f3ca4">kernels</a> = nullptr</td></tr>
+<tr class="memdesc:a7973568484e4ed8ade61fa88799f3ca4"><td class="mdescLeft">&#160;</td><td class="mdescRight">The compiled kernels; must outlive the backend.  <br /></td></tr>
+<tr class="memitem:a7bf1de59a07eba4ba13f72ee2f24b7b8" id="r_a7bf1de59a07eba4ba13f72ee2f24b7b8"><td class="memItemLeft" align="right" valign="top">bool&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="#a7bf1de59a07eba4ba13f72ee2f24b7b8">flash_attention</a> = true</td></tr>
+<tr class="memdesc:a7bf1de59a07eba4ba13f72ee2f24b7b8"><td class="mdescLeft">&#160;</td><td class="mdescRight">Under <span class="tt"><a class="el" href="group__gpu.html#gga22ea844faef25bad361c431e1315d253ae00ad49f2e4f0fda1539ae29b2aaef57">cuda_math::tf32</a></span>, heads of 32 or 64 channels: flash attention on the tensor cores; false for the matrix-product path.  <br /></td></tr>
+<tr class="memitem:a776f51532ce66dcd599df7c94d77cef9" id="r_a776f51532ce66dcd599df7c94d77cef9"><td class="memItemLeft" align="right" valign="top">std::size_t&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="#a776f51532ce66dcd599df7c94d77cef9">gemm_attention_max</a> = 4096</td></tr>
+<tr class="memdesc:a776f51532ce66dcd599df7c94d77cef9"><td class="mdescLeft">&#160;</td><td class="mdescRight">The longest sequence whose attention runs as matrix products (cuBLAS, so on the tensor cores under <span class="tt"><a class="el" href="group__gpu.html#gga22ea844faef25bad361c431e1315d253ae00ad49f2e4f0fda1539ae29b2aaef57">cuda_math::tf32</a></span>), its <span class="tt">n x n</span> scores three times in the kernels' scratch; longer ones take the tiled kernels.  <br /></td></tr>
+<tr class="inherit_header pub_attribs_structsnicholls_1_1gpu_1_1cuda__backend"><td colspan="2" onclick="javascript:dynsection.toggleInherit('pub_attribs_structsnicholls_1_1gpu_1_1cuda__backend')"><span class="dynarrow"><span class="arrowhead closed"></span></span>Public Attributes inherited from <a class="el" href="structsnicholls_1_1gpu_1_1cuda__backend.html">snicholls::gpu::cuda_backend</a></td></tr>
+<tr class="memitem:a27da5ae02d32c43ac69e1e292876b108 inherit pub_attribs_structsnicholls_1_1gpu_1_1cuda__backend" id="r_a27da5ae02d32c43ac69e1e292876b108"><td class="memItemLeft" align="right" valign="top">const <a class="el" href="classsnicholls_1_1gpu_1_1cuda__context.html">cuda_context</a> *&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structsnicholls_1_1gpu_1_1cuda__backend.html#a27da5ae02d32c43ac69e1e292876b108">context</a> = nullptr</td></tr>
+<tr class="memdesc:a27da5ae02d32c43ac69e1e292876b108 inherit pub_attribs_structsnicholls_1_1gpu_1_1cuda__backend"><td class="mdescLeft">&#160;</td><td class="mdescRight">The device; must outlive the backend.  <br /></td></tr>
+<tr class="memitem:ae7fba8a5f918a9f0f5648c092fd8d0d7 inherit pub_attribs_structsnicholls_1_1gpu_1_1cuda__backend" id="r_ae7fba8a5f918a9f0f5648c092fd8d0d7"><td class="memItemLeft" align="right" valign="top"><a class="el" href="group__gpu.html#ga22ea844faef25bad361c431e1315d253">cuda_math</a>&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structsnicholls_1_1gpu_1_1cuda__backend.html#ae7fba8a5f918a9f0f5648c092fd8d0d7">math</a> = <a class="el" href="group__gpu.html#gga22ea844faef25bad361c431e1315d253ad33ec2b0bbea6d471a4706cea030e1e3">cuda_math::float32</a></td></tr>
+<tr class="memdesc:ae7fba8a5f918a9f0f5648c092fd8d0d7 inherit pub_attribs_structsnicholls_1_1gpu_1_1cuda__backend"><td class="mdescLeft">&#160;</td><td class="mdescRight">How products of <span class="tt">float</span> are computed: in float, or on tensor cores.  <br /></td></tr>
 </table>
 <a name="details" id="details"></a><h2 id="header-details" class="groupheader">Detailed Description</h2>
 <div class="textblock"><p>The CUDA backend with the training steps' kernels: core's batched passes run entirely on the device over <span class="tt"><a class="el" href="classsnicholls_1_1gpu_1_1device__buffer.html" title="n elements of device memory, released when it goes out of scope; span() is a view core&#39;s functions ta...">device_buffer</a></span> memory. Trivially copyable. </p>
 
-<p class="definition">Definition at line <a class="el" href="cuda__ops_8hpp_source.html#l01088">1088</a> of file <a class="el" href="cuda__ops_8hpp_source.html">cuda_ops.hpp</a>.</p>
-</div><a name="doc-variable-members" id="doc-variable-members"></a><h2 id="header-doc-variable-members" class="groupheader">Member Data Documentation</h2>
+<p class="definition">Definition at line <a class="el" href="cuda__ops_8hpp_source.html#l01107">1107</a> of file <a class="el" href="cuda__ops_8hpp_source.html">cuda_ops.hpp</a>.</p>
+</div><a name="doc-func-members" id="doc-func-members"></a><h2 id="header-doc-func-members" class="groupheader">Member Function Documentation</h2>
+<a id="a2beeae680bd18188b1632118e700f852" name="a2beeae680bd18188b1632118e700f852"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#a2beeae680bd18188b1632118e700f852">&#9670;&#160;</a></span>gemm() <span class="overload">[1/2]</span></h2>
+
+<div class="memitem">
+<div class="memproto">
+<table class="mlabels">
+  <tr>
+  <td class="mlabels-left">
+      <table class="memname">
+        <tr>
+          <td class="memname">void snicholls::gpu::cuda_training_backend::gemm </td>
+          <td>(</td>
+          <td class="paramtype">float</td>          <td class="paramname"><span class="paramname"><em>alpha</em></span>, </td>
+        </tr>
+        <tr>
+          <td class="paramkey"></td>
+          <td></td>
+          <td class="paramtype">linalg::matrix_view&lt; const float &gt;</td>          <td class="paramname"><span class="paramname"><em>a</em></span>, </td>
+        </tr>
+        <tr>
+          <td class="paramkey"></td>
+          <td></td>
+          <td class="paramtype">linalg::matrix_view&lt; const float &gt;</td>          <td class="paramname"><span class="paramname"><em>b</em></span>, </td>
+        </tr>
+        <tr>
+          <td class="paramkey"></td>
+          <td></td>
+          <td class="paramtype">float</td>          <td class="paramname"><span class="paramname"><em>beta</em></span>, </td>
+        </tr>
+        <tr>
+          <td class="paramkey"></td>
+          <td></td>
+          <td class="paramtype">linalg::matrix_view&lt; float &gt;</td>          <td class="paramname"><span class="paramname"><em>c</em></span>&#160;) const</td>
+        </tr>
+      </table>
+  </td>
+  <td class="mlabels-right">
+<span class="mlabels"><span class="mlabel inline">inline</span></span>  </td>
+  </tr>
+</table>
+</div><div class="memdoc">
+
+<p><span class="tt">C = alpha A B + beta C</span> in float: under <span class="tt"><a class="el" href="group__gpu.html#gga22ea844faef25bad361c431e1315d253afe2904d9fb3b0f4a81c92b03dec11424">cuda_math::bf16</a></span>, with every operand device memory in a BLAS layout whose leading dimensions are multiples of 8, <span class="tt">A</span> and <span class="tt">B</span> rounded to bfloat16 by a kernel and multiplied on the tensor cores with float sums (other products under bf16 run as TF32); otherwise <span class="tt"><a class="el" href="structsnicholls_1_1gpu_1_1cuda__backend.html#ab55938333927c6d15d9654b996123e8b" title="C = alpha A B + beta C, on the device.">cuda_backend::gemm</a></span>. </p>
+<dl class="params"><dt>Parameters</dt><dd>
+  <table class="params">
+    <tr><td class="paramname">alpha</td><td>The scale.</td></tr>
+    <tr><td class="paramname">a</td><td><span class="tt">m x k</span>.</td></tr>
+    <tr><td class="paramname">b</td><td><span class="tt">k x n</span>. </td></tr>
+    <tr><td class="paramname">beta</td><td>The scale of <span class="tt">C</span>.</td></tr>
+    <tr><td class="paramname">c</td><td><span class="tt">m x n</span>. </td></tr>
+  </table>
+  </dd>
+</dl>
+<dl class="exception"><dt>Exceptions</dt><dd>
+  <table class="exception">
+    <tr><td class="paramname"><a class="el" href="classsnicholls_1_1gpu_1_1cuda__exception.html" title="A call that failed on the device: an unexpected failure (out of device memory, a lost device).">cuda_exception</a></td><td>if a call fails. </td></tr>
+  </table>
+  </dd>
+</dl>
+
+<p class="definition">Definition at line <a class="el" href="cuda__ops_8hpp_source.html#l01148">1148</a> of file <a class="el" href="cuda__ops_8hpp_source.html">cuda_ops.hpp</a>.</p>
+
+</div>
+</div>
+<a id="a80697788520deaa80be0f714efdd6f28" name="a80697788520deaa80be0f714efdd6f28"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#a80697788520deaa80be0f714efdd6f28">&#9670;&#160;</a></span>gemm() <span class="overload">[2/2]</span></h2>
+
+<div class="memitem">
+<div class="memproto">
+<div class="memtemplate">
+template&lt;linalg::scalar T&gt; </div>
+<table class="mlabels">
+  <tr>
+  <td class="mlabels-left">
+      <table class="memname">
+        <tr>
+          <td class="memname">void snicholls::gpu::cuda_training_backend::gemm </td>
+          <td>(</td>
+          <td class="paramtype">T</td>          <td class="paramname"><span class="paramname"><em>alpha</em></span>, </td>
+        </tr>
+        <tr>
+          <td class="paramkey"></td>
+          <td></td>
+          <td class="paramtype">linalg::matrix_view&lt; const T &gt;</td>          <td class="paramname"><span class="paramname"><em>a</em></span>, </td>
+        </tr>
+        <tr>
+          <td class="paramkey"></td>
+          <td></td>
+          <td class="paramtype">linalg::matrix_view&lt; const T &gt;</td>          <td class="paramname"><span class="paramname"><em>b</em></span>, </td>
+        </tr>
+        <tr>
+          <td class="paramkey"></td>
+          <td></td>
+          <td class="paramtype">T</td>          <td class="paramname"><span class="paramname"><em>beta</em></span>, </td>
+        </tr>
+        <tr>
+          <td class="paramkey"></td>
+          <td></td>
+          <td class="paramtype">linalg::matrix_view&lt; T &gt;</td>          <td class="paramname"><span class="paramname"><em>c</em></span>&#160;) const</td>
+        </tr>
+      </table>
+  </td>
+  <td class="mlabels-right">
+<span class="mlabels"><span class="mlabel inline">inline</span></span>  </td>
+  </tr>
+</table>
+</div><div class="memdoc">
+
+<p>Any other product: <span class="tt"><a class="el" href="structsnicholls_1_1gpu_1_1cuda__backend.html" title="The linalg::blas_backend on a cuda_context: gemm and gemv on the device, the rest on the host.">cuda_backend</a></span>'s. </p>
+<dl class="params"><dt>Parameters</dt><dd>
+  <table class="params">
+    <tr><td class="paramname">alpha</td><td>The scale.</td></tr>
+    <tr><td class="paramname">a</td><td><span class="tt">m x k</span>.</td></tr>
+    <tr><td class="paramname">b</td><td><span class="tt">k x n</span>. </td></tr>
+    <tr><td class="paramname">beta</td><td>The scale of <span class="tt">C</span>.</td></tr>
+    <tr><td class="paramname">c</td><td><span class="tt">m x n</span>. </td></tr>
+  </table>
+  </dd>
+</dl>
+
+<p class="definition">Definition at line <a class="el" href="cuda__ops_8hpp_source.html#l01124">1124</a> of file <a class="el" href="cuda__ops_8hpp_source.html">cuda_ops.hpp</a>.</p>
+
+</div>
+</div>
+<a name="doc-variable-members" id="doc-variable-members"></a><h2 id="header-doc-variable-members" class="groupheader">Member Data Documentation</h2>
 <a id="a7bf1de59a07eba4ba13f72ee2f24b7b8" name="a7bf1de59a07eba4ba13f72ee2f24b7b8"></a>
 <h2 class="memtitle"><span class="permalink"><a href="#a7bf1de59a07eba4ba13f72ee2f24b7b8">&#9670;&#160;</a></span>flash_attention</h2>
 
@@ -170,7 +300,7 @@ requires (std::is_same_v&lt;T, float&gt; || std::is_same_v&lt;T, double&gt;)</td
 
 <p>Under <span class="tt"><a class="el" href="group__gpu.html#gga22ea844faef25bad361c431e1315d253ae00ad49f2e4f0fda1539ae29b2aaef57">cuda_math::tf32</a></span>, heads of 32 or 64 channels: flash attention on the tensor cores; false for the matrix-product path. </p>
 
-<p class="definition">Definition at line <a class="el" href="cuda__ops_8hpp_source.html#l01090">1090</a> of file <a class="el" href="cuda__ops_8hpp_source.html">cuda_ops.hpp</a>.</p>
+<p class="definition">Definition at line <a class="el" href="cuda__ops_8hpp_source.html#l01109">1109</a> of file <a class="el" href="cuda__ops_8hpp_source.html">cuda_ops.hpp</a>.</p>
 
 </div>
 </div>
@@ -188,7 +318,7 @@ requires (std::is_same_v&lt;T, float&gt; || std::is_same_v&lt;T, double&gt;)</td
 
 <p>The longest sequence whose attention runs as matrix products (cuBLAS, so on the tensor cores under <span class="tt"><a class="el" href="group__gpu.html#gga22ea844faef25bad361c431e1315d253ae00ad49f2e4f0fda1539ae29b2aaef57">cuda_math::tf32</a></span>), its <span class="tt">n x n</span> scores three times in the kernels' scratch; longer ones take the tiled kernels. </p>
 
-<p class="definition">Definition at line <a class="el" href="cuda__ops_8hpp_source.html#l01092">1092</a> of file <a class="el" href="cuda__ops_8hpp_source.html">cuda_ops.hpp</a>.</p>
+<p class="definition">Definition at line <a class="el" href="cuda__ops_8hpp_source.html#l01111">1111</a> of file <a class="el" href="cuda__ops_8hpp_source.html">cuda_ops.hpp</a>.</p>
 
 </div>
 </div>
@@ -206,7 +336,7 @@ requires (std::is_same_v&lt;T, float&gt; || std::is_same_v&lt;T, double&gt;)</td
 
 <p>The compiled kernels; must outlive the backend. </p>
 
-<p class="definition">Definition at line <a class="el" href="cuda__ops_8hpp_source.html#l01089">1089</a> of file <a class="el" href="cuda__ops_8hpp_source.html">cuda_ops.hpp</a>.</p>
+<p class="definition">Definition at line <a class="el" href="cuda__ops_8hpp_source.html#l01108">1108</a> of file <a class="el" href="cuda__ops_8hpp_source.html">cuda_ops.hpp</a>.</p>
 
 </div>
 </div>

@@ -26,7 +26,7 @@
  <tbody>
  <tr id="projectrow">
   <td id="projectalign">
-   <div id="projectname">snicholls-gpu<span id="projectnumber">&#160;0.4.0</span>
+   <div id="projectname">snicholls-gpu<span id="projectnumber">&#160;0.5.0</span>
    </div>
    <div id="projectbrief">GPU backends of snicholls-core&#39;s interfaces: linalg on OpenCL</div>
   </td>
@@ -111,6 +111,7 @@ Files</h2></td></tr>
 Enumerations</h2></td></tr>
 <tr class="memitem:ga22ea844faef25bad361c431e1315d253" id="r_ga22ea844faef25bad361c431e1315d253"><td class="memItemLeft" align="right" valign="top">enum class &#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="#ga22ea844faef25bad361c431e1315d253">snicholls::gpu::cuda_math</a> { <a class="el" href="#gga22ea844faef25bad361c431e1315d253ad33ec2b0bbea6d471a4706cea030e1e3">cuda_math::float32</a>
 , <a class="el" href="#gga22ea844faef25bad361c431e1315d253ae00ad49f2e4f0fda1539ae29b2aaef57">cuda_math::tf32</a>
+, <a class="el" href="#gga22ea844faef25bad361c431e1315d253afe2904d9fb3b0f4a81c92b03dec11424">cuda_math::bf16</a>
  }</td></tr>
 <tr class="memdesc:ga22ea844faef25bad361c431e1315d253"><td class="mdescLeft">&#160;</td><td class="mdescRight">How the products of <span class="tt">float</span> are computed.  <a href="#ga22ea844faef25bad361c431e1315d253">More...</a><br /></td></tr>
 </table>
@@ -143,9 +144,11 @@ Enumerations</h2></td></tr>
 </td></tr>
 <tr><td class="fieldname"><a id="gga22ea844faef25bad361c431e1315d253ae00ad49f2e4f0fda1539ae29b2aaef57" name="gga22ea844faef25bad361c431e1315d253ae00ad49f2e4f0fda1539ae29b2aaef57"></a>tf32&#160;</td><td class="fielddoc"><p>Tensor cores, the inputs rounded to TF32 (10 bits of mantissa), the sums in float: several times faster, each product within about 1e-3 of the float result, relative to its scale. </p>
 </td></tr>
+<tr><td class="fieldname"><a id="gga22ea844faef25bad361c431e1315d253afe2904d9fb3b0f4a81c92b03dec11424" name="gga22ea844faef25bad361c431e1315d253afe2904d9fb3b0f4a81c92b03dec11424"></a>bf16&#160;</td><td class="fielddoc"><p>Tensor cores in bfloat16 (7 bits of mantissa), the sums in float: about twice TF32's rate. Through <span class="tt"><a class="el" href="structsnicholls_1_1gpu_1_1cuda__training__backend.html" title="The CUDA backend with the training steps&#39; kernels: core&#39;s batched passes run entirely on the device o...">cuda_training_backend</a></span> the operands are rounded to bfloat16 by a kernel and multiplied as such (<span class="tt"><a class="el" href="classsnicholls_1_1gpu_1_1cuda__context.html#a06becae80266ae35cd47600ff4d67b2f" title="C = alpha A B + beta C with A and B in bfloat16 (their bits as std::uint16_t) and C in float,...">cuda_context::gemm_bf16</a></span>); through <span class="tt"><a class="el" href="structsnicholls_1_1gpu_1_1cuda__backend.html" title="The linalg::blas_backend on a cuda_context: gemm and gemv on the device, the rest on the host.">cuda_backend</a></span> alone (no kernels) cuBLAS is only allowed bfloat16 (<span class="tt">CUBLAS_COMPUTE_32F_FAST_16BF</span>) and may use TF32. </p>
+</td></tr>
 </table>
 
-<p class="definition">Definition at line <a class="el" href="cuda_8hpp_source.html#l00242">242</a> of file <a class="el" href="cuda_8hpp_source.html">cuda.hpp</a>.</p>
+<p class="definition">Definition at line <a class="el" href="cuda_8hpp_source.html#l00245">245</a> of file <a class="el" href="cuda_8hpp_source.html">cuda.hpp</a>.</p>
 
 </div>
 </div>

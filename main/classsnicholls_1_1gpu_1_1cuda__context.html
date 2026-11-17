@@ -26,7 +26,7 @@
  <tbody>
  <tr id="projectrow">
   <td id="projectalign">
-   <div id="projectname">snicholls-gpu<span id="projectnumber">&#160;0.4.0</span>
+   <div id="projectname">snicholls-gpu<span id="projectnumber">&#160;0.5.0</span>
    </div>
    <div id="projectbrief">GPU backends of snicholls-core&#39;s interfaces: linalg on OpenCL</div>
   </td>
@@ -119,6 +119,8 @@ Public Member Functions</h2></td></tr>
 requires (std::is_same_v&lt;T, float&gt; || std::is_same_v&lt;T, double&gt;)</td></tr>
 <tr class="memitem:ac9a8c89ca05c15a174144db3ebe8425a template"><td class="memItemLeft" align="right" valign="top">void&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="#ac9a8c89ca05c15a174144db3ebe8425a">gemm</a> (T alpha, linalg::matrix_view&lt; const T &gt; a, linalg::matrix_view&lt; const T &gt; b, T beta, linalg::matrix_view&lt; T &gt; c, <a class="el" href="group__gpu.html#ga22ea844faef25bad361c431e1315d253">cuda_math</a> math=<a class="el" href="group__gpu.html#gga22ea844faef25bad361c431e1315d253ad33ec2b0bbea6d471a4706cea030e1e3">cuda_math::float32</a>) const</td></tr>
 <tr class="memdesc:ac9a8c89ca05c15a174144db3ebe8425a"><td class="mdescLeft">&#160;</td><td class="mdescRight"><span class="tt">C = alpha A B + beta C</span> on the device, any layout, host or device memory. Called by <span class="tt"><a class="el" href="structsnicholls_1_1gpu_1_1cuda__backend.html#ab55938333927c6d15d9654b996123e8b" title="C = alpha A B + beta C, on the device.">cuda_backend::gemm</a></span>.  <br /></td></tr>
+<tr class="memitem:a06becae80266ae35cd47600ff4d67b2f" id="r_a06becae80266ae35cd47600ff4d67b2f"><td class="memItemLeft" align="right" valign="top">void&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="#a06becae80266ae35cd47600ff4d67b2f">gemm_bf16</a> (float alpha, linalg::matrix_view&lt; const std::uint16_t &gt; a, linalg::matrix_view&lt; const std::uint16_t &gt; b, float beta, linalg::matrix_view&lt; float &gt; c) const</td></tr>
+<tr class="memdesc:a06becae80266ae35cd47600ff4d67b2f"><td class="mdescLeft">&#160;</td><td class="mdescRight"><span class="tt">C = alpha A B + beta C</span> with <span class="tt">A</span> and <span class="tt">B</span> in bfloat16 (their bits as <span class="tt">std::uint16_t</span>) and <span class="tt">C</span> in float, on the tensor cores with float sums; queued on the stream. <span class="tt"><a class="el" href="structsnicholls_1_1gpu_1_1cuda__training__backend.html" title="The CUDA backend with the training steps&#39; kernels: core&#39;s batched passes run entirely on the device o...">cuda_training_backend</a></span> converts float operands into these under <span class="tt"><a class="el" href="group__gpu.html#gga22ea844faef25bad361c431e1315d253afe2904d9fb3b0f4a81c92b03dec11424">cuda_math::bf16</a></span>.  <br /></td></tr>
 </table><table class="memberdecls">
 <tr class="heading"><td colspan="2"><h2 id="header-pub-static-methods" class="groupheader"><a id="pub-static-methods" name="pub-static-methods"></a>
 Static Public Member Functions</h2></td></tr>
@@ -129,7 +131,7 @@ Static Public Member Functions</h2></td></tr>
 <div class="textblock"><p>One CUDA device with its cuBLAS handle and stream. </p>
 <p>Create it once and hand <span class="tt"><a class="el" href="structsnicholls_1_1gpu_1_1cuda__backend.html" title="The linalg::blas_backend on a cuda_context: gemm and gemv on the device, the rest on the host.">cuda_backend</a>{&amp;context}</span> to core's free functions. Neither copyable nor movable: backends and buffers point at it. </p>
 
-<p class="definition">Definition at line <a class="el" href="cuda_8hpp_source.html#l00252">252</a> of file <a class="el" href="cuda_8hpp_source.html">cuda.hpp</a>.</p>
+<p class="definition">Definition at line <a class="el" href="cuda_8hpp_source.html#l00259">259</a> of file <a class="el" href="cuda_8hpp_source.html">cuda.hpp</a>.</p>
 </div><a name="doc-constructors" id="doc-constructors"></a><h2 id="header-doc-constructors" class="groupheader">Constructor &amp; Destructor Documentation</h2>
 <a id="ac419d958cb39b828031a58841a257459" name="ac419d958cb39b828031a58841a257459"></a>
 <h2 class="memtitle"><span class="permalink"><a href="#ac419d958cb39b828031a58841a257459">&#9670;&#160;</a></span>~cuda_context()</h2>
@@ -156,7 +158,7 @@ Static Public Member Functions</h2></td></tr>
 
 <p>Releases the handle and the stream. </p>
 
-<p class="definition">Definition at line <a class="el" href="cuda_8hpp_source.html#l00281">281</a> of file <a class="el" href="cuda_8hpp_source.html">cuda.hpp</a>.</p>
+<p class="definition">Definition at line <a class="el" href="cuda_8hpp_source.html#l00288">288</a> of file <a class="el" href="cuda_8hpp_source.html">cuda.hpp</a>.</p>
 
 </div>
 </div>
@@ -193,7 +195,7 @@ Static Public Member Functions</h2></td></tr>
 </dl>
 <dl class="section return"><dt>Returns</dt><dd>The context, or why there is none. </dd></dl>
 
-<p class="definition">Definition at line <a class="el" href="cuda_8hpp_source.html#l00257">257</a> of file <a class="el" href="cuda_8hpp_source.html">cuda.hpp</a>.</p>
+<p class="definition">Definition at line <a class="el" href="cuda_8hpp_source.html#l00264">264</a> of file <a class="el" href="cuda_8hpp_source.html">cuda.hpp</a>.</p>
 
 </div>
 </div>
@@ -223,7 +225,7 @@ Static Public Member Functions</h2></td></tr>
 <p>The device's index. </p>
 <dl class="section return"><dt>Returns</dt><dd>The index. </dd></dl>
 
-<p class="definition">Definition at line <a class="el" href="cuda_8hpp_source.html#l00290">290</a> of file <a class="el" href="cuda_8hpp_source.html">cuda.hpp</a>.</p>
+<p class="definition">Definition at line <a class="el" href="cuda_8hpp_source.html#l00297">297</a> of file <a class="el" href="cuda_8hpp_source.html">cuda.hpp</a>.</p>
 
 </div>
 </div>
@@ -253,7 +255,7 @@ Static Public Member Functions</h2></td></tr>
 <p>The device's name. </p>
 <dl class="section return"><dt>Returns</dt><dd>The name. </dd></dl>
 
-<p class="definition">Definition at line <a class="el" href="cuda_8hpp_source.html#l00284">284</a> of file <a class="el" href="cuda_8hpp_source.html">cuda.hpp</a>.</p>
+<p class="definition">Definition at line <a class="el" href="cuda_8hpp_source.html#l00291">291</a> of file <a class="el" href="cuda_8hpp_source.html">cuda.hpp</a>.</p>
 
 </div>
 </div>
@@ -326,7 +328,71 @@ requires (std::is_same_v&lt;T, float&gt; || std::is_same_v&lt;T, double&gt;)</di
   </dd>
 </dl>
 
-<p class="definition">Definition at line <a class="el" href="cuda_8hpp_source.html#l00302">302</a> of file <a class="el" href="cuda_8hpp_source.html">cuda.hpp</a>.</p>
+<p class="definition">Definition at line <a class="el" href="cuda_8hpp_source.html#l00309">309</a> of file <a class="el" href="cuda_8hpp_source.html">cuda.hpp</a>.</p>
+
+</div>
+</div>
+<a id="a06becae80266ae35cd47600ff4d67b2f" name="a06becae80266ae35cd47600ff4d67b2f"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#a06becae80266ae35cd47600ff4d67b2f">&#9670;&#160;</a></span>gemm_bf16()</h2>
+
+<div class="memitem">
+<div class="memproto">
+<table class="mlabels">
+  <tr>
+  <td class="mlabels-left">
+      <table class="memname">
+        <tr>
+          <td class="memname">void snicholls::gpu::cuda_context::gemm_bf16 </td>
+          <td>(</td>
+          <td class="paramtype">float</td>          <td class="paramname"><span class="paramname"><em>alpha</em></span>, </td>
+        </tr>
+        <tr>
+          <td class="paramkey"></td>
+          <td></td>
+          <td class="paramtype">linalg::matrix_view&lt; const std::uint16_t &gt;</td>          <td class="paramname"><span class="paramname"><em>a</em></span>, </td>
+        </tr>
+        <tr>
+          <td class="paramkey"></td>
+          <td></td>
+          <td class="paramtype">linalg::matrix_view&lt; const std::uint16_t &gt;</td>          <td class="paramname"><span class="paramname"><em>b</em></span>, </td>
+        </tr>
+        <tr>
+          <td class="paramkey"></td>
+          <td></td>
+          <td class="paramtype">float</td>          <td class="paramname"><span class="paramname"><em>beta</em></span>, </td>
+        </tr>
+        <tr>
+          <td class="paramkey"></td>
+          <td></td>
+          <td class="paramtype">linalg::matrix_view&lt; float &gt;</td>          <td class="paramname"><span class="paramname"><em>c</em></span>&#160;) const</td>
+        </tr>
+      </table>
+  </td>
+  <td class="mlabels-right">
+<span class="mlabels"><span class="mlabel inline">inline</span></span>  </td>
+  </tr>
+</table>
+</div><div class="memdoc">
+
+<p><span class="tt">C = alpha A B + beta C</span> with <span class="tt">A</span> and <span class="tt">B</span> in bfloat16 (their bits as <span class="tt">std::uint16_t</span>) and <span class="tt">C</span> in float, on the tensor cores with float sums; queued on the stream. <span class="tt"><a class="el" href="structsnicholls_1_1gpu_1_1cuda__training__backend.html" title="The CUDA backend with the training steps&#39; kernels: core&#39;s batched passes run entirely on the device o...">cuda_training_backend</a></span> converts float operands into these under <span class="tt"><a class="el" href="group__gpu.html#gga22ea844faef25bad361c431e1315d253afe2904d9fb3b0f4a81c92b03dec11424">cuda_math::bf16</a></span>. </p>
+<dl class="params"><dt>Parameters</dt><dd>
+  <table class="params">
+    <tr><td class="paramname">alpha</td><td>The scale.</td></tr>
+    <tr><td class="paramname">a</td><td><span class="tt">m x k</span>.</td></tr>
+    <tr><td class="paramname">b</td><td><span class="tt">k x n</span>.</td></tr>
+    <tr><td class="paramname">beta</td><td>The scale of <span class="tt">C</span>.</td></tr>
+    <tr><td class="paramname">c</td><td><span class="tt">m x n</span>. </td></tr>
+  </table>
+  </dd>
+</dl>
+<dl class="exception"><dt>Exceptions</dt><dd>
+  <table class="exception">
+    <tr><td class="paramname">std::invalid_argument</td><td>unless every operand is device memory in a BLAS layout; <a class="el" href="classsnicholls_1_1gpu_1_1cuda__exception.html" title="A call that failed on the device: an unexpected failure (out of device memory, a lost device).">cuda_exception</a> if a call fails. </td></tr>
+  </table>
+  </dd>
+</dl>
+
+<p class="definition">Definition at line <a class="el" href="cuda_8hpp_source.html#l00384">384</a> of file <a class="el" href="cuda_8hpp_source.html">cuda.hpp</a>.</p>
 
 </div>
 </div>
@@ -384,7 +450,7 @@ requires (std::is_same_v&lt;T, float&gt; || std::is_same_v&lt;T, double&gt;)</di
 <p>The context's stream, on which its products run (and <span class="tt"><a class="el" href="cuda__ops_8hpp.html" title="snicholls::gpu::cuda_training_backend: snicholls-core&#39;s batched training passes on an NVIDIA GPU with...">cuda_ops.hpp</a></span>'s kernels). </p>
 <dl class="section return"><dt>Returns</dt><dd>The stream. </dd></dl>
 
-<p class="definition">Definition at line <a class="el" href="cuda_8hpp_source.html#l00292">292</a> of file <a class="el" href="cuda_8hpp_source.html">cuda.hpp</a>.</p>
+<p class="definition">Definition at line <a class="el" href="cuda_8hpp_source.html#l00299">299</a> of file <a class="el" href="cuda_8hpp_source.html">cuda.hpp</a>.</p>
 
 </div>
 </div>
@@ -419,7 +485,7 @@ requires (std::is_same_v&lt;T, float&gt; || std::is_same_v&lt;T, double&gt;)</di
   </dd>
 </dl>
 
-<p class="definition">Definition at line <a class="el" href="cuda_8hpp_source.html#l00294">294</a> of file <a class="el" href="cuda_8hpp_source.html">cuda.hpp</a>.</p>
+<p class="definition">Definition at line <a class="el" href="cuda_8hpp_source.html#l00301">301</a> of file <a class="el" href="cuda_8hpp_source.html">cuda.hpp</a>.</p>
 
 </div>
 </div>
