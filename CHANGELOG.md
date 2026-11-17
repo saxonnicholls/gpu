@@ -3,7 +3,7 @@
 All notable changes to snicholls-gpu. The format follows Keep a Changelog; versions follow Semantic Versioning.
 A version is released when its tag is on a commit where every blocking CI leg is green.
 
-## Unreleased (0.5.0)
+## 0.5.0 - 2026-11-17
 
 ### Added
 
@@ -14,6 +14,10 @@ A version is released when its tag is on a commit where every blocking CI leg is
   a whole training step within about 1e-2. Products whose leading dimensions are not multiples of 8 (GPT-2's 50,257-row
   head) run as TF32, since cuBLAS's bfloat16 falls back to a slow kernel there. cuBLAS's own
   `CUBLAS_COMPUTE_32F_FAST_16BF` was tried first: on the Blackwell it chose TF32 kernels, giving TF32's bits.
+- **The fused classifier over padded rows** (core 0.12.0): `cross_entropy_rows` with the classes the first of each row,
+  the padding's gradient 0, so GPT-2's head runs as 50,304 rows and all three of its products in bfloat16. Against
+  PyTorch on llm.c's reference batch, GPT-2 small in bfloat16 is as close as llm.c's own bfloat16 in every gradient
+  tensor (within 1.5 times its error in each; lower in fifteen of sixteen), the loss 0.034 off against llm.c's 0.012.
 
 ## 0.4.0 - 2026-11-17
 
