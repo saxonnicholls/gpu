@@ -139,49 +139,50 @@ TEST(GpuCudaOps, TheNormsAndTheirBackwardAreCoresToRounding)
     near(db.back(), hdb, 1e-6f, "dbias");
 }
 
-template <ml::transformer_config C, std::size_t N = 24>
+// S sequences of N tokens in one call each way (core 0.13's batched passes): the device's against the reference's
+template <ml::transformer_config C, std::size_t N = 24, std::size_t S = 1>
 void whole_step_agrees(std::size_t gemm_attention_max = 4096, gpu::cuda_math math = gpu::cuda_math::float32)
 {
     static const ml::rope_table<float, (N > 32 ? N : 32), C.head_dim> table(ml::rope_base_v<C, float>);
     auto run = [&](auto& st, const auto& backend, bool dev) {
         const auto w = st.weights(dev);
         if constexpr (C.rope == ml::rope_kind::none) {
-            ml::block_forward_sequence<C>(backend, w, st.s(st.xs, dev), ml::no_rope, st.act(dev));
-            ml::block_backward<C>(backend, w, ml::no_rope, st.act(dev), st.s(st.dxs, dev), st.grads(dev));
+            ml::block_forward_sequence<C>(backend, w, st.s(st.xs, dev), ml::no_rope, st.act(dev), S);
+            ml::block_backward<C>(backend, w, ml::no_rope, st.act(dev), st.s(st.dxs, dev), st.grads(dev), S);
         } else {
-            ml::block_forward_sequence<C>(backend, w, st.s(st.xs, dev), table, st.act(dev));
-            ml::block_backward<C>(backend, w, table, st.act(dev), st.s(st.dxs, dev), st.grads(dev));
+            ml::block_forward_sequence<C>(backend, w, st.s(st.xs, dev), table, st.act(dev), S);
+            ml::block_backward<C>(backend, w, table, st.act(dev), st.s(st.dxs, dev), st.grads(dev), S);
         }
     };
-    step<C, N> st(*device().context);
+    step<C, N, S> st(*device().context);
     auto b = backend();
     b.gemm_attention_max = gemm_attention_max;   // 0: the tiled kernels
     b.math = math;                               // TF32: the products and flash attention on the tensor cores
     run(st, b, true);    // on the device, every buffer in device memory
     run(st, la::reference, false);   // the reference, on the host copies
     cudaDeviceSynchronize();
-    using S = step<C, N>;
+    using T = step<C, N, S>;
     if (math != gpu::cuda_math::float32) {   // TF32 rounds the products' inputs to 10 bits, bfloat16 to 7: normwise
         const double f = math == gpu::cuda_math::bf16 ? 8.0 : 1.0;
-        near_normwise(st.m[S::xs].back(), st.m[S::xs].host, 2e-3 * f, "output (reduced precision)");
-        near_normwise(st.m[S::dxs].back(), st.m[S::dxs].host, 3e-3 * f, "input gradient (reduced precision)");
-        for (int i = S::gn1w; i <= S::gbdown; ++i)
-            if (i != S::gbk || C.attention_softcap > 0)
+        near_normwise(st.m[T::xs].back(), st.m[T::xs].host, 2e-3 * f, "output (reduced precision)");
+        near_normwise(st.m[T::dxs].back(), st.m[T::dxs].host, 3e-3 * f, "input gradient (reduced precision)");
+        for (int i = T::gn1w; i <= T::gbdown; ++i)
+            if (i != T::gbk || C.attention_softcap > 0)
                 near_normwise(st.m[std::size_t(i)].back(), st.m[std::size_t(i)].host, 5e-3 * f,
-                              "parameter gradient (reduced precision) " + std::to_string(i - S::gn1w));
+                              "parameter gradient (reduced precision) " + std::to_string(i - T::gn1w));
         return;
     }
     if constexpr (N <= 24) {
-        near(st.m[S::xs].back(), st.m[S::xs].host, 1e-4f, "output");
-        near(st.m[S::dxs].back(), st.m[S::dxs].host, 1e-4f, "input gradient");
-        for (int i = S::gn1w; i <= S::gbdown; ++i)
-            near(st.m[std::size_t(i)].back(), st.m[std::size_t(i)].host, 1e-3f, "parameter gradient " + std::to_string(i - S::gn1w));
+        near(st.m[T::xs].back(), st.m[T::xs].host, 1e-4f, "output");
+        near(st.m[T::dxs].back(), st.m[T::dxs].host, 1e-4f, "input gradient");
+        for (int i = T::gn1w; i <= T::gbdown; ++i)
+            near(st.m[std::size_t(i)].back(), st.m[std::size_t(i)].host, 1e-3f, "parameter gradient " + std::to_string(i - T::gn1w));
     } else {
-        near_normwise(st.m[S::xs].back(), st.m[S::xs].host, 1e-5, "output");
-        near_normwise(st.m[S::dxs].back(), st.m[S::dxs].host, 1e-5, "input gradient");
-        for (int i = S::gn1w; i <= S::gbdown; ++i)
-            if (i != S::gbk || C.attention_softcap > 0)
-                near_normwise(st.m[std::size_t(i)].back(), st.m[std::size_t(i)].host, 1e-4, "parameter gradient " + std::to_string(i - S::gn1w));
+        near_normwise(st.m[T::xs].back(), st.m[T::xs].host, 1e-5, "output");
+        near_normwise(st.m[T::dxs].back(), st.m[T::dxs].host, 1e-5, "input gradient");
+        for (int i = T::gn1w; i <= T::gbdown; ++i)
+            if (i != T::gbk || C.attention_softcap > 0)
+                near_normwise(st.m[std::size_t(i)].back(), st.m[std::size_t(i)].host, 1e-4, "parameter gradient " + std::to_string(i - T::gn1w));
         // Without a soft cap the key bias's gradient is zero in exact arithmetic (a softmax does not see a shift common to
         // every key), so both sides are rounding: each negligible beside the query bias's
         if constexpr (C.attention_softcap > 0)
@@ -192,9 +193,9 @@ void whole_step_agrees(std::size_t gemm_attention_max = 4096, gpu::cuda_math mat
                 m = std::max(m, std::fabs(e));
             return m;
         };
-        const float q_bias = largest(st.m[S::gbq].host);
-        EXPECT_LE(largest(st.m[S::gbk].back()), 1e-4f * q_bias);
-        EXPECT_LE(largest(st.m[S::gbk].host), 1e-4f * q_bias);
+        const float q_bias = largest(st.m[T::gbq].host);
+        EXPECT_LE(largest(st.m[T::gbk].back()), 1e-4f * q_bias);
+        EXPECT_LE(largest(st.m[T::gbk].host), 1e-4f * q_bias);
     }
 }
 
@@ -281,6 +282,26 @@ TEST(GpuCudaOps, LinearHeadsAreTheReferencesPerHeadProducts)
     ml::linear_heads(la::reference, host, std::span<const float>(xs.host), std::span<float>(hout), std::span<const float>(bias.host), heads);
     ml::linear_heads_backward(la::reference, host, std::span<const float>(xs.host), std::span<const float>(douts.host), std::span<float>(hdxs),
                               std::span<float>(hdw), std::span<float>(hdb), heads);
+    near(out.back(), hout, 1e-5f, "outputs");
+    near(dxs.back(), hdxs, 1e-5f, "input gradient");
+    near(dw.back(), hdw, 1e-5f, "weight gradient");
+    near(db.back(), hdb, 1e-5f, "bias gradient");
+}
+
+// The same over a batch of sequences: one product and one permutation into each sequence's heads
+TEST(GpuCudaOps, LinearHeadsOverSequencesAreTheReferences)
+{
+    const auto b = backend();
+    constexpr std::size_t heads = 4, d = 16, rows = heads * d, cols = 48, n = 21, seqs = 3;
+    mirror w(stream(rows * cols, 51, 0.3f)), xs(stream(seqs * n * cols, 52)), bias(stream(rows, 53, 0.1f)), out{std::vector<float>(seqs * n * rows)},
+        douts(stream(seqs * n * rows, 54)), dxs(stream(seqs * n * cols, 55)), dw(stream(rows * cols, 56)), db(stream(rows, 57));
+    const ml::dense_weights<float> dev{w.d(), rows, cols}, host{w.host, rows, cols};
+    gpu::linear_heads(b, dev, std::span<const float>(xs.d()), out.d(), std::span<const float>(bias.d()), heads, seqs);
+    gpu::linear_heads_backward(b, dev, std::span<const float>(xs.d()), std::span<const float>(douts.d()), dxs.d(), dw.d(), db.d(), heads, seqs);
+    auto hout = out.host, hdxs = dxs.host, hdw = dw.host, hdb = db.host;
+    ml::linear_heads(la::reference, host, std::span<const float>(xs.host), std::span<float>(hout), std::span<const float>(bias.host), heads, seqs);
+    ml::linear_heads_backward(la::reference, host, std::span<const float>(xs.host), std::span<const float>(douts.host), std::span<float>(hdxs),
+                              std::span<float>(hdw), std::span<float>(hdb), heads, seqs);
     near(out.back(), hout, 1e-5f, "outputs");
     near(dxs.back(), hdxs, 1e-5f, "input gradient");
     near(dw.back(), hdw, 1e-5f, "weight gradient");
@@ -419,6 +440,18 @@ TEST(GpuCudaOps, Bf16ProductsAreBfloat16AndWholeStepsWithinItsRounding)
     EXPECT_NE(g, tf.back());
     whole_step_agrees<gpt2_heads, 150>(4096, gpu::cuda_math::bf16);
     whole_step_agrees<flash_mix, 130>(4096, gpu::cuda_math::bf16);
+}
+
+// A batch of sequences in one call (core's `sequences`): every attention path, QK norm, RoPE and a window restarting in
+// each sequence, against the reference's batch (itself each sequence's own call)
+TEST(GpuCudaOps, ABatchOfSequencesInOneCallIsTheReferences)
+{
+    whole_step_agrees<small, 24, 3>();          // matrix-product attention, sequence by sequence
+    whole_step_agrees<nanochat_like, 24, 3>();  // QK norm after RoPE, a window
+    whole_step_agrees<mqa_capped, 24, 2>(0);    // the tiled kernels, QK norm before RoPE, a soft cap
+    whole_step_agrees<llama_like, 20, 4>(0);    // grouped heads
+    whole_step_agrees<gpt2_heads, 150, 3>(4096, gpu::cuda_math::tf32);   // flash attention, the sequence the grid's z
+    whole_step_agrees<flash_mix, 130, 2>(4096, gpu::cuda_math::tf32);
 }
 
 TEST(GpuCudaOps, BothAttentionPathsGiveTheReferencesShortStep)

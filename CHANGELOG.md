@@ -3,6 +3,20 @@
 All notable changes to snicholls-gpu. The format follows Keep a Changelog; versions follow Semantic Versioning.
 A version is released when its tag is on a commit where every blocking CI leg is green.
 
+## Unreleased
+
+### Added
+
+- **A batch of sequences in one call** (core's batched passes with `sequences`, on core's feature branch until its
+  release): every overload of `cuda_training_backend` takes the sequence count. `linear_heads` and its backward are one
+  product over every row and one permutation into each sequence's block of keys and values; QK norm and RoPE one launch
+  over every (row, head), positions restarting in each sequence; flash attention's three kernels one launch each with the
+  sequence as the grid's z; the matrix-product and tiled attention paths run sequence by sequence. Tested against core's
+  reference over batches of two to four sequences on every attention path. A GPT-2-small layer's training step over 4 x
+  1024 tokens (`BM_TrainGpt2SmallLayer_4x1024`) as one call against one call per sequence: level within the noise of a
+  shared GPU (RTX PRO 4000 Blackwell with a training run on it, 2026-11-17, medians of 15 interleaved, cv about 20%),
+  under TF32 and bfloat16 alike; at 1024 tokens a sequence's products already fill the device.
+
 ## 0.5.0 - 2026-11-17
 
 ### Added

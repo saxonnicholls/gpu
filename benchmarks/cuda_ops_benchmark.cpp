@@ -17,6 +17,13 @@
 //  main() first checks, at 1024 tokens, that the float path agrees with core's reference on the host (normwise 1e-4)
 //  and the TF32 paths with the float path (5e-3).
 //
+//  Then a batch: a GPT-2-small layer's training step over 4 sequences of 1024 tokens under TF32 or bfloat16 products
+//  (flash attention), as
+//  one call per sequence (four calls of 1024 rows) against one call for the batch (core's `sequences`, 4096 rows per
+//  product). main() checks first that the two agree normwise to TF32's rounding (5e-3, as the TF32 attention paths
+//  above): the forward is the same to the bit, the backward's products differ in shape, so cuBLAS picks other TF32
+//  kernels and sums in other orders (measured up to 8e-4, the weights' gradients summed in one product instead of four).
+//
 
 #include <snicholls/gpu/cuda_ops.hpp>
 
@@ -146,6 +153,47 @@ BENCHMARK(BM_Attention)
     ->ArgsProduct({{256, 1024, 4096}, {0, 1, 2}})
     ->Unit(benchmark::kMillisecond);
 
+// A GPT-2-small layer over a batch of 4 x 1024 tokens, per sequence or in one call
+using batch_step = gpu::testing::step<ml::gpt2_small, 1024, 4>;
+
+void train_batch(batch_step& st, const gpu::cuda_training_backend& b, bool one_call)
+{
+    constexpr std::size_t S = batch_step::sequences, rows = batch_step::tokens * ml::gpt2_small.d_model;
+    const auto w = st.weights(true);
+    const auto xs = st.s(batch_step::xs, true), dxs = st.s(batch_step::dxs, true);
+    if (one_call) {
+        ml::block_forward_sequence<ml::gpt2_small>(b, w, xs, ml::no_rope, st.act(true), S);
+        ml::block_backward<ml::gpt2_small>(b, w, ml::no_rope, st.act(true), dxs, st.grads(true), S);
+    } else {
+        for (std::size_t i = 0; i < S; ++i)
+            ml::block_forward_sequence<ml::gpt2_small>(b, w, xs.subspan(i * rows, rows), ml::no_rope, st.act(true, i));
+        for (std::size_t i = 0; i < S; ++i)
+            ml::block_backward<ml::gpt2_small>(b, w, ml::no_rope, st.act(true, i), dxs.subspan(i * rows, rows), st.grads(true, i));
+    }
+    cudaDeviceSynchronize();
+}
+
+gpu::cuda_training_backend tf32_backend(gpu::cuda_math math = gpu::cuda_math::tf32)
+{
+    gpu::cuda_training_backend b{{device().context.get()}, device().kernels.get()};
+    b.math = math;
+    return b;
+}
+
+void BM_Batch(benchmark::State& state)
+{
+    batch_step st(*device().context);
+    const auto b = tf32_backend(state.range(1) != 0 ? gpu::cuda_math::bf16 : gpu::cuda_math::tf32);
+    for (auto _ : state)
+        train_batch(st, b, state.range(0) != 0);
+    state.SetItemsProcessed(state.iterations() * std::int64_t(batch_step::n));
+}
+BENCHMARK(BM_Batch)
+    ->Name("BM_TrainGpt2SmallLayer_4x1024")
+    ->ArgNames({"one_call", "bf16"})   // one_call 0: one call per sequence, 1: one call for the batch; bf16 0: TF32 products
+    ->ArgsProduct({{0, 1}, {0, 1}})
+    ->Unit(benchmark::kMillisecond);
+
 double normwise(const std::vector<float>& got, const std::vector<float>& want)
 {
     double diff = 0, scale = 0;
@@ -178,6 +226,21 @@ bool attention_fair()
     return ok;
 }
 
+bool batch_fair()
+{
+    batch_step a(*device().context), b(*device().context);
+    train_batch(a, tf32_backend(), false);
+    train_batch(b, tf32_backend(), true);
+    bool ok = true;
+    for (const int i : {int(batch_step::xs), int(batch_step::dxs), int(batch_step::gwq), int(batch_step::gwk), int(batch_step::gwo),
+                        int(batch_step::gup), int(batch_step::gdown), int(batch_step::gn1w)}) {
+        const double e = normwise(b.m[std::size_t(i)].back(), a.m[std::size_t(i)].back());
+        std::printf("  batch, one call against one per sequence: tensor %2d normwise %.2g\n", i, e);
+        ok &= e <= 5e-3;
+    }
+    return ok;
+}
+
 bool fair()
 {
     step a(*device().context), b(*device().context);
@@ -205,7 +268,7 @@ bool fair()
 
 int main(int argc, char** argv)
 {
-    if (!fair() || !attention_fair()) {
+    if (!fair() || !attention_fair() || !batch_fair()) {
         std::fprintf(stderr, "cuda_ops benchmark: fairness check FAILED; not benchmarking\n");
         return 1;
     }
