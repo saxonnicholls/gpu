@@ -15,11 +15,14 @@
 #include "support/block_step.hpp"
 
 #include <snicholls/core/linalg/reference.hpp>
+#include <snicholls/core/ml/activations.hpp>
 #include <snicholls/core/ml/embedding.hpp>
 #include <snicholls/core/ml/lm_head.hpp>
+#include <snicholls/core/ml/mlp.hpp>
 #include <snicholls/core/ml/muon.hpp>
 #include <snicholls/core/ml/optim.hpp>
 #include <snicholls/core/ml/rope.hpp>
+#include <snicholls/core/ml/softmax.hpp>
 #include <snicholls/core/ml/transformer_block.hpp>
 #include <snicholls/core/stats/random.hpp>
 
@@ -348,6 +351,102 @@ TEST(GpuCudaOps, TheClassifierOverPaddedQuadRowsIsCores)
     for (std::size_t t = 0; t < n; ++t)
         for (std::size_t i = classes; i < V; ++i)
             ASSERT_EQ(logits.back()[t * V + i], 0.0f);   // the padding's gradient is 0
+}
+
+// Near the cancellations core 0.14.0 removed, against core in double (the truth) and in float: SiLU' for x in 8..17 and
+// GELU-tanh' where 1 - sigmoid(2u) cancelled (x in 0.5..8; above 8 it is 1 in float either way) take 1 - s as
+// sigmoid(-z) (8.2 and 16.5 ulps before, at most 2.4 on the host and 4 here with expf's own error)
+float ulps(float got, double truth) { return float(std::fabs(double(got) - truth) / double(std::nextafter(float(truth), INFINITY) - float(truth))); }
+
+template <ml::mlp_kind K>
+void activation_derivative_near_cancellation(float lo, float hi)
+{
+    const auto b = backend();
+    constexpr std::size_t m = 1001;
+    constexpr ml::transformer_config C{.d_model = 4, .n_heads = 1, .n_kv_heads = 1, .head_dim = 4, .d_ff = 4, .mlp = K};
+    constexpr bool swiglu = K == ml::mlp_kind::swiglu;
+    std::vector<float> xs(m);
+    for (std::size_t i = 0; i < m; ++i)
+        xs[i] = lo + (hi - lo) * float(i) / float(m - 1);
+    // dh = 1 and (SwiGLU) up = 1: the derivative itself comes back, in dh (GELU-tanh) or dgate (SwiGLU's SiLU')
+    mirror up(swiglu ? std::vector<float>(m, 1.0f) : xs), gate(xs), dh{std::vector<float>(m, 1.0f)}, dgate{std::vector<float>(m)};
+    const auto on = [](std::span<float> x) { return swiglu ? x : std::span<float>{}; };   // the gate's spans are SwiGLU's only
+    gpu::mlp_activate_rows_backward<C>(b, ml::mlp_activations<float>{up.d(), on(gate.d()), {}}, dh.d(), on(dgate.d()));
+    auto hdh = dh.host, hdgate = dgate.host, hup = up.host, hgate = gate.host;
+    ml::mlp_activate_rows_backward<C>(la::reference, ml::mlp_activations<float>{std::span<float>(hup), on(std::span<float>(hgate)), {}}, std::span<float>(hdh),
+                                      on(std::span<float>(hdgate)));
+    const auto got = swiglu ? dgate.back() : dh.back();
+    const auto& host = swiglu ? hdgate : hdh;
+    near(got, host, 1e-6f, swiglu ? "silu'" : "gelu_tanh'");
+    float worst = 0, worst_host = 0;
+    for (std::size_t i = 0; i < m; ++i) {
+        const double truth = swiglu ? ml::silu_derivative(double(xs[i])) : ml::gelu_tanh_derivative(double(xs[i]));
+        worst = std::max(worst, ulps(got[i], truth)), worst_host = std::max(worst_host, ulps(host[i], truth));
+    }
+    std::printf("  %-12s on [%g, %g]: device %.2f ulps, core in float %.2f\n", swiglu ? "silu'" : "gelu_tanh'", double(lo), double(hi), double(worst),
+                double(worst_host));
+    EXPECT_LE(worst, 4.0f);
+    EXPECT_LE(worst_host, 3.0f);
+}
+
+TEST(GpuCudaOps, SiluAndGeluTanhDerivativesKeepTheirDigitsWhereOneMinusSigmoidCancelled)
+{
+    activation_derivative_near_cancellation<ml::mlp_kind::swiglu>(8.0f, 17.0f);
+    activation_derivative_near_cancellation<ml::mlp_kind::gelu_tanh>(0.5f, 8.0f);
+}
+
+// Logits near 1e4: the loss (max - x_t) + log(sum) and the gradient e^(x - max) (1 / sum) keep their digits (x - lse,
+// rounded at 1e4, lost about 6e-4 before), against core in double and in float
+TEST(GpuCudaOps, TheClassifierKeepsItsDigitsWithLogitsNear1e4)
+{
+    const auto b = backend();
+    constexpr std::size_t n = 8, V = 50;
+    std::vector<std::uint32_t> targets(n);
+    for (std::size_t t = 0; t < n; ++t)
+        targets[t] = std::uint32_t((t * 13) % V);
+    gpu::device_buffer<std::uint32_t> dt(*device().context, n);
+    dt.upload(targets);
+    mirror logits(stream(n * V, 21, 3.0f, 1e4f)), losses{std::vector<float>(n)};
+    auto hlogits = logits.host, hlosses = losses.host;
+    std::vector<double> dlogits(logits.host.begin(), logits.host.end()), dlosses(n);
+    gpu::cross_entropy_rows(b, logits.d(), std::span<const std::uint32_t>(dt.span()), losses.d(), 0.25f);
+    ml::cross_entropy_rows(la::reference, std::span<float>(hlogits), targets, std::span<float>(hlosses), 0.25f);
+    ml::cross_entropy_rows(la::reference, std::span<double>(dlogits), targets, std::span<double>(dlosses), 0.25);
+    const auto got_losses = losses.back(), got = logits.back();
+    near(got_losses, hlosses, 1e-6f, "losses against core in float");
+    near(got, hlogits, 1e-6f, "gradient against core in float");
+    near(got_losses, std::vector<float>(dlosses.begin(), dlosses.end()), 1e-6f, "losses against core in double");
+    near(got, std::vector<float>(dlogits.begin(), dlogits.end()), 1e-6f, "gradient against core in double");
+    for (std::size_t t = 0; t < n; ++t)
+        EXPECT_LE(ulps(got_losses[t], dlosses[t]), 8.0f) << t;
+}
+
+// AdamW at beta2 = 0.9999 in its first steps, where 1 - pow(beta2, t) cancelled (830 ulps at t = 3): the device's
+// factors are core's adam_bias_correction, so its update is core's, and both are the exact one's to rounding
+TEST(GpuCudaOps, AdamwKeepsItsBiasCorrectionInTheFirstStepsAtBeta2NearOne)
+{
+    const auto b = backend();
+    constexpr std::size_t n = 256;
+    mirror p(stream(n, 31)), g(stream(n, 32)), m{std::vector<float>(n)}, v{std::vector<float>(n)};
+    auto hp = p.host, hm = m.host, hv = v.host;
+    std::vector<double> rp(p.host.begin(), p.host.end()), rm(n), rv(n);
+    const ml::adamw_config<float> c{.learning_rate = 1.0f, .beta1 = 0.9f, .beta2 = 0.9999f, .eps = 0.0f, .weight_decay = 0.0f};
+    const double b1 = c.beta1, b2 = c.beta2;
+    for (std::uint64_t step = 1; step <= 3; ++step) {
+        gpu::adamw_rows(b, p.d(), std::span<const float>(g.d()), m.d(), v.d(), step, c);
+        ml::adamw_rows(la::reference, std::span<float>(hp), std::span<const float>(g.host), std::span<float>(hm), std::span<float>(hv), step, c);
+        // the exact factors: b's powers up to the third are exact in double
+        const double c1 = 1 - std::pow(b1, double(step)), c2 = 1 - std::pow(b2, double(step));
+        for (std::size_t i = 0; i < n; ++i) {
+            const double gi = g.host[i];
+            rm[i] = b1 * rm[i] + double(1.0f - c.beta1) * gi;
+            rv[i] = b2 * rv[i] + double(1.0f - c.beta2) * gi * gi;
+            rp[i] -= (rm[i] / c1) / std::sqrt(rv[i] / c2);
+        }
+        const auto got = p.back();
+        near(got, hp, 1e-6f, "adamw against core, step " + std::to_string(step));
+        near(got, std::vector<float>(rp.begin(), rp.end()), 1e-5f, "adamw against the exact factors, step " + std::to_string(step));
+    }
 }
 
 // One launch over many tensors with their own decays: each tensor's adamw_rows to the bit, the gradient scale as
