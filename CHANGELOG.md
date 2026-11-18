@@ -3,7 +3,7 @@
 All notable changes to snicholls-gpu. The format follows Keep a Changelog; versions follow Semantic Versioning.
 A version is released when its tag is on a commit where every blocking CI leg is green.
 
-## Unreleased
+## 0.7.0 - 2026-11-18
 
 ### Fixed
 
@@ -19,9 +19,8 @@ A version is released when its tag is on a commit where every blocking CI leg is
   - `adamw_rows` and `adamw_segments` take their bias corrections from core's `ml::adam_bias_correction` on the host,
     `-expm1(t · log1p(-(1 - β)))`, instead of `1 - pow(β, t)`, which cancelled for `β2` near 1 in the first steps.
 
-  Results change in the last bits. Tested near each cancellation against core in float and in double. Needs core's
-  `ml::adam_bias_correction` (core 0.14.0; `third_party/core` is on core's feature branch until that release, and
-  `snicholls_core_require` is raised to 0.14.0 with the bump).
+  Results change in the last bits. Tested near each cancellation against core in float and in double. Needs core 0.14.0
+  (`ml::adam_bias_correction`); `snicholls_core_require(0.14.0)`.
 
 ## 0.6.0 - 2026-11-18
 
