@@ -3,6 +3,13 @@
 All notable changes to snicholls-gpu. The format follows Keep a Changelog; versions follow Semantic Versioning.
 A version is released when its tag is on a commit where every blocking CI leg is green.
 
+## 0.7.1 - 2026-11-19
+
+### Changed
+
+- Pins core v0.15.0 (was v0.14.0), so a build that carries both this library and core 0.15.0 reaches one core
+  version (core's diamond rule). No change to this library; `snicholls_core_require` stays at 0.14.0.
+
 ## 0.7.0 - 2026-11-18
 
 ### Fixed
