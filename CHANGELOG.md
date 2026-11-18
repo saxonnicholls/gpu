@@ -3,6 +3,26 @@
 All notable changes to snicholls-gpu. The format follows Keep a Changelog; versions follow Semantic Versioning.
 A version is released when its tag is on a commit where every blocking CI leg is green.
 
+## Unreleased
+
+### Fixed
+
+- **The CUDA kernels take core 0.14.0's accurate forms** (`cuda_ops.hpp`), so the device keeps the digits core's
+  reference now keeps:
+  - GELU-tanh' and SiLU' (`mlp_activate_rows_backward`, and through it every block's backward pass) take
+    `1 - sigmoid(z)` as `sigmoid(-z)`, both from one `expf(-fabsf(z))`, as core's `sigmoid_both`, instead of
+    subtracting a sigmoid near 1 from 1 (about 8 ulps for SiLU' over x in 8..17 and 16 for GELU-tanh' below 8 before;
+    within 4 ulps of the exact value now). The forward SiLU is unchanged.
+  - `cross_entropy_rows` (and the classifier through it) computes the loss as `(max - x_t) + log(sum)` and the gradient as
+    `e^(x - max) · (1 / sum)`, as core's `cross_entropy_with_gradient`: with logits near 1e4 the loss and the gradient
+    no longer carry the rounding of the largest logit (about 5e-4 off before).
+  - `adamw_rows` and `adamw_segments` take their bias corrections from core's `ml::adam_bias_correction` on the host,
+    `-expm1(t · log1p(-(1 - β)))`, instead of `1 - pow(β, t)`, which cancelled for `β2` near 1 in the first steps.
+
+  Results change in the last bits. Tested near each cancellation against core in float and in double. Needs core's
+  `ml::adam_bias_correction` (core 0.14.0; `third_party/core` is on core's feature branch until that release, and
+  `snicholls_core_require` is raised to 0.14.0 with the bump).
+
 ## 0.6.0 - 2026-11-18
 
 ### Added

@@ -136,6 +136,9 @@ namespace detail::cuda_ops {
     inline constexpr const char* source = R"CU(
 typedef unsigned long long u64;
 __device__ float sigmoid_(float v) { if (v >= 0.0f) return 1.0f / (1.0f + expf(-v)); const float e = expf(v); return e / (1.0f + e); }
+// core's sigmoid_both: sigmoid(v) and sigmoid(-v) = 1 - sigmoid(v), both from one e^-|v|, so neither cancels
+__device__ float2 sigmoid_both_(float v)
+{ const float e = expf(-fabsf(v)); const float r = 1.0f / (1.0f + e); return v >= 0.0f ? make_float2(r, e * r) : make_float2(e * r, r); }
 __device__ float gelu_tanh_2u_(float v) { const float k = 2.0f / 2.5066282746310002f; return 2.0f * k * (v + 0.044715f * v * v * v); }
 __device__ float act_(float v, int kind)
 {
@@ -146,7 +149,7 @@ __device__ float act_(float v, int kind)
 __device__ float act_derivative_(float v, int kind)
 {
     if (kind == 0) { const float cdf = 0.5f * erfcf(-v * 0.70710678118654752f); const float pdf = expf(-0.5f * v * v) / 2.5066282746310002f; return cdf + v * pdf; }
-    if (kind == 1) { const float s = sigmoid_(gelu_tanh_2u_(v)); const float du = 2.0f / 2.5066282746310002f * (1.0f + 3.0f * 0.044715f * v * v); return s + 2.0f * v * s * (1.0f - s) * du; }
+    if (kind == 1) { const float2 s = sigmoid_both_(gelu_tanh_2u_(v)); const float du = 2.0f / 2.5066282746310002f * (1.0f + 3.0f * 0.044715f * v * v); return s.x + 2.0f * v * s.x * s.y * du; }
     return 2.0f * (v > 0.0f ? v : 0.0f);
 }
 // The elementwise kernels take `vec` (the quad's code is the macro's variadic part, for its commas): with every pointer 16-byte aligned (and a bias row a multiple of 4), thread i
@@ -200,7 +203,8 @@ __global__ void activate_backward(const float* up, const float* gate, float* dh,
 {
     const u64 i = blockIdx.x * (u64)blockDim.x + threadIdx.x; if (i >= m) return;
     if (kind == 3) {
-        const float g = gate[i], s = sigmoid_(g), silu = g * s, dsilu = s * (1.0f + g * (1.0f - s));
+        const float g = gate[i], silu = g * sigmoid_(g);
+        const float2 s = sigmoid_both_(g); const float dsilu = s.x * (1.0f + g * s.y);   // core's silu_derivative
         dgate[i] = dh[i] * up[i] * dsilu; dh[i] = dh[i] * silu;
     } else dh[i] = dh[i] * act_derivative_(up[i], kind);
 }
@@ -940,7 +944,7 @@ __global__ void cross_entropy_rows(float* logits, const unsigned* targets, float
         s = (mx == -INFINITY ? 0.0f : s * expf(mx - m)) + (m2 == -INFINITY ? 0.0f : s2 * expf(m2 - m)); mx = m;
     }
     mx = __shfl_sync(0xffffffffu, mx, 0); s = __shfl_sync(0xffffffffu, s, 0);
-    const float lse = mx + logf(s), xt = x[target];
+    const float log_s = logf(s), inv = 1.0f / s, xt = x[target];   // core's (max - x_t) + log(sum) and e^(x - max) * (1 / sum)
     __syncwarp();   // every lane has read x[target] before any lane overwrites the row
     i = lane;
     if (vec) {
@@ -948,13 +952,13 @@ __global__ void cross_entropy_rows(float* logits, const unsigned* targets, float
         for (u64 q = lane; 4 * q < V; q += 32) {
             float4 v = x4[q]; float* e = &v.x;
             #pragma unroll
-            for (int k = 0; k < 4; ++k) { const u64 j = 4 * q + k; e[k] = j < classes ? scale * (expf(e[k] - lse) - (j == target ? 1.0f : 0.0f)) : 0.0f; }
+            for (int k = 0; k < 4; ++k) { const u64 j = 4 * q + k; e[k] = j < classes ? scale * (expf(e[k] - mx) * inv - (j == target ? 1.0f : 0.0f)) : 0.0f; }
             x4[q] = v;
         }
         i = V;
     }
-    for (; i < V; i += 32) x[i] = i < classes ? scale * (expf(x[i] - lse) - (i == target ? 1.0f : 0.0f)) : 0.0f;
-    if (lane == 0) losses[t] = lse - xt;
+    for (; i < V; i += 32) x[i] = i < classes ? scale * (expf(x[i] - mx) * inv - (i == target ? 1.0f : 0.0f)) : 0.0f;
+    if (lane == 0) losses[t] = (mx - xt) + log_s;
 }
 // AdamW over consecutive segments of one flat span, each with its own weight decay (adamw_segments_ below: up to 32
 // segment ends, the last n), the gradient scaled by gs first (1 is exact); core's adamw_step per element
@@ -1889,7 +1893,7 @@ namespace detail::cuda_ops {
     {
         const u64 n = table.end[table.count - 1];
         float lr = config.learning_rate, b1 = config.beta1, b2 = config.beta2, eps = config.eps;
-        float c1 = 1.0f - snicholls::math::pow(config.beta1, float(step)), c2 = 1.0f - snicholls::math::pow(config.beta2, float(step));
+        float c1 = ml::adam_bias_correction(config.beta1, step), c2 = ml::adam_bias_correction(config.beta2, step);   // core's, as adamw_step
         bool quads = aligned(16, p, g, m, v);
         for (int k = 0; k < table.count; ++k)
             quads = quads && table.end[k] % 4 == 0;   // a quad never straddles two decays
