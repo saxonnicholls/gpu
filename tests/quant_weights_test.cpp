@@ -78,6 +78,10 @@ TEST(GpuQuantWeights, CoresBlocksHaveTheSizesTheDeviceReads)
     EXPECT_EQ(q::traits<gpu::block_weights<snicholls::ml::block_q4_k>>::fmt, q::format::q4_k);
     EXPECT_EQ(q::traits<gpu::block_weights<snicholls::ml::block_tq1_0>>::fmt, q::format::tq1_0);
     static_assert(sizeof(snicholls::ml::block_q6_k) == 210 && sizeof(snicholls::ml::block_q2_k) == 84);
+    // Core's quantized_weights admits Q5_0 and IQ4_NL too: each named as itself, never as another format
+    EXPECT_EQ(q::traits<snicholls::ml::quantized_weights<snicholls::ml::block_q5_0>>::fmt, q::format::q5_0);
+    EXPECT_EQ(q::traits<snicholls::ml::quantized_weights<snicholls::ml::block_iq4_nl>>::fmt, q::format::iq4_nl);
+    EXPECT_EQ(q::traits<snicholls::ml::quantized_weights<snicholls::ml::block_mxfp4>>::fmt, q::format::mxfp4);
 }
 #endif
 

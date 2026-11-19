@@ -18,7 +18,7 @@ A version is released when its tag is on a commit where every blocking CI leg is
   Q8_0 path to the bits of core's `ml::linear`; on CUDA under `cuda_math::bf16`, the tiled products on the tensor cores
   (`mma.sync m16n8k16`). Deterministic, no atomics. `opencl_quant_matrix` keeps frozen weights on an OpenCL device.
 - The formats of core's next release where the pinned core has them (`block_weights<Block>`, `quant_weights.hpp`):
-  Q4_1, Q5_0, Q5_1, Q2_K to Q6_K, TQ1_0 and TQ2_0, with the integer path for each that core pairs with 8-bit
+  Q4_1, Q5_0, Q5_1, Q2_K to Q6_K, TQ1_0, TQ2_0, IQ4_NL and IQ4_XS, with the integer path for each that core pairs with 8-bit
   activations: Q8_0 for Q5_0, Q8_1 for Q4_1 and Q5_1, Q8_K for the K-quants (core's eight-lane dot products) and the ternary, to the bit.
 - `cuda_training_backend::quant`, after `moe`; `opencl_context::native_device`, `native_context`, `native_queue`.
 

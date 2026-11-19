@@ -26,7 +26,7 @@
 ///
 /// `w` is one of core's views over host memory (`ml::quantized_weights<Block>`, `ml::nf4_weights`,
 /// `ml::dense_weights<S>` for `bfloat16`, `float16`, `float8_e4m3` or `float8_e5m2`) or a `block_weights<Block>` of
-/// Q4_1, Q5_0, Q5_1, Q2_K to Q6_K, TQ1_0 or TQ2_0 (where the pinned core has them), copied to the device for the
+/// Q4_1, Q5_0, Q5_1, Q2_K to Q6_K, TQ1_0, TQ2_0, IQ4_NL or IQ4_XS (where the pinned core has them), copied to the device for the
 /// call, or an `opencl_quant_matrix`, the same weights kept on the device by `opencl_quant_kernels::upload` (frozen
 /// weights: upload once, multiply many times). The activations are host memory, copied for each call, as
 /// `opencl_backend`'s products do.

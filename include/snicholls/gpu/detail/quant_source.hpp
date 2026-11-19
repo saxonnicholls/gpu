@@ -24,7 +24,8 @@
 #include <snicholls/core/ml/quantize.hpp>
 #include <snicholls/gpu/quant_weights.hpp>
 // The formats of core's next release (Q4_1, Q5_0, Q5_1, the K-quants, the ternary), where the pinned core has them
-#if __has_include(<snicholls/core/ml/quant_k.hpp>) && __has_include(<snicholls/core/ml/quant_ternary.hpp>)
+#if __has_include(<snicholls/core/ml/quant_k.hpp>) && __has_include(<snicholls/core/ml/quant_ternary.hpp>) && __has_include(<snicholls/core/ml/quant_iq.hpp>)
+#include <snicholls/core/ml/quant_iq.hpp>
 #include <snicholls/core/ml/quant_k.hpp>
 #include <snicholls/core/ml/quant_ternary.hpp>
 #define SNICHOLLS_GPU_QUANT_K 1
@@ -42,22 +43,26 @@
 namespace snicholls::gpu::detail::quant {
 
 // The formats, in the order of `formats`; the device source names them by `name`
-enum class format : int { q8_0, q4_0, mxfp4, nf4, bf16, f16, e4m3, e5m2, q4_1, q5_0, q5_1, q2_k, q3_k, q4_k, q5_k, q6_k, tq1_0, tq2_0 };
-inline constexpr std::size_t format_count = 18;
-inline constexpr std::array<std::string_view, format_count> names{"q8_0", "q4_0", "mxfp4", "nf4",  "bf16", "f16",  "e4m3", "e5m2",  "q4_1",
-                                                                  "q5_0", "q5_1", "q2_k",  "q3_k", "q4_k", "q5_k", "q6_k", "tq1_0", "tq2_0"};
+enum class format : int { q8_0, q4_0, mxfp4, nf4, bf16, f16, e4m3, e5m2, q4_1, q5_0, q5_1, q2_k, q3_k, q4_k, q5_k, q6_k, tq1_0, tq2_0, iq4_nl, iq4_xs };
+inline constexpr std::size_t format_count = 20;
+inline constexpr std::array<std::string_view, format_count> names{"q8_0", "q4_0", "mxfp4", "nf4",   "bf16",  "f16",   "e4m3",
+                                                                  "e5m2", "q4_1", "q5_0",  "q5_1",  "q2_k",  "q3_k",  "q4_k",
+                                                                  "q5_k", "q6_k", "tq1_0", "tq2_0", "iq4_nl", "iq4_xs"};
 // The numbers and bytes of one block of each format (NF4: 64 numbers in 32 bytes, its scales apart; dense: one number)
-inline constexpr std::array<std::size_t, format_count> block_elements{32, 32, 32, 64, 1, 1, 1, 1, 32, 32, 32, 256, 256, 256, 256, 256, 256, 256};
-inline constexpr std::array<std::size_t, format_count> block_bytes{34, 18, 17, 32, 2, 2, 1, 1, 20, 22, 24, 84, 110, 144, 176, 210, 54, 66};
+inline constexpr std::array<std::size_t, format_count> block_elements{32, 32, 32, 64, 1, 1, 1, 1, 32, 32, 32, 256, 256, 256, 256, 256, 256, 256, 32, 256};
+inline constexpr std::array<std::size_t, format_count> block_bytes{34, 18, 17, 32, 2, 2, 1, 1, 20, 22, 24, 84, 110, 144, 176, 210, 54, 66, 18, 136};
 
 // Whether a format has core's integer dot product with Q8_0 activations (ml/quantize.hpp `dot`), or with Q8_K (the
 // K-quants, ml/quant_k.hpp `dot`)
-constexpr bool has_q8_0_dot(format f) noexcept { return f == format::q8_0 || f == format::q4_0 || f == format::mxfp4 || f == format::q5_0; }
+constexpr bool has_q8_0_dot(format f) noexcept
+{
+    return f == format::q8_0 || f == format::q4_0 || f == format::mxfp4 || f == format::q5_0 || f == format::iq4_nl;
+}
 constexpr bool has_q8_1_dot(format f) noexcept { return f == format::q4_1 || f == format::q5_1; }
 constexpr bool has_q8_k_dot(format f) noexcept
 {
     return f == format::q2_k || f == format::q3_k || f == format::q4_k || f == format::q5_k || f == format::q6_k || f == format::tq1_0
-           || f == format::tq2_0;
+           || f == format::tq2_0 || f == format::iq4_xs;
 }
 constexpr bool has_q8_dot(format f) noexcept { return has_q8_0_dot(f) || has_q8_1_dot(f) || has_q8_k_dot(f); }
 // Blocks of Q8_1 activations: Q8_0's with the float16 sum s = d Σ q after the scale
@@ -84,7 +89,10 @@ struct parts {
 template <typename W>
 struct traits;   // undefined: not a storage the kernels read
 
+// Core's quantized_weights over its 32-blocks of Q8_0 activations, named one by one: a block this does not know (core's
+// quant_block concept admits more as core grows) is no storage the kernels read, never another format's
 template <ml::quant_block B>
+    requires(std::is_same_v<B, ml::block_q8_0> || std::is_same_v<B, ml::block_q4_0> || std::is_same_v<B, ml::block_mxfp4>)
 struct traits<ml::quantized_weights<B>> {
     static constexpr format fmt = std::is_same_v<B, ml::block_q8_0> ? format::q8_0 : std::is_same_v<B, ml::block_q4_0> ? format::q4_0 : format::mxfp4;
     static parts of(const ml::quantized_weights<B>& w) { return {fmt, std::as_bytes(w.blocks), {}, {}, 0.0f, w.rows, w.cols}; }
@@ -113,6 +121,8 @@ template <> inline constexpr int block_format<ml::block_q5_k> = int(format::q5_k
 template <> inline constexpr int block_format<ml::block_q6_k> = int(format::q6_k);
 template <> inline constexpr int block_format<ml::block_tq1_0> = int(format::tq1_0);
 template <> inline constexpr int block_format<ml::block_tq2_0> = int(format::tq2_0);
+template <> inline constexpr int block_format<ml::block_iq4_nl> = int(format::iq4_nl);
+template <> inline constexpr int block_format<ml::block_iq4_xs> = int(format::iq4_xs);
 
 template <typename B>
     requires(block_format<B> >= 0)
@@ -122,13 +132,21 @@ struct traits<block_weights<B>> {
                   "snicholls::gpu: a block's size differs from the device source's");
     static parts of(const block_weights<B>& w) { return {fmt, std::as_bytes(w.blocks), {}, {}, 0.0f, w.rows, w.cols}; }
 };
+// The newer 32-blocks core's quantized_weights also admits (Q5_0, IQ4_NL), as block_weights
+template <ml::quant_block B>
+    requires(block_format<B> >= 0)
+struct traits<ml::quantized_weights<B>> {
+    static constexpr format fmt = format(block_format<B>);
+    static parts of(const ml::quantized_weights<B>& w) { return {fmt, std::as_bytes(w.blocks), {}, {}, 0.0f, w.rows, w.cols}; }
+};
 static_assert(offsetof(ml::block_q4_1, qs) == 4 && offsetof(ml::block_q5_0, qh) == 2 && offsetof(ml::block_q5_0, qs) == 6
                   && offsetof(ml::block_q5_1, qh) == 4 && offsetof(ml::block_q5_1, qs) == 8 && offsetof(ml::block_q2_k, qs) == 16
                   && offsetof(ml::block_q2_k, d) == 80 && offsetof(ml::block_q3_k, qs) == 32 && offsetof(ml::block_q3_k, scales) == 96
                   && offsetof(ml::block_q3_k, d) == 108 && offsetof(ml::block_q4_k, scales) == 4 && offsetof(ml::block_q4_k, qs) == 16
                   && offsetof(ml::block_q5_k, qh) == 16 && offsetof(ml::block_q5_k, qs) == 48 && offsetof(ml::block_q6_k, qh) == 128
                   && offsetof(ml::block_q6_k, scales) == 192 && offsetof(ml::block_q6_k, d) == 208 && offsetof(ml::block_tq1_0, qh) == 48
-                  && offsetof(ml::block_tq1_0, d) == 52 && offsetof(ml::block_tq2_0, d) == 64,
+                  && offsetof(ml::block_tq1_0, d) == 52 && offsetof(ml::block_tq2_0, d) == 64 && offsetof(ml::block_iq4_nl, qs) == 2
+                  && offsetof(ml::block_iq4_xs, scales_h) == 2 && offsetof(ml::block_iq4_xs, scales_l) == 4 && offsetof(ml::block_iq4_xs, qs) == 8,
               "snicholls::gpu: a block's fields are not where the device source reads them");
 #endif
 
@@ -427,6 +445,26 @@ DEVICE float get_tq2_0(WARGS, u64 r, u64 c)
     const uint e = (uint)(c % 256), q = (b[32 * (e / 128) + e % 32] >> (2 * ((e % 128) / 32))) & 3u;
     return (float)((int)q - 1) * half_at(b + 64);
 }
+// IQ4_NL (18: d, qs): d v[q], v ggml's 16 non-linear values; IQ4_XS (136: d, scales_h, scales_l[4], qs[128]): per 32
+// (d (s - 32)) v[q], s six bits from scales_l's nibble and scales_h's pair
+CONSTANT int iq4nl_values[16] = {-127, -104, -83, -65, -49, -35, -22, -10, 1, 13, 25, 38, 53, 69, 89, 113};
+DEVICE float get_iq4_nl(WARGS, u64 r, u64 c)
+{
+    GLOBAL const uchar* b = block_at(w, cols, r, c, 32, 18);
+    return half_at(b) * (float)iq4nl_values[nibble(b + 2, (uint)(c % 32))];
+}
+DEVICE int iq4_xs_scale(GLOBAL const uchar* b, uint ib)
+{
+    const uint h = (uint)b[2] | ((uint)b[3] << 8);
+    return (int)(((b[4 + ib / 2] >> (4 * (ib % 2))) & 15u) | (((h >> (2 * ib)) & 3u) << 4)) - 32;
+}
+DEVICE float get_iq4_xs(WARGS, u64 r, u64 c)
+{
+    GLOBAL const uchar* b = block_at(w, cols, r, c, 256, 136);
+    const uint e = (uint)(c % 256), ib = e / 32;
+    const float dl = half_at(b) * (float)iq4_xs_scale(b, ib);
+    return dl * (float)iq4nl_values[nibble(b + 8 + 16 * ib, e % 32)];
+}
 #define GET8_BY_ONE(F) DEVICE void get8_##F(WARGS, u64 r, u64 c0, float* v) { for (int j = 0; j < 8; ++j) v[j] = get_##F(WPASS, r, c0 + (u64)j); }
 GET8_BY_ONE(q4_1)
 GET8_BY_ONE(q5_0)
@@ -438,6 +476,8 @@ GET8_BY_ONE(q5_k)
 GET8_BY_ONE(q6_k)
 GET8_BY_ONE(tq1_0)
 GET8_BY_ONE(tq2_0)
+GET8_BY_ONE(iq4_nl)
+GET8_BY_ONE(iq4_xs)
 #undef GET8_BY_ONE
 
 // Rows of activations quantised to Q8_K (ml/quantize.hpp quantize_row<block_q8_k>), a thread per block of 256: the
@@ -519,6 +559,29 @@ DEVICE void kterm_q2_k(GLOBAL const uchar* b, GLOBAL const uchar* y, float* lane
     for (int l = 0; l < 8; ++l) lanes[l] = 0.0f;
 }
 #undef K_LANES
+// IQ4_NL with Q8_0 (ml/quant_iq.hpp dot): (dy dx) (s1 + s2)
+DEVICE float term_iq4_nl(GLOBAL const uchar* wb, GLOBAL const uchar* xb)
+{
+    const float d = half_at(xb) * half_at(wb);
+    int s1 = 0, s2 = 0;
+    for (uint j = 0; j < 16; ++j) { s1 += (int)(i8)xb[2 + j] * iq4nl_values[wb[2 + j] & 15u]; s2 += (int)(i8)xb[18 + j] * iq4nl_values[wb[2 + j] >> 4]; }
+    return d * (float)(s1 + s2);
+}
+// IQ4_XS with Q8_K: eight terms a block, (dx dy (s - 32)) (s1 + s2) per 32, added in order (KIND 3)
+DEVICE void kterm_iq4_xs(GLOBAL const uchar* b, GLOBAL const uchar* y, float* lanes, float* t)
+{
+    const float d4d8 = half_at(b) * q8k_d(y);
+    for (uint ib = 0; ib < 8; ++ib) {
+        const float dl = d4d8 * (float)iq4_xs_scale(b, ib);
+        int s1 = 0, s2 = 0;
+        for (uint j = 0; j < 16; ++j) {
+            s1 += q8k_q(y, 32 * ib + j) * iq4nl_values[b[8 + 16 * ib + j] & 15u];
+            s2 += q8k_q(y, 32 * ib + 16 + j) * iq4nl_values[b[8 + 16 * ib + j] >> 4];
+        }
+        lanes[ib] = dl * (float)(s1 + s2);
+    }
+    *t = 0.0f;
+}
 // TQ1_0 and TQ2_0 (ml/quant_ternary.hpp dot): one integer sum a block over the elements in order, times dx dy
 DEVICE int code_tq1_0(GLOBAL const uchar* b, uint e)
 {
@@ -813,8 +876,8 @@ KERNEL GROUP1(64) void CAT(qdot, FMT)(GLOBAL const uchar* w, u64 cols, GLOBAL co
 }
 )SRC";
 
-// The Q8_K path of one K-quant, instantiated with FMT, BYTES and KIND (0: lanes only, 1: lanes less the scalar terms,
-// 2: the scalar terms only). As core's dot: the lanes' sums and the scalar sum each over the blocks in order, then the
+// The Q8_K path of one format, instantiated with FMT, BYTES and KIND (0: lanes only, 1: lanes less the scalar terms,
+// 2: the scalar terms only, 3: the eight terms of each block added in order, IQ4_XS). As core's dot: the lanes' sums and the scalar sum each over the blocks in order, then the
 // scalar sum plus the eight lanes in order. A group per (row, token), 64 blocks at a time; the first item adds.
 inline constexpr const char* q8k_source = R"SRC(
 KERNEL GROUP1(64) void CAT(qkdot, FMT)(GLOBAL const uchar* w, u64 cols, GLOBAL const uchar* xq, u64 rows, u64 t0, GLOBAL const float* bias, int has_bias,
@@ -837,7 +900,8 @@ KERNEL GROUP1(64) void CAT(qkdot, FMT)(GLOBAL const uchar* w, u64 cols, GLOBAL c
         if (l == 0) {
             const int e = nb - b0 < 64 ? (int)(nb - b0) : 64;
             for (int i = 0; i < e; ++i) {
-                if (KIND != 2) for (int k = 0; k < 8; ++k) sums[k] += terms[k * 64 + i];
+                if (KIND == 0 || KIND == 1) for (int k = 0; k < 8; ++k) sums[k] += terms[k * 64 + i];
+                if (KIND == 3) for (int k = 0; k < 8; ++k) sumf += terms[k * 64 + i];
                 if (KIND == 1) sumf -= terms[8 * 64 + i];
                 if (KIND == 2) sumf += terms[8 * 64 + i];
             }
@@ -845,7 +909,7 @@ KERNEL GROUP1(64) void CAT(qkdot, FMT)(GLOBAL const uchar* w, u64 cols, GLOBAL c
         BARRIER();
     }
     if (l == 0) {
-        if (KIND != 2) for (int k = 0; k < 8; ++k) sumf += sums[k];
+        if (KIND == 0 || KIND == 1) for (int k = 0; k < 8; ++k) sumf += sums[k];
         y[t * rows + r] = has_bias ? bias[r] + sumf : sumf;
     }
 }
@@ -862,13 +926,14 @@ inline std::string program(const char* prelude, const char* extra = "")
              + "#undef GET8\n#undef GET\n#undef FMT\n";
     }
     for (const auto& [name, bytes, xbytes] : {std::tuple{"q8_0", 34, 34}, std::tuple{"q4_0", 18, 34}, std::tuple{"mxfp4", 17, 34}, std::tuple{"q5_0", 22, 34},
-                                              std::tuple{"q4_1", 20, 36}, std::tuple{"q5_1", 24, 36}}) {
+                                              std::tuple{"q4_1", 20, 36}, std::tuple{"q5_1", 24, 36}, std::tuple{"iq4_nl", 18, 34}}) {
         const std::string n(name);
         s += "#define FMT " + n + "\n#define TERM term_" + n + "\n#define BYTES " + std::to_string(bytes) + "\n#define XBYTES " + std::to_string(xbytes)
              + "\n" + q8_source + "#undef XBYTES\n#undef BYTES\n#undef TERM\n#undef FMT\n";
     }
     for (const auto& [name, bytes, kind] : {std::tuple{"q2_k", 84, 2}, std::tuple{"q3_k", 110, 0}, std::tuple{"q4_k", 144, 1}, std::tuple{"q5_k", 176, 1},
-                                           std::tuple{"q6_k", 210, 0}, std::tuple{"tq1_0", 54, 2}, std::tuple{"tq2_0", 66, 2}}) {
+                                           std::tuple{"q6_k", 210, 0}, std::tuple{"tq1_0", 54, 2}, std::tuple{"tq2_0", 66, 2},
+                                           std::tuple{"iq4_xs", 136, 3}}) {
         const std::string n(name);
         s += "#define FMT " + n + "\n#define BYTES " + std::to_string(bytes) + "\n#define KIND " + std::to_string(kind) + "\n" + q8k_source
              + "#undef KIND\n#undef BYTES\n#undef FMT\n";

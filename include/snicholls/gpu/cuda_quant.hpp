@@ -22,7 +22,7 @@
 ///   core's integer block dot products.
 ///
 /// `w` is core's view (`ml::quantized_weights<Block>`, `ml::nf4_weights`, `ml::dense_weights<S>`), or a
-/// `block_weights<Block>` of Q4_1, Q5_0, Q5_1, Q2_K to Q6_K, TQ1_0 or TQ2_0 where the pinned core has them, over device memory:
+/// `block_weights<Block>` of Q4_1, Q5_0, Q5_1, Q2_K to Q6_K, TQ1_0, TQ2_0, IQ4_NL or IQ4_XS where the pinned core has them, over device memory:
 /// upload the blocks into a `device_buffer` and point the view at it. NF4's `scale_mean` is a host float, as in core.
 ///
 /// \snippet cuda_quant_demo.cpp quant
