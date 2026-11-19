@@ -1,6 +1,7 @@
 var group__gpu =
 [
     [ "cuda.hpp", "cuda_8hpp.html", null ],
+    [ "cuda_moe.hpp", "cuda__moe_8hpp.html", null ],
     [ "cuda_ops.hpp", "cuda__ops_8hpp.html", null ],
     [ "opencl.hpp", "opencl_8hpp.html", null ],
     [ "version.hpp", "version_8hpp.html", null ],

@@ -1,8 +1,5 @@
 var searchData=
 [
-  ['_7ecuda_5fcontext_0',['~cuda_context',['../classsnicholls_1_1gpu_1_1cuda__context.html#ac419d958cb39b828031a58841a257459',1,'snicholls::gpu::cuda_context']]],
-  ['_7ecuda_5fgraph_1',['~cuda_graph',['../classsnicholls_1_1gpu_1_1cuda__graph.html#af7a1267fe0cb0cb584ecd5717b4d15c8',1,'snicholls::gpu::cuda_graph']]],
-  ['_7ecuda_5fkernels_2',['~cuda_kernels',['../classsnicholls_1_1gpu_1_1cuda__kernels.html#a98963e80910fe8b077fd173ac3d1dda4',1,'snicholls::gpu::cuda_kernels']]],
-  ['_7edevice_5fbuffer_3',['~device_buffer',['../classsnicholls_1_1gpu_1_1device__buffer.html#addbb55c9c32cb224438efb48a98f47ca',1,'snicholls::gpu::device_buffer']]],
-  ['_7eopencl_5fcontext_4',['~opencl_context',['../classsnicholls_1_1gpu_1_1opencl__context.html#aadf2c895b428040f8f65b71d68758c72',1,'snicholls::gpu::opencl_context']]]
+  ['weight_5fdecay_0',['weight_decay',['../structsnicholls_1_1gpu_1_1adamw__segment.html#ad5c15a3533e4516fb97a1d8159479a46',1,'snicholls::gpu::adamw_segment']]],
+  ['whole_20gpt_202_20small_20training_20step_1',['A whole GPT-2 small training step',['../performance.html#autotoc_md7',1,'']]]
 ];

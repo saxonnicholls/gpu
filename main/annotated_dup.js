@@ -8,6 +8,7 @@ var annotated_dup =
         [ "device_buffer", "classsnicholls_1_1gpu_1_1device__buffer.html", "classsnicholls_1_1gpu_1_1device__buffer" ],
         [ "cuda_graph", "classsnicholls_1_1gpu_1_1cuda__graph.html", "classsnicholls_1_1gpu_1_1cuda__graph" ],
         [ "cuda_backend", "structsnicholls_1_1gpu_1_1cuda__backend.html", "structsnicholls_1_1gpu_1_1cuda__backend" ],
+        [ "cuda_moe_kernels", "classsnicholls_1_1gpu_1_1cuda__moe__kernels.html", "classsnicholls_1_1gpu_1_1cuda__moe__kernels" ],
         [ "cuda_kernels", "classsnicholls_1_1gpu_1_1cuda__kernels.html", "classsnicholls_1_1gpu_1_1cuda__kernels" ],
         [ "cuda_training_backend", "structsnicholls_1_1gpu_1_1cuda__training__backend.html", "structsnicholls_1_1gpu_1_1cuda__training__backend" ],
         [ "adamw_segment", "structsnicholls_1_1gpu_1_1adamw__segment.html", "structsnicholls_1_1gpu_1_1adamw__segment" ],

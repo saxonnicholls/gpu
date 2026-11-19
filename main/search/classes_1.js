@@ -6,5 +6,6 @@ var searchData=
   ['cuda_5ffailure_3',['cuda_failure',['../structsnicholls_1_1gpu_1_1cuda__failure.html',1,'snicholls::gpu']]],
   ['cuda_5fgraph_4',['cuda_graph',['../classsnicholls_1_1gpu_1_1cuda__graph.html',1,'snicholls::gpu']]],
   ['cuda_5fkernels_5',['cuda_kernels',['../classsnicholls_1_1gpu_1_1cuda__kernels.html',1,'snicholls::gpu']]],
-  ['cuda_5ftraining_5fbackend_6',['cuda_training_backend',['../structsnicholls_1_1gpu_1_1cuda__training__backend.html',1,'snicholls::gpu']]]
+  ['cuda_5fmoe_5fkernels_6',['cuda_moe_kernels',['../classsnicholls_1_1gpu_1_1cuda__moe__kernels.html',1,'snicholls::gpu']]],
+  ['cuda_5ftraining_5fbackend_7',['cuda_training_backend',['../structsnicholls_1_1gpu_1_1cuda__training__backend.html',1,'snicholls::gpu']]]
 ];

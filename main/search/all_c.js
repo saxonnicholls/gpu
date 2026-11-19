@@ -1,6 +1,26 @@
 var searchData=
 [
   ['math_0',['math',['../structsnicholls_1_1gpu_1_1cuda__backend.html#ae7fba8a5f918a9f0f5648c092fd8d0d7',1,'snicholls::gpu::cuda_backend']]],
-  ['mlp_5factivate_5frows_1',['mlp_activate_rows',['../cuda__ops_8hpp.html#a19104cc2afb0e2d583519c8294984b5d',1,'snicholls::gpu']]],
-  ['mlp_5factivate_5frows_5fbackward_2',['mlp_activate_rows_backward',['../cuda__ops_8hpp.html#a713381c60ecf7bb4c0430f10d06cb0e7',1,'snicholls::gpu']]]
+  ['mixture_20of_20experts_1',['A mixture of experts',['../performance.html#autotoc_md9',1,'']]],
+  ['mlp_5factivate_5frows_2',['mlp_activate_rows',['../cuda__ops_8hpp.html#a19104cc2afb0e2d583519c8294984b5d',1,'snicholls::gpu']]],
+  ['mlp_5factivate_5frows_5fbackward_3',['mlp_activate_rows_backward',['../cuda__ops_8hpp.html#a713381c60ecf7bb4c0430f10d06cb0e7',1,'snicholls::gpu']]],
+  ['moe_4',['moe',['../structsnicholls_1_1gpu_1_1cuda__training__backend.html#abce12efe344fc7cea117c8c752dbdc72',1,'snicholls::gpu::cuda_training_backend']]],
+  ['moe_5fall_5fto_5fall_5',['moe_all_to_all',['../cuda__moe_8hpp.html#a7f19bdc5e8c6969b20727a688aea1b70',1,'snicholls::gpu']]],
+  ['moe_5fbalance_5floss_6',['moe_balance_loss',['../cuda__moe_8hpp.html#a0eaadc505939d0a562d74be91df621fd',1,'snicholls::gpu']]],
+  ['moe_5fcombine_5frows_7',['moe_combine_rows',['../cuda__moe_8hpp.html#a1c041f05401b378248ed4ec3ed6dc643',1,'snicholls::gpu']]],
+  ['moe_5fcombine_5frows_5fbackward_8',['moe_combine_rows_backward',['../cuda__moe_8hpp.html#a4ed4a21bf5bfceb47b5acb8e18983b64',1,'snicholls::gpu']]],
+  ['moe_5fcount_5frows_9',['moe_count_rows',['../cuda__moe_8hpp.html#abd804238fc4eefaea639b754cc5e4fe2',1,'snicholls::gpu']]],
+  ['moe_5fgather_5frows_10',['moe_gather_rows',['../cuda__moe_8hpp.html#a2b899f16d20c69cbd0f080de0065d701',1,'snicholls::gpu']]],
+  ['moe_5fgather_5frows_5fbackward_11',['moe_gather_rows_backward',['../cuda__moe_8hpp.html#a5f9692d4484df3a016e82d99abd41fd2',1,'snicholls::gpu']]],
+  ['moe_5foffsets_12',['moe_offsets',['../cuda__moe_8hpp.html#a67b5229be06f7358444b7920a8afb7ed',1,'snicholls::gpu']]],
+  ['moe_5fpermutation_13',['moe_permutation',['../cuda__moe_8hpp.html#adb6341016499a0c4806519db1490cb08',1,'snicholls::gpu']]],
+  ['moe_5fpermute_5frows_14',['moe_permute_rows',['../cuda__moe_8hpp.html#a03a07223d31a501e7c5eb0481a36788f',1,'snicholls::gpu']]],
+  ['moe_5freceive_5flayout_15',['moe_receive_layout',['../cuda__moe_8hpp.html#afac1601c2cbcc723708eb4d6f9593760',1,'snicholls::gpu']]],
+  ['moe_5freceive_5foffsets_16',['moe_receive_offsets',['../cuda__moe_8hpp.html#a77dfc8604412099d49f8f2834f30c43a',1,'snicholls::gpu']]],
+  ['moe_5froute_5frows_17',['moe_route_rows',['../cuda__moe_8hpp.html#a6cd92761cc1dba4311a7a1594ccc68ae',1,'snicholls::gpu']]],
+  ['moe_5froute_5frows_5fbackward_18',['moe_route_rows_backward',['../cuda__moe_8hpp.html#a53e4189bc12a588eb11e536085736dcd',1,'snicholls::gpu']]],
+  ['moe_5fsend_5foffsets_19',['moe_send_offsets',['../cuda__moe_8hpp.html#a06b42b81c55f3d49606da1a20535fa00',1,'snicholls::gpu']]],
+  ['moe_5funpermute_5frows_20',['moe_unpermute_rows',['../cuda__moe_8hpp.html#ab50037cffdf3a111ae3e5ed037915cee',1,'snicholls::gpu']]],
+  ['moe_5fupdate_5fbias_21',['moe_update_bias',['../cuda__moe_8hpp.html#abfed7615c0ef78125db51e3cc22226f7',1,'snicholls::gpu']]],
+  ['moe_5fz_5floss_22',['moe_z_loss',['../cuda__moe_8hpp.html#a730f344fe17e2e148cd8d681c2bd38ed',1,'snicholls::gpu']]]
 ];

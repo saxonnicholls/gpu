@@ -26,7 +26,7 @@
  <tbody>
  <tr id="projectrow">
   <td id="projectalign">
-   <div id="projectname">snicholls-gpu<span id="projectnumber">&#160;0.7.1</span>
+   <div id="projectname">snicholls-gpu<span id="projectnumber">&#160;0.8.0</span>
    </div>
    <div id="projectbrief">GPU backends of snicholls-core&#39;s interfaces: linalg on OpenCL</div>
   </td>
@@ -98,6 +98,7 @@ $(function(){initNavTree('index.html','',''); });
 <p>Backends of <a href="https://github.com/saxonnicholls/core">snicholls-core</a>'s interfaces on GPUs. Core is standard-library only and never includes a device header; it states the interfaces (here <span class="tt">linalg::blas_backend</span>) and checks every implementation with its conformance suites. This library implements them on a device.</p>
 <ul>
 <li><b><span class="tt"><a class="el" href="structsnicholls_1_1gpu_1_1cuda__backend.html" title="The linalg::blas_backend on a cuda_context: gemm and gemv on the device, the rest on the host.">snicholls::gpu::cuda_backend</a></span></b> (<span class="tt"><a class="el" href="cuda_8hpp.html" title="snicholls::gpu::cuda_backend: a snicholls::linalg::blas_backend on an NVIDIA GPU through cuBLAS,...">include/snicholls/gpu/cuda.hpp</a></span>): the NVIDIA backend, cuBLAS over device memory in place (<span class="tt">device_buffer&lt;T&gt;</span>) or host memory staged; built where the CUDA toolkit is (<span class="tt">snicholls::gpu_cuda</span>).</li>
+<li><b><span class="tt"><a class="el" href="structsnicholls_1_1gpu_1_1cuda__training__backend.html" title="The CUDA backend with the training steps&#39; kernels: core&#39;s batched passes run entirely on the device o...">snicholls::gpu::cuda_training_backend</a></span></b> (<span class="tt"><a class="el" href="cuda__ops_8hpp.html" title="snicholls::gpu::cuda_training_backend: snicholls-core&#39;s batched training passes on an NVIDIA GPU with...">cuda_ops.hpp</a></span>, <span class="tt"><a class="el" href="cuda__moe_8hpp.html" title="snicholls::gpu::cuda_moe_kernels: snicholls-core&#39;s mixture-of-experts steps (ml/moe....">cuda_moe.hpp</a></span>): core's batched training passes with every step a kernel over device memory, dense blocks and mixtures of experts alike.</li>
 <li><b><span class="tt"><a class="el" href="structsnicholls_1_1gpu_1_1opencl__backend.html" title="The linalg::blas_backend on an opencl_context: gemm and gemv on the device, the rest on the host.">snicholls::gpu::opencl_backend</a></span></b> (<span class="tt"><a class="el" href="opencl_8hpp.html" title="snicholls::gpu::opencl_backend: a snicholls::linalg::blas_backend whose matrix products run on an Ope...">include/snicholls/gpu/opencl.hpp</a></span>): matrix products on any OpenCL 1.2 device, a GPU by preference: AMD, NVIDIA, Intel, Apple. Code written against core's <span class="tt">linalg::gemm</span> (and through it core's batched transformer training) runs on the GPU by changing the backend it is handed. The products give the bits of core's reference backend.</li>
 </ul>
 <div class="fragment"><div class="line"><span class="keyword">auto</span> context = <a class="code hl_function" href="classsnicholls_1_1gpu_1_1opencl__context.html#a61d03ca7e9943617276f95da5909eb98">snicholls::gpu::opencl_context::create</a>().unwrap();   <span class="comment">// finds a GPU, compiles the kernels</span></div>
@@ -117,7 +118,7 @@ Build and test</h1>
 make test-werror   # as CI does it
 make docs          # Doxygen, warnings are errors
 make check         # the version and mirror checks
-make ubuntu        # every configuration on Ubuntu 24.04 in Docker, on PoCL
+make ubuntu        # every configuration on Ubuntu 24.04 and 26.04 in Docker (GCC 13 and 15, Clang), on PoCL
 make benchmarks    # Release benchmarks; rewrites BENCHMARKS.md
 </pre><h1 class="doxsection"><a class="anchor" id="autotoc_md3"></a>
 Licence</h1>

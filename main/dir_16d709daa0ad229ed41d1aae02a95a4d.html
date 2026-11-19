@@ -26,7 +26,7 @@
  <tbody>
  <tr id="projectrow">
   <td id="projectalign">
-   <div id="projectname">snicholls-gpu<span id="projectnumber">&#160;0.7.1</span>
+   <div id="projectname">snicholls-gpu<span id="projectnumber">&#160;0.8.0</span>
    </div>
    <div id="projectbrief">GPU backends of snicholls-core&#39;s interfaces: linalg on OpenCL</div>
   </td>
@@ -97,6 +97,8 @@ $(function(){initNavTree('dir_16d709daa0ad229ed41d1aae02a95a4d.html','',''); });
 Files</h2></td></tr>
 <tr class="memitem:cuda_2Ehpp" id="r_cuda_2Ehpp"><td class="memItemLeft" align="right" valign="top"><a href="cuda_8hpp_source.html"><span class="icondoc"><div class="doc-icon"></div></span></a>&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="cuda_8hpp.html">cuda.hpp</a></td></tr>
 <tr class="memdesc:cuda_8hpp"><td class="mdescLeft">&#160;</td><td class="mdescRight"><span class="tt"><a class="el" href="structsnicholls_1_1gpu_1_1cuda__backend.html" title="The linalg::blas_backend on a cuda_context: gemm and gemv on the device, the rest on the host.">snicholls::gpu::cuda_backend</a></span>: a <span class="tt">snicholls::linalg::blas_backend</span> on an NVIDIA GPU through cuBLAS, over device memory in place or host memory staged. <br /></td></tr>
+<tr class="memitem:cuda_5Fmoe_2Ehpp" id="r_cuda_5Fmoe_2Ehpp"><td class="memItemLeft" align="right" valign="top"><a href="cuda__moe_8hpp_source.html"><span class="icondoc"><div class="doc-icon"></div></span></a>&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="cuda__moe_8hpp.html">cuda_moe.hpp</a></td></tr>
+<tr class="memdesc:cuda__moe_8hpp"><td class="mdescLeft">&#160;</td><td class="mdescRight"><span class="tt"><a class="el" href="classsnicholls_1_1gpu_1_1cuda__moe__kernels.html" title="The mixture-of-experts kernels, compiled for one context&#39;s device, and their working space.">snicholls::gpu::cuda_moe_kernels</a></span>: snicholls-core's mixture-of-experts steps (<span class="tt">ml/moe.hpp</span>) on an NVIDIA GPU, so an MoE transformer trains with its routing, permutation, grouped products and balance losses on the device. <br /></td></tr>
 <tr class="memitem:cuda_5Fops_2Ehpp" id="r_cuda_5Fops_2Ehpp"><td class="memItemLeft" align="right" valign="top"><a href="cuda__ops_8hpp_source.html"><span class="icondoc"><div class="doc-icon"></div></span></a>&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="cuda__ops_8hpp.html">cuda_ops.hpp</a></td></tr>
 <tr class="memdesc:cuda__ops_8hpp"><td class="mdescLeft">&#160;</td><td class="mdescRight"><span class="tt"><a class="el" href="structsnicholls_1_1gpu_1_1cuda__training__backend.html" title="The CUDA backend with the training steps&#39; kernels: core&#39;s batched passes run entirely on the device o...">snicholls::gpu::cuda_training_backend</a></span>: snicholls-core's batched training passes on an NVIDIA GPU with every step on the device, so a training step's data stays there. <br /></td></tr>
 <tr class="memitem:opencl_2Ehpp" id="r_opencl_2Ehpp"><td class="memItemLeft" align="right" valign="top"><a href="opencl_8hpp_source.html"><span class="icondoc"><div class="doc-icon"></div></span></a>&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="opencl_8hpp.html">opencl.hpp</a></td></tr>

@@ -26,7 +26,7 @@
  <tbody>
  <tr id="projectrow">
   <td id="projectalign">
-   <div id="projectname">snicholls-gpu<span id="projectnumber">&#160;0.7.1</span>
+   <div id="projectname">snicholls-gpu<span id="projectnumber">&#160;0.8.0</span>
    </div>
    <div id="projectbrief">GPU backends of snicholls-core&#39;s interfaces: linalg on OpenCL</div>
   </td>
@@ -163,7 +163,46 @@ Accuracy</h1>
 <tr class="markdownTableRowEven">
 <td class="markdownTableBodyNone">llm.c's own float32 CPU code, for comparison  </td><td class="markdownTableBodyNone">5.269997  </td><td class="markdownTableBodyNone">0.075%  </td></tr>
 </table>
-<p>In float, ten AdamW steps on that batch give PyTorch's ten losses within 1.1e-4. </p>
+<p>In float, ten AdamW steps on that batch give PyTorch's ten losses within 1.1e-4.</p>
+<h1 class="doxsection"><a class="anchor" id="autotoc_md9"></a>
+A mixture of experts</h1>
+<p><span class="tt"><a class="el" href="cuda__moe_8hpp.html" title="snicholls::gpu::cuda_moe_kernels: snicholls-core&#39;s mixture-of-experts steps (ml/moe....">cuda_moe.hpp</a></span> runs core's mixture of experts (<span class="tt">ml/moe.hpp</span>) on the device. Measured with <span class="tt">benchmarks/cuda_moe_benchmark.cpp</span> on the same RTX PRO 4000 Blackwell, CUDA 13.3, Release, 2026-11-19, <b>while another training job kept the GPU fully busy</b>: every figure is an upper bound and the pairs are compared with each other, not with the tables above. Medians of five where stated. Two shapes over 4096 tokens of 768: eight experts of 2048, two per token (Mixtral's), and 64 experts of 256, eight per token, with one shared expert (DeepSeekMoE's), routed from random tokens so the segments are as uneven as a router makes them.</p>
+<p><b>The grouped product.</b> The segments' sizes come from the routing and so live on the device. Three ways to multiply them were measured; cuBLASLt's grouped layouts (<span class="tt">CUBLASLT_BATCH_MODE_GROUPED</span>) return <span class="tt">CUBLAS_STATUS_NOT_SUPPORTED</span> on this device (sm_120) for float, TF32 and bfloat16 alike, and <span class="tt">cublasGemmGroupedBatchedEx</span> takes no bfloat16 inputs with float outputs. The experts' up projection, forward:</p>
+<table class="markdownTable">
+<tr class="markdownTableHead">
+<th class="markdownTableHeadNone">shape, math  </th><th class="markdownTableHeadNone">grouped kernel  </th><th class="markdownTableHeadNone">cuBLAS per expert  </th><th class="markdownTableHeadNone"><span class="tt">cublasGemmGroupedBatchedEx</span>  </th></tr>
+<tr class="markdownTableRowOdd">
+<td class="markdownTableBodyNone">8 x 2048, float  </td><td class="markdownTableBodyNone">7.5 ms  </td><td class="markdownTableBodyNone">7.7 ms  </td><td class="markdownTableBodyNone">7.8 ms  </td></tr>
+<tr class="markdownTableRowEven">
+<td class="markdownTableBodyNone">8 x 2048, TF32  </td><td class="markdownTableBodyNone">3.8 ms  </td><td class="markdownTableBodyNone">3.5 ms  </td><td class="markdownTableBodyNone">3.4 ms  </td></tr>
+<tr class="markdownTableRowOdd">
+<td class="markdownTableBodyNone">8 x 2048, bfloat16  </td><td class="markdownTableBodyNone">3.3 ms  </td><td class="markdownTableBodyNone">2.9 ms  </td><td class="markdownTableBodyNone">(not supported)  </td></tr>
+<tr class="markdownTableRowEven">
+<td class="markdownTableBodyNone">64 x 256, float  </td><td class="markdownTableBodyNone">4.0 ms  </td><td class="markdownTableBodyNone">6.9 ms  </td><td class="markdownTableBodyNone">4.0 ms  </td></tr>
+<tr class="markdownTableRowOdd">
+<td class="markdownTableBodyNone">64 x 256, TF32  </td><td class="markdownTableBodyNone">3.3 ms  </td><td class="markdownTableBodyNone">3.3 ms  </td><td class="markdownTableBodyNone">3.4 ms  </td></tr>
+<tr class="markdownTableRowEven">
+<td class="markdownTableBodyNone">64 x 256, bfloat16  </td><td class="markdownTableBodyNone">2.9 ms  </td><td class="markdownTableBodyNone">3.3 ms  </td><td class="markdownTableBodyNone">(not supported)  </td></tr>
+</table>
+<p>Both cuBLAS ways need the segments' sizes on the host: one wait for the offsets per product, and nothing of it can be captured in a graph. The grouped kernel reads them on the device: 128 x 128 tiles on the tensor cores (TF32, bfloat16, or three TF32 products for float's accuracy), the fragments kept in shared memory in the order they are read (one 128-bit load per fragment; the first layout, a word per load, took 5.8 ms where this takes 3.8), no atomics. It is within about 10% of cuBLAS for large segments and as fast or faster for many small ones.</p>
+<p><b>A whole layer</b>, <span class="tt">ml::moe_forward</span> and <span class="tt">ml::moe_backward</span> (router, routing, permutation, gather, the three grouped products and their backward, the activations, combine, the shared expert, the balance losses), medians of five:</p>
+<table class="markdownTable">
+<tr class="markdownTableHead">
+<th class="markdownTableHeadNone">shape, math  </th><th class="markdownTableHeadNone">queued  </th><th class="markdownTableHeadNone">captured graph  </th><th class="markdownTableHeadNone">queued, cuBLAS per expert  </th></tr>
+<tr class="markdownTableRowOdd">
+<td class="markdownTableBodyNone">8 x 2048, float  </td><td class="markdownTableBodyNone">71.6 ms  </td><td class="markdownTableBodyNone">69.3 ms  </td><td class="markdownTableBodyNone">72.1 ms  </td></tr>
+<tr class="markdownTableRowEven">
+<td class="markdownTableBodyNone">8 x 2048, TF32  </td><td class="markdownTableBodyNone">39.8 ms  </td><td class="markdownTableBodyNone">35.3 ms  </td><td class="markdownTableBodyNone">43.0 ms  </td></tr>
+<tr class="markdownTableRowOdd">
+<td class="markdownTableBodyNone">8 x 2048, bfloat16  </td><td class="markdownTableBodyNone">32.3 ms  </td><td class="markdownTableBodyNone">30.0 ms  </td><td class="markdownTableBodyNone">38.6 ms  </td></tr>
+<tr class="markdownTableRowEven">
+<td class="markdownTableBodyNone">64 x 256 + shared, float  </td><td class="markdownTableBodyNone">53.9 ms  </td><td class="markdownTableBodyNone">51.5 ms  </td><td class="markdownTableBodyNone">66.2 ms  </td></tr>
+<tr class="markdownTableRowOdd">
+<td class="markdownTableBodyNone">64 x 256 + shared, TF32  </td><td class="markdownTableBodyNone">35.0 ms  </td><td class="markdownTableBodyNone">30.6 ms  </td><td class="markdownTableBodyNone">39.1 ms  </td></tr>
+<tr class="markdownTableRowEven">
+<td class="markdownTableBodyNone">64 x 256 + shared, bfloat16  </td><td class="markdownTableBodyNone">31.3 ms  </td><td class="markdownTableBodyNone">29.1 ms  </td><td class="markdownTableBodyNone">41.0 ms  </td></tr>
+</table>
+<p>So the grouped kernel is the default (<span class="tt">grouped_path::kernel</span>): with it nothing in a layer waits for the host except the two auxiliary losses' values, which go to device memory instead when the step is captured (<span class="tt">cuda_moe_kernels::losses_on_device</span>), and the whole layer replays as one graph. The steps around the products (routing, the histogram, the permutation, gather and combine) take 2.4 ms for the first shape and 2.9 ms for the second. <span class="tt">BENCHMARKS.md</span> is not rewritten from these contended figures; that waits for a free GPU. </p>
 </div></div><!-- contents -->
 </div><!-- PageDoc -->
 </div><!-- doc-content -->

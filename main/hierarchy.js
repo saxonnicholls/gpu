@@ -8,6 +8,7 @@ var hierarchy =
     [ "snicholls::gpu::cuda_failure", "structsnicholls_1_1gpu_1_1cuda__failure.html", null ],
     [ "snicholls::gpu::cuda_graph", "classsnicholls_1_1gpu_1_1cuda__graph.html", null ],
     [ "snicholls::gpu::cuda_kernels", "classsnicholls_1_1gpu_1_1cuda__kernels.html", null ],
+    [ "snicholls::gpu::cuda_moe_kernels", "classsnicholls_1_1gpu_1_1cuda__moe__kernels.html", null ],
     [ "snicholls::gpu::device_buffer&lt; T &gt;", "classsnicholls_1_1gpu_1_1device__buffer.html", null ],
     [ "std::exception", null, [
       [ "std::runtime_error", null, [
