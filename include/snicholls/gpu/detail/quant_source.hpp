@@ -209,7 +209,8 @@ typedef unsigned int uint;
 #define GY ((u64)blockIdx.y)
 #define AS_FLOAT(u) __uint_as_float((uint)(u))
 #define AS_UINT(f) __float_as_uint(f)
-#define LOAD4(p) (*(const float4*)(p))
+// A vector load where the address allows it (an odd row width or a span's offset may not), else four scalar loads
+#define LOAD4(p) ((((u64)(p)) & 15ull) == 0 ? *(const float4*)(p) : make_float4((p)[0], (p)[1], (p)[2], (p)[3]))
 )CU";
 
 // The formats: exact decoding, then one device function per format giving the weight at (r, c)
