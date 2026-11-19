@@ -65,9 +65,9 @@ struct e5m2_tag : dense_tag<qml::float8_e5m2> { static constexpr const char* nam
 // The formats of core's next release, over gpu::block_weights
 template <typename Block>
 struct block_tag { using view = snicholls::gpu::block_weights<Block>; static constexpr std::size_t unit = Block::elements; static constexpr bool q8 = false; };
-struct q4_1_tag : block_tag<qml::block_q4_1> { static constexpr const char* name = "q4_1"; };
-struct q5_0_tag : block_tag<qml::block_q5_0> { static constexpr const char* name = "q5_0"; };
-struct q5_1_tag : block_tag<qml::block_q5_1> { static constexpr const char* name = "q5_1"; };
+struct q4_1_tag : block_tag<qml::block_q4_1> { static constexpr const char* name = "q4_1"; static constexpr bool q8 = true; };
+struct q5_0_tag : block_tag<qml::block_q5_0> { static constexpr const char* name = "q5_0"; static constexpr bool q8 = true; };
+struct q5_1_tag : block_tag<qml::block_q5_1> { static constexpr const char* name = "q5_1"; static constexpr bool q8 = true; };
 struct q2_k_tag : block_tag<qml::block_q2_k> { static constexpr const char* name = "q2_k"; static constexpr bool q8 = true; };
 struct q3_k_tag : block_tag<qml::block_q3_k> { static constexpr const char* name = "q3_k"; static constexpr bool q8 = true; };
 struct q4_k_tag : block_tag<qml::block_q4_k> { static constexpr const char* name = "q4_k"; static constexpr bool q8 = true; };
@@ -186,7 +186,7 @@ inline void reference_backward_input(const std::vector<float>& dense, std::size_
 template <typename A, typename W>
 std::vector<float> reference_q8_with(const W& w, std::span<const float> xs, std::span<const float> bias)
 {
-    const std::size_t n = xs.size() / w.cols, per = sizeof(A) == sizeof(qml::block_q8_0) ? 32 : 256;
+    const std::size_t n = xs.size() / w.cols, per = sizeof(A) > 64 ? 256 : 32;   // Q8_K's blocks of 256, Q8_0's and Q8_1's of 32
     std::vector<float> ys(n * w.rows);
     std::vector<A> q(w.cols / per);
     for (std::size_t t = 0; t < n; ++t) {
@@ -207,7 +207,7 @@ std::vector<float> reference_q8(const qml::quantized_weights<Block>& w, std::spa
 template <typename Block>
 std::vector<float> reference_q8(const snicholls::gpu::block_weights<Block>& w, std::span<const float> xs, std::span<const float> bias)
 {
-    return reference_q8_with<qml::block_q8_k>(w, xs, bias);
+    return reference_q8_with<typename Block::dot_block>(w, xs, bias);
 }
 #endif
 

@@ -52,12 +52,15 @@ inline constexpr std::array<std::size_t, format_count> block_bytes{34, 18, 17, 3
 
 // Whether a format has core's integer dot product with Q8_0 activations (ml/quantize.hpp `dot`), or with Q8_K (the
 // K-quants, ml/quant_k.hpp `dot`)
-constexpr bool has_q8_0_dot(format f) noexcept { return f == format::q8_0 || f == format::q4_0 || f == format::mxfp4; }
+constexpr bool has_q8_0_dot(format f) noexcept { return f == format::q8_0 || f == format::q4_0 || f == format::mxfp4 || f == format::q5_0; }
+constexpr bool has_q8_1_dot(format f) noexcept { return f == format::q4_1 || f == format::q5_1; }
 constexpr bool has_q8_k_dot(format f) noexcept
 {
     return f == format::q2_k || f == format::q3_k || f == format::q4_k || f == format::q5_k || f == format::q6_k;
 }
-constexpr bool has_q8_dot(format f) noexcept { return has_q8_0_dot(f) || has_q8_k_dot(f); }
+constexpr bool has_q8_dot(format f) noexcept { return has_q8_0_dot(f) || has_q8_1_dot(f) || has_q8_k_dot(f); }
+// Blocks of Q8_1 activations: Q8_0's with the float16 sum s = d Σ q after the scale
+inline constexpr std::size_t q8_1_bytes = 36;
 // Blocks of Q8_K activations: a float scale, 256 codes, 16 sums of 16 (ml/quantize.hpp block_q8_k)
 inline constexpr std::size_t q8k_bytes = 292;
 
@@ -579,6 +582,62 @@ KERNEL GROUP1(64) void quantize_q8(GLOBAL const float* x, u64 blocks, GLOBAL uch
     o[1] = (uchar)(h >> 8);
     for (int j = 0; j < 32; ++j) { const float scaled = v[j] * id; o[2 + j] = (uchar)(i8)round_to_int(scaled); }
 }
+// Rows of activations quantised to Q8_1 (ml/quantize.hpp quantize_row<block_q8_1>): Q8_0's codes, then s = (Σ q) d
+KERNEL GROUP1(64) void quantize_q8_1(GLOBAL const float* x, u64 blocks, GLOBAL uchar* out)
+{
+    const u64 b = GX * 64 + (u64)LX;
+    if (b >= blocks) return;
+    GLOBAL const float* v = x + b * 32;
+    float amax = 0.0f;
+    for (int j = 0; j < 32; ++j) { const float a = v[j] < 0.0f ? -v[j] : v[j]; amax = amax > a ? amax : a; }
+    const float d = amax / 127.0f;
+    const float id = d != 0.0f ? 1.0f / d : 0.0f;
+    GLOBAL uchar* o = out + b * 36;
+    const uint h = f2h(d);
+    o[0] = (uchar)(h & 0xffu);
+    o[1] = (uchar)(h >> 8);
+    int sum = 0;
+    for (int j = 0; j < 32; ++j) { const float scaled = v[j] * id; const int q = round_to_int(scaled); o[4 + j] = (uchar)(i8)q; sum += (int)(i8)q; }
+    const float sd = (float)sum * d;
+    const uint hs = f2h(sd);
+    o[2] = (uchar)(hs & 0xffu);
+    o[3] = (uchar)(hs >> 8);
+}
+// core's dot products of Q5_0 with Q8_0, and of Q4_1 and Q5_1 with Q8_1, one block's term
+DEVICE float term_q5_0(GLOBAL const uchar* wb, GLOBAL const uchar* xb)
+{
+    const uint qh = word_at(wb + 2);
+    int s0 = 0, s1 = 0;
+    for (uint j = 0; j < 16; ++j) {
+        s0 += ((int)((wb[6 + j] & 15u) | (((qh >> j) & 1u) << 4)) - 16) * (int)(i8)xb[2 + j];
+        s1 += ((int)((wb[6 + j] >> 4) | (((qh >> (j + 16)) & 1u) << 4)) - 16) * (int)(i8)xb[18 + j];
+    }
+    const float dd = half_at(wb) * half_at(xb);
+    return dd * (float)(s0 + s1);
+}
+DEVICE float term_q4_1(GLOBAL const uchar* wb, GLOBAL const uchar* xb)
+{
+    int s0 = 0, s1 = 0;
+    for (uint j = 0; j < 16; ++j) { s0 += (int)(wb[4 + j] & 15u) * (int)(i8)xb[4 + j]; s1 += (int)(wb[4 + j] >> 4) * (int)(i8)xb[20 + j]; }
+    const float dd = half_at(wb) * half_at(xb);
+    const float a = dd * (float)(s0 + s1);
+    const float b = half_at(wb + 2) * half_at(xb + 2);
+    return a + b;
+}
+DEVICE float term_q5_1(GLOBAL const uchar* wb, GLOBAL const uchar* xb)
+{
+    const uint qh = word_at(wb + 4);
+    int s0 = 0, s1 = 0;
+    for (uint j = 0; j < 16; ++j) {
+        s0 += (int)((wb[8 + j] & 15u) | (((qh >> j) & 1u) << 4)) * (int)(i8)xb[4 + j];
+        s1 += (int)((wb[8 + j] >> 4) | (((qh >> (j + 16)) & 1u) << 4)) * (int)(i8)xb[20 + j];
+    }
+    const float dd = half_at(wb) * half_at(xb);
+    const float a = dd * (float)(s0 + s1);
+    const float b = half_at(wb + 2) * half_at(xb + 2);
+    return a + b;
+}
+
 )SRC";
 
 // The kernels of one format, instantiated with FMT (its name) and GET(r, c) (its weight) defined
@@ -718,7 +777,7 @@ KERNEL GROUP1(64) void CAT(qdot, FMT)(GLOBAL const uchar* w, u64 cols, GLOBAL co
     float sum = 0.0f;
     for (u64 b0 = 0; b0 < nb; b0 += 64) {
         const u64 b = b0 + (u64)l;
-        terms[l] = b < nb ? TERM(w + (r * nb + b) * BYTES, xq + (t * nb + b) * 34) : 0.0f;
+        terms[l] = b < nb ? TERM(w + (r * nb + b) * BYTES, xq + (t * nb + b) * XBYTES) : 0.0f;
         BARRIER();
         if (l == 0) { const u64 e = nb - b0 < 64 ? nb - b0 : 64; for (u64 i = 0; i < e; ++i) sum += terms[i]; }
         BARRIER();
@@ -775,10 +834,11 @@ inline std::string program(const char* prelude, const char* extra = "")
         s += "#define FMT " + n + "\n#define GET(r, c) get_" + n + "(WPASS, r, c)\n#define GET8(r, c, v) get8_" + n + "(WPASS, r, c, v)\n" + kernels_source
              + "#undef GET8\n#undef GET\n#undef FMT\n";
     }
-    for (const auto& [name, bytes] : {std::pair{"q8_0", 34}, std::pair{"q4_0", 18}, std::pair{"mxfp4", 17}}) {
+    for (const auto& [name, bytes, xbytes] : {std::tuple{"q8_0", 34, 34}, std::tuple{"q4_0", 18, 34}, std::tuple{"mxfp4", 17, 34}, std::tuple{"q5_0", 22, 34},
+                                              std::tuple{"q4_1", 20, 36}, std::tuple{"q5_1", 24, 36}}) {
         const std::string n(name);
-        s += "#define FMT " + n + "\n#define TERM term_" + n + "\n#define BYTES " + std::to_string(bytes) + "\n" + q8_source
-             + "#undef BYTES\n#undef TERM\n#undef FMT\n";
+        s += "#define FMT " + n + "\n#define TERM term_" + n + "\n#define BYTES " + std::to_string(bytes) + "\n#define XBYTES " + std::to_string(xbytes)
+             + "\n" + q8_source + "#undef XBYTES\n#undef BYTES\n#undef TERM\n#undef FMT\n";
     }
     for (const auto& [name, bytes, kind] : {std::tuple{"q2_k", 84, 2}, std::tuple{"q3_k", 110, 0}, std::tuple{"q4_k", 144, 1}, std::tuple{"q5_k", 176, 1},
                                            std::tuple{"q6_k", 210, 0}}) {

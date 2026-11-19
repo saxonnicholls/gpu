@@ -20,7 +20,8 @@
 /// - `linear_sequence_backward_input(b, w, dys, dxs)`: `dX += dY W`, the input's gradient through the frozen base
 ///   (there is none to the weights: they are frozen).
 /// - `linear_sequence_q8(b, w, xs, ys, bias)`: the integer path: each row of `X` quantised on the device to the 8-bit
-///   blocks core's dot product pairs the format with (Q8_0 for Q8_0, Q4_0 and MXFP4; Q8_K for Q2_K to Q6_K), each output
+///   blocks core's dot product pairs the format with (Q8_0 for Q8_0, Q4_0, MXFP4 and Q5_0; Q8_1 for Q4_1 and Q5_1; Q8_K
+///   for Q2_K to Q6_K), each output
 ///   core's block dot product (`ml::dot`), as ggml's CPU matrix-vector products and core's `ml::linear` do.
 ///
 /// `w` is one of core's views over host memory (`ml::quantized_weights<Block>`, `ml::nf4_weights`,
@@ -177,11 +178,12 @@ public:
         for (std::size_t f = 0; f < detail::quant::format_count; ++f) {
             const std::string n(detail::quant::names[f]);
             if (!make("qmv_" + n, k->mv_[f]) || !make("qmm_" + n, k->mm_[f]) || !make("qmmt_" + n, k->mmt_[f])
-                || (detail::quant::has_q8_0_dot(detail::quant::format(f)) && !make("qdot_" + n, k->dot_[f]))
+                || ((detail::quant::has_q8_0_dot(detail::quant::format(f)) || detail::quant::has_q8_1_dot(detail::quant::format(f)))
+                    && !make("qdot_" + n, k->dot_[f]))
                 || (detail::quant::has_q8_k_dot(detail::quant::format(f)) && !make("qkdot_" + n, k->dot_[f])))
                 return err(opencl_failure{opencl_error::call_failed, code, {}});
         }
-        if (!make("quantize_q8", k->quantize_) || !make("quantize_q8k", k->quantize_k_))
+        if (!make("quantize_q8", k->quantize_) || !make("quantize_q8_1", k->quantize_1_) || !make("quantize_q8k", k->quantize_k_))
             return err(opencl_failure{opencl_error::call_failed, code, {}});
         return ok(std::move(k));
     }
@@ -197,7 +199,7 @@ public:
             for (cl_kernel kernel : *set)
                 if (kernel)
                     clReleaseKernel(kernel);
-        for (cl_kernel kernel : {quantize_, quantize_k_})
+        for (cl_kernel kernel : {quantize_, quantize_1_, quantize_k_})
             if (kernel)
                 clReleaseKernel(kernel);
         if (program_)
@@ -294,8 +296,8 @@ public:
                       "clEnqueueReadBuffer");
     }
 
-    /// \brief `Y = X Wᵀ + b` with `X` quantised on the device as core's dot product pairs the weights (Q8_0 for Q8_0, Q4_0
-    /// and MXFP4; Q8_K for Q2_K to Q6_K) and each output core's block dot product.
+    /// \brief `Y = X Wᵀ + b` with `X` quantised on the device as core's dot product pairs the weights (Q8_0, Q8_1 or
+    /// Q8_K) and each output core's block dot product.
     /// \param w Weights of one of those formats. \param xs `n · cols`. \param ys Written, `n · rows`. \param bias `rows`, or empty.
     /// \throws std::invalid_argument for weights of another format or sizes that do not fit; opencl_exception if a call fails.
     void forward_q8(const opencl_quant_matrix& w, std::span<const float> xs, std::span<float> ys, std::span<const float> bias) const
@@ -307,11 +309,12 @@ public:
             return;
         const auto ctx = context_->native_context();
         const auto queue = context_->native_queue();
-        const bool k_quant = detail::quant::has_q8_k_dot(w.s_->fmt);
+        const bool k_quant = detail::quant::has_q8_k_dot(w.s_->fmt), q8_1 = detail::quant::has_q8_1_dot(w.s_->fmt);
         const cl_ulong blocks = n * w.cols / (k_quant ? 256 : 32);
-        cl_kernel quantize = k_quant ? quantize_k_ : quantize_;
+        cl_kernel quantize = k_quant ? quantize_k_ : q8_1 ? quantize_1_ : quantize_;
+        const std::size_t block_bytes = k_quant ? detail::quant::q8k_bytes : q8_1 ? detail::quant::q8_1_bytes : detail::quant::q8_bytes;
         detail::buffer dx(ctx, CL_MEM_READ_ONLY | CL_MEM_COPY_HOST_PTR, xs.size_bytes(), const_cast<float*>(xs.data()));
-        detail::buffer dq(ctx, CL_MEM_READ_WRITE, std::size_t(blocks) * (k_quant ? detail::quant::q8k_bytes : detail::quant::q8_bytes), nullptr);
+        detail::buffer dq(ctx, CL_MEM_READ_WRITE, std::size_t(blocks) * block_bytes, nullptr);
         detail::buffer dy(ctx, CL_MEM_WRITE_ONLY, ys.size_bytes(), nullptr);
         detail::buffer db(ctx, CL_MEM_READ_ONLY | CL_MEM_COPY_HOST_PTR, bias.size_bytes(), const_cast<float*>(bias.data()));
         const cl_int has_bias = bias.empty() ? 0 : 1;
@@ -386,7 +389,7 @@ private:
     const opencl_context* context_;
     cl_program program_ = nullptr;
     std::array<cl_kernel, detail::quant::format_count> mv_{}, mm_{}, mmt_{}, dot_{};
-    cl_kernel quantize_ = nullptr, quantize_k_ = nullptr;
+    cl_kernel quantize_ = nullptr, quantize_1_ = nullptr, quantize_k_ = nullptr;
     bool exact_q8_ = false;
     mutable std::mutex mutex_;
 };
@@ -466,7 +469,8 @@ void linear_sequence(const opencl_quant_backend& b, const block_weights<Block>& 
     linear_sequence(b, detail::opencl_quant::kernels(b).upload(w), xs, ys, bias);
 }
 
-/// \brief `Y = X Wᵀ + b` with Q8_K activations over K-quant blocks in host memory (Q2_K to Q6_K): core's `dot`.
+/// \brief `Y = X Wᵀ + b` with 8-bit activations over other ggml blocks in host memory (Q8_0 for Q5_0, Q8_1 for Q4_1
+/// and Q5_1, Q8_K for Q2_K to Q6_K): core's `dot`.
 /// \param b The backend. \param w The weights. \param xs `n · cols`. \param ys Written, `n · rows`. \param bias `rows`, or
 /// empty. \throws std::invalid_argument, opencl_exception.
 template <typename Block>
