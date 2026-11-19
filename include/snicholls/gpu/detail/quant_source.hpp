@@ -56,7 +56,8 @@ constexpr bool has_q8_0_dot(format f) noexcept { return f == format::q8_0 || f =
 constexpr bool has_q8_1_dot(format f) noexcept { return f == format::q4_1 || f == format::q5_1; }
 constexpr bool has_q8_k_dot(format f) noexcept
 {
-    return f == format::q2_k || f == format::q3_k || f == format::q4_k || f == format::q5_k || f == format::q6_k;
+    return f == format::q2_k || f == format::q3_k || f == format::q4_k || f == format::q5_k || f == format::q6_k || f == format::tq1_0
+           || f == format::tq2_0;
 }
 constexpr bool has_q8_dot(format f) noexcept { return has_q8_0_dot(f) || has_q8_1_dot(f) || has_q8_k_dot(f); }
 // Blocks of Q8_1 activations: Q8_0's with the float16 sum s = d Σ q after the scale
@@ -517,6 +518,31 @@ DEVICE void kterm_q2_k(GLOBAL const uchar* b, GLOBAL const uchar* y, float* lane
     for (int l = 0; l < 8; ++l) lanes[l] = 0.0f;
 }
 #undef K_LANES
+// TQ1_0 and TQ2_0 (ml/quant_ternary.hpp dot): one integer sum a block over the elements in order, times dx dy
+DEVICE int code_tq1_0(GLOBAL const uchar* b, uint e)
+{
+    uint byte, k;
+    if (e < 160u) { byte = b[e % 32]; k = e / 32; }
+    else if (e < 240u) { byte = b[32 + (e - 160) % 16]; k = (e - 160) / 16; }
+    else { byte = b[48 + (e - 240) % 4]; k = (e - 240) / 4; }
+    return (int)((((byte * pow3[k]) & 255u) * 3u) >> 8) - 1;
+}
+DEVICE void kterm_tq1_0(GLOBAL const uchar* b, GLOBAL const uchar* y, float* lanes, float* t)
+{
+    int s = 0;
+    for (uint e = 0; e < 256; ++e) s += code_tq1_0(b, e) * q8k_q(y, e);
+    const float scale = half_at(b + 52) * q8k_d(y);
+    *t = (float)s * scale;
+    for (int l = 0; l < 8; ++l) lanes[l] = 0.0f;
+}
+DEVICE void kterm_tq2_0(GLOBAL const uchar* b, GLOBAL const uchar* y, float* lanes, float* t)
+{
+    int s = 0;
+    for (uint e = 0; e < 256; ++e) s += q8k_q(y, e) * ((int)((b[32 * (e / 128) + e % 32] >> (2 * ((e % 128) / 32))) & 3u) - 1);
+    const float d = q8k_d(y) * half_at(b + 64);
+    *t = (float)s * d;
+    for (int l = 0; l < 8; ++l) lanes[l] = 0.0f;
+}
 
 // float to float16, to nearest even (ml/minifloat.hpp to_minifloat<float16>): Q8_0's scale
 DEVICE uint f2h(float x)
@@ -841,7 +867,7 @@ inline std::string program(const char* prelude, const char* extra = "")
              + "\n" + q8_source + "#undef XBYTES\n#undef BYTES\n#undef TERM\n#undef FMT\n";
     }
     for (const auto& [name, bytes, kind] : {std::tuple{"q2_k", 84, 2}, std::tuple{"q3_k", 110, 0}, std::tuple{"q4_k", 144, 1}, std::tuple{"q5_k", 176, 1},
-                                           std::tuple{"q6_k", 210, 0}}) {
+                                           std::tuple{"q6_k", 210, 0}, std::tuple{"tq1_0", 54, 2}, std::tuple{"tq2_0", 66, 2}}) {
         const std::string n(name);
         s += "#define FMT " + n + "\n#define BYTES " + std::to_string(bytes) + "\n#define KIND " + std::to_string(kind) + "\n" + q8k_source
              + "#undef KIND\n#undef BYTES\n#undef FMT\n";

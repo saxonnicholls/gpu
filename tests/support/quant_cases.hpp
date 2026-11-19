@@ -73,8 +73,8 @@ struct q3_k_tag : block_tag<qml::block_q3_k> { static constexpr const char* name
 struct q4_k_tag : block_tag<qml::block_q4_k> { static constexpr const char* name = "q4_k"; static constexpr bool q8 = true; };
 struct q5_k_tag : block_tag<qml::block_q5_k> { static constexpr const char* name = "q5_k"; static constexpr bool q8 = true; };
 struct q6_k_tag : block_tag<qml::block_q6_k> { static constexpr const char* name = "q6_k"; static constexpr bool q8 = true; };
-struct tq1_0_tag : block_tag<qml::block_tq1_0> { static constexpr const char* name = "tq1_0"; };
-struct tq2_0_tag : block_tag<qml::block_tq2_0> { static constexpr const char* name = "tq2_0"; };
+struct tq1_0_tag : block_tag<qml::block_tq1_0> { static constexpr const char* name = "tq1_0"; static constexpr bool q8 = true; };
+struct tq2_0_tag : block_tag<qml::block_tq2_0> { static constexpr const char* name = "tq2_0"; static constexpr bool q8 = true; };
 #endif
 
 template <typename Block, typename Tag>

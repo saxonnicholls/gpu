@@ -21,7 +21,7 @@
 ///   (there is none to the weights: they are frozen).
 /// - `linear_sequence_q8(b, w, xs, ys, bias)`: the integer path: each row of `X` quantised on the device to the 8-bit
 ///   blocks core's dot product pairs the format with (Q8_0 for Q8_0, Q4_0, MXFP4 and Q5_0; Q8_1 for Q4_1 and Q5_1; Q8_K
-///   for Q2_K to Q6_K), each output
+///   for Q2_K to Q6_K, TQ1_0 and TQ2_0), each output
 ///   core's block dot product (`ml::dot`), as ggml's CPU matrix-vector products and core's `ml::linear` do.
 ///
 /// `w` is one of core's views over host memory (`ml::quantized_weights<Block>`, `ml::nf4_weights`,
@@ -304,7 +304,7 @@ public:
     {
         const std::size_t n = rows_of(w, xs, w.cols, ys, w.rows, bias);
         if (!detail::quant::has_q8_dot(w.s_->fmt))
-            throw std::invalid_argument("snicholls::gpu: 8-bit activations need Q8_0, Q4_0, MXFP4 or Q2_K to Q6_K weights");
+            throw std::invalid_argument("snicholls::gpu: 8-bit activations need weights of a format with core's integer dot product");
         if (n == 0 || w.rows == 0)
             return;
         const auto ctx = context_->native_context();
@@ -470,7 +470,7 @@ void linear_sequence(const opencl_quant_backend& b, const block_weights<Block>& 
 }
 
 /// \brief `Y = X Wᵀ + b` with 8-bit activations over other ggml blocks in host memory (Q8_0 for Q5_0, Q8_1 for Q4_1
-/// and Q5_1, Q8_K for Q2_K to Q6_K): core's `dot`.
+/// and Q5_1, Q8_K for Q2_K to Q6_K, TQ1_0 and TQ2_0): core's `dot`.
 /// \param b The backend. \param w The weights. \param xs `n · cols`. \param ys Written, `n · rows`. \param bias `rows`, or
 /// empty. \throws std::invalid_argument, opencl_exception.
 template <typename Block>

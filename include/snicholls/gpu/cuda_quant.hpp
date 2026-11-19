@@ -18,7 +18,7 @@
 /// - `linear_sequence(b, w, xs, ys, bias)`: `Y = X Wᵀ + b`, float activations.
 /// - `linear_sequence_backward_input(b, w, dys, dxs)`: `dX += dY W` (the base is frozen: no weight gradient).
 /// - `linear_sequence_q8(b, w, xs, ys, bias)`: the activations quantised on the device to the 8-bit blocks core's dot
-///   product pairs the weights with (Q8_0 for Q8_0, Q4_0, MXFP4, Q5_0; Q8_1 for Q4_1, Q5_1; Q8_K for Q2_K to Q6_K), and
+///   product pairs the weights with (Q8_0 for Q8_0, Q4_0, MXFP4, Q5_0; Q8_1 for Q4_1, Q5_1; Q8_K for Q2_K to Q6_K, TQ1_0 and TQ2_0), and
 ///   core's integer block dot products.
 ///
 /// `w` is core's view (`ml::quantized_weights<Block>`, `ml::nf4_weights`, `ml::dense_weights<S>`), or a
@@ -321,7 +321,7 @@ public:
     {
         const std::size_t n = rows_of(w, xs, w.cols, ys, w.rows, bias);
         if (!detail::quant::has_q8_dot(w.fmt))
-            throw std::invalid_argument("snicholls::gpu: 8-bit activations need Q8_0, Q4_0, MXFP4 or Q2_K to Q6_K weights");
+            throw std::invalid_argument("snicholls::gpu: 8-bit activations need weights of a format with core's integer dot product");
         if (n == 0 || w.rows == 0)
             return;
         const bool k_quant = detail::quant::has_q8_k_dot(w.fmt), q8_1 = detail::quant::has_q8_1_dot(w.fmt);
