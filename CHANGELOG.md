@@ -3,6 +3,22 @@
 All notable changes to snicholls-gpu. The format follows Keep a Changelog; versions follow Semantic Versioning.
 A version is released when its tag is on a commit where every blocking CI leg is green.
 
+## Unreleased
+
+### Added
+
+- **Products over quantised weights** (`opencl_quant.hpp`, `cuda_quant.hpp`, one kernel source in
+  `detail/quant_source.hpp`): the weights stay in core's formats in device memory, ggml's Q8_0, Q4_0 and MXFP4 blocks,
+  QLoRA's NF4 with double-quantised scales, and dense bfloat16, float16, FP8 E4M3 and E5M2, and each weight is
+  dequantised in registers with core's arithmetic. Overloads of core's `linear_sequence` and
+  `linear_sequence_backward_input` for `opencl_quant_backend` and `cuda_training_backend`, so `ml::lora_sequence` and
+  its backward run a QLoRA layer on the device, and `linear_sequence_q8`, the activations quantised to Q8_0 on the
+  device with core's integer block dot products. Matrix-vector kernels for decode (within the bound of a reordered
+  sum), tiled kernels for prefill and the input's gradient (core's reference bits over the dequantised weights), the
+  Q8_0 path to the bits of core's `ml::linear`; on CUDA under `cuda_math::bf16`, the tiled products on the tensor cores
+  (`mma.sync m16n8k16`). Deterministic, no atomics. `opencl_quant_matrix` keeps frozen weights on an OpenCL device.
+- `cuda_training_backend::quant`, after `moe`; `opencl_context::native_device`, `native_context`, `native_queue`.
+
 ## 0.8.0 - 2026-11-19
 
 ### Added

@@ -20,6 +20,9 @@ implementation with its conformance suites. This library implements them on a de
   device, a GPU by preference: AMD, NVIDIA, Intel, Apple. Code written against core's `linalg::gemm` (and through it
   core's batched transformer training) runs on the GPU by changing the backend it is handed. The products give the
   bits of core's reference backend.
+- **Quantised weights** (`opencl_quant.hpp`, `cuda_quant.hpp`): products whose weights stay in core's formats (ggml's
+  Q8_0, Q4_0, MXFP4; QLoRA's NF4; bfloat16, float16, FP8) and are dequantised in registers, forward, backward to the
+  input and with Q8_0 activations, so inference and QLoRA fine-tuning run on the device; one kernel source for both.
 
 ```cpp
 auto context = snicholls::gpu::opencl_context::create().unwrap();   // finds a GPU, compiles the kernels
