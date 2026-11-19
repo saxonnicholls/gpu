@@ -20,7 +20,7 @@ namespace gv = snicholls::gpu;
 static_assert(gv::version() == gv::version_major() * 10000 + gv::version_minor() * 100 + gv::version_patch());
 static_assert(noexcept(gv::version_string()));
 SNICHOLLS_GPU_REQUIRE_VERSION(0, 1, 0);
-SNICHOLLS_CORE_REQUIRE_VERSION(0, 13, 0);   // the minimum, as snicholls_core_require(0.13.0) in CMakeLists.txt
+SNICHOLLS_CORE_REQUIRE_VERSION(0, 16, 0);   // the minimum, as snicholls_core_require(0.16.0) in CMakeLists.txt
 
 TEST(GpuVersion, StringIsMajorDotMinorDotPatch)
 {

@@ -3,7 +3,7 @@
 All notable changes to snicholls-gpu. The format follows Keep a Changelog; versions follow Semantic Versioning.
 A version is released when its tag is on a commit where every blocking CI leg is green.
 
-## Unreleased
+## 0.8.0 - 2026-11-19
 
 ### Added
 
@@ -20,6 +20,15 @@ A version is released when its tag is on a commit where every blocking CI leg is
   `grouped_path::cublas` makes the products expert by expert through cuBLAS instead (one wait per product).
 - `cuda_training_backend::moe`: the backend's pointer to the mixture-of-experts kernels, the last member, so existing
   initialisers are unchanged.
+
+### Changed
+
+- Pins core v0.16.0 (was v0.15.0) and raises `snicholls_core_require` to 0.16.0: the device MoE kernels implement
+  core 0.16.0's mixture-of-experts API (`ml/moe.hpp`, `ml/moe_block.hpp`).
+- The Ubuntu gate (`make ubuntu`, `scripts/test_ubuntu.sh`) also builds with GCC 15 on Ubuntu 26.04
+  (`docker/ubuntu-26.04`), as core's CI does with ubuntu-latest's GCC 15.2: GCC 15 Release with benchmark smoke runs
+  and GCC 15 ASan+UBSan beside GCC 13 and Clang 18, nine configurations in all. `--quick` runs GCC 13 Release and
+  GCC 15 Release. A failed configuration shows its first diagnostics above the log's tail.
 
 ## 0.7.1 - 2026-11-19
 
