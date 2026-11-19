@@ -44,7 +44,7 @@ GPU vendor's driver (or PoCL, which runs OpenCL on the CPU) and `ocl-icd-opencl-
     make test-werror   # as CI does it
     make docs          # Doxygen, warnings are errors
     make check         # the version and mirror checks
-    make ubuntu        # every configuration on Ubuntu 24.04 in Docker, on PoCL
+    make ubuntu        # every configuration on Ubuntu 24.04 and 26.04 in Docker (GCC 13 and 15, Clang), on PoCL
     make benchmarks    # Release benchmarks; rewrites BENCHMARKS.md
 
 ## Licence

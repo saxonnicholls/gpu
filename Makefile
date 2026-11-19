@@ -5,7 +5,7 @@
 #   make asan          Address + UB sanitizers
 #   make docs          Doxygen, warnings are errors; output build-docs/docs/html
 #   make check         the static checks: version and mirror
-#   make ubuntu        every configuration on Ubuntu 24.04 in Docker (scripts/test_ubuntu.sh), on PoCL
+#   make ubuntu        every configuration on Ubuntu 24.04 and 26.04 in Docker, GCC 13 and 15 (scripts/test_ubuntu.sh), on PoCL
 #   make benchmarks    Release benchmarks; rewrites BENCHMARKS.md (scripts/run_benchmarks.sh)
 
 .PHONY: test test-werror asan docs check ubuntu benchmarks clean
