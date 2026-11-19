@@ -152,8 +152,9 @@ TYPED_TEST_P(QuantProduct, TheEdgeCasesGiveTheReference)
             d.template forward<Tag>(m, xs, ys, bias);
             const auto want = reference_forward(m.dense, 1, cols, xs, bias);
             quant_suite::expect_within(ys, want, reorder_bound(m.dense, 1, cols, xs, double(cols) * 0x1p-23), "one output");
-            if (mv == 0)
+            if (mv == 0) {
                 EXPECT_TRUE(same_bits(ys, want));
+            }
         }
         // Zero weights: the bias exactly; zero activations: the bias exactly
         {
@@ -216,10 +217,11 @@ TYPED_TEST_P(QuantProduct, Q8ActivationsGiveCoresDotProduct)
                 std::vector<float> ys(n * rows, -1.0f);
                 d.template forward_q8<Tag>(m, xs, ys, bias);
                 const auto want = reference_q8(m.view(), xs, bias);
-                if (d.exact_q8())
+                if (d.exact_q8()) {
                     EXPECT_TRUE(same_bits(ys, want)) << Tag::name << " n " << n << ": first difference at " << first_difference(ys, want);
-                else
+                } else {
                     quant_suite::expect_within(ys, want, reorder_bound(m.dense, rows, cols, xs, 0x1p-8), Tag::name);
+                }
             }
     }
 }

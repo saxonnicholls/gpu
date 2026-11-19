@@ -139,8 +139,9 @@ TEST(GpuOpenClQuant, CoresLinearOverQuantisedWeightsIsTheQ8Path)
     std::vector<float> want(20), got(20);
     ml::linear(m.view(), q, std::span<float>(want), std::span<const float>(bias));
     gpu::linear_sequence_q8(d.backend(), m.view(), x, got, bias);
-    if (d.exact_q8())
+    if (d.exact_q8()) {
         EXPECT_TRUE(same_bits(got, want));
+    }
 }
 
 TEST(GpuOpenClQuant, AQLoraLayerRunsThroughCoresLoraSequence)
