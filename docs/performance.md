@@ -131,3 +131,27 @@ two auxiliary losses' values, which go to device memory instead when the step is
 (`cuda_moe_kernels::losses_on_device`), and the whole layer replays as one graph. The steps around the products
 (routing, the histogram, the permutation, gather and combine) take 2.4 ms for the first shape and 2.9 ms for the second.
 `BENCHMARKS.md` is not rewritten from these contended figures; that waits for a free GPU.
+
+## Quantised weights on OpenCL
+
+`opencl_quant.hpp` on an AMD Radeon Pro Vega II (32 GB HBM2, about 1 TB/s; macOS 26, Apple's OpenCL 1.2, Release,
+2026-11-20) **while other work kept the host busy** (load average 40 to 75): first figures, upper bounds on the times.
+One token (decode) through a matrix kept on the device, the rate counting the bytes of weights read. The kernel alone,
+from OpenCL's event profiling with the program of `detail/quant_source.hpp` built on its own profiling queue:
+
+| format, activations | 4096 x 4096 | 14336 x 4096 |
+|---|---|---|
+| Q4_0, float | 129 us, 73 GB/s | 416 us, 80 GB/s |
+| Q8_0, float | 126 us, 142 GB/s | 405 us, 154 GB/s |
+| bfloat16, float | 305 us, 110 GB/s | 750 us, 157 GB/s |
+| Q4_0, Q8_0 | 116 us, 81 GB/s | 380 us, 87 GB/s |
+| Q8_0, Q8_0 | 165 us, 108 GB/s | 545 us, 115 GB/s |
+
+Q4_0 and Q8_0 take the same time, so the matrix-vector kernel is bound by its instructions (decoding, the address
+arithmetic), not by memory: about 15% of the device's bandwidth. Through the call (`benchmarks/opencl_quant_benchmark.cpp`,
+medians of three, the copies of `x` and `y` and the buffers made for them included) each product costs about 550 us
+more: 678 us and 980 us for Q8_0 at the two shapes. Against that, core's own one-row product on the host (scalar, one
+thread) takes 21 ms for Q4_0 and 14 ms for Q8_0 at 4096 x 4096, and the dequantised float matrix through
+`opencl_backend`'s product, which copies its 64 MB for each call, 46 ms. Prefill, 512 tokens through 4096 x 4096 on the
+tiled kernel (the reference's bits): 10.9 ms for Q4_0 and 11.1 ms for NF4, 1.6 TFLOP/s. The CUDA kernels' figures wait
+for the NVIDIA machine.

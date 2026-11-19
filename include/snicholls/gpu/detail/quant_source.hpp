@@ -42,6 +42,8 @@ constexpr bool has_q8_dot(format f) noexcept { return f == format::q8_0 || f == 
 
 // The tokens a matrix-vector launch takes at once: as MV_TOKENS in the source
 inline constexpr std::size_t mv_tokens = 8;
+// The outputs a matrix-vector work-group makes: as MV_ROWS in the source
+inline constexpr std::size_t mv_rows = 4;
 // Blocks of Q8_0 activations: 34 bytes of 32 values
 inline constexpr std::size_t q8_bytes = sizeof(ml::block_q8_0);
 
@@ -126,6 +128,7 @@ typedef char i8;
 #define GY ((u64)get_group_id(1))
 #define AS_FLOAT(u) as_float((uint)(u))
 #define AS_UINT(f) as_uint(f)
+#define LOAD4(p) vload4(0, p)
 )CLC";
 
 inline constexpr const char* cuda_prelude = R"CU(
@@ -149,6 +152,7 @@ typedef unsigned int uint;
 #define GY ((u64)blockIdx.y)
 #define AS_FLOAT(u) __uint_as_float((uint)(u))
 #define AS_UINT(f) __float_as_uint(f)
+#define LOAD4(p) (*(const float4*)(p))
 )CU";
 
 // The formats: exact decoding, then one device function per format giving the weight at (r, c)
@@ -214,6 +218,48 @@ DEVICE float get_bf16(WARGS, u64 r, u64 c) { return AS_FLOAT((uint)((GLOBAL cons
 DEVICE float get_f16(WARGS, u64 r, u64 c) { return mf_decode(((GLOBAL const ushort*)w)[r * cols + c], 5, 10, 0); }
 DEVICE float get_e4m3(WARGS, u64 r, u64 c) { return mf_decode(w[r * cols + c], 4, 3, 1); }
 DEVICE float get_e5m2(WARGS, u64 r, u64 c) { return mf_decode(w[r * cols + c], 5, 2, 0); }
+
+// Eight consecutive weights of one row from column c0 (c0 a multiple of 8, c0 + 8 at most cols), the same values as
+// get_<format>: the matrix-vector kernels' unit, decoding a block's scale once
+DEVICE void get8_q8_0(WARGS, u64 r, u64 c0, float* v)
+{
+    GLOBAL const uchar* b = w + (r * (cols / 32) + c0 / 32) * 34;
+    const float d = half_at(b);
+    GLOBAL const ushort* q = (GLOBAL const ushort*)(b + 2 + c0 % 32);   // a block starts on an even byte
+    for (int j = 0; j < 4; ++j) { const uint u = q[j]; v[2 * j] = (float)(i8)(u & 0xffu) * d; v[2 * j + 1] = (float)(i8)(u >> 8) * d; }
+}
+DEVICE void get8_q4_0(WARGS, u64 r, u64 c0, float* v)
+{
+    GLOBAL const uchar* b = w + (r * (cols / 32) + c0 / 32) * 18;
+    const float d = half_at(b);
+    const uint j0 = (uint)(c0 % 32), shift = j0 < 16u ? 0u : 4u;
+    GLOBAL const ushort* q = (GLOBAL const ushort*)(b + 2 + (j0 & 15u));   // a block starts on an even byte
+    for (int j = 0; j < 4; ++j) {
+        const uint u = (uint)q[j] >> shift;
+        v[2 * j] = (float)((int)(u & 15u) - 8) * d;
+        v[2 * j + 1] = (float)((int)((u >> 8) & 15u) - 8) * d;
+    }
+}
+DEVICE void get8_mxfp4(WARGS, u64 r, u64 c0, float* v)
+{
+    GLOBAL const uchar* b = w + (r * (cols / 32) + c0 / 32) * 17;
+    const float h = e8m0_half(b[0]);
+    const uint j0 = (uint)(c0 % 32), shift = j0 < 16u ? 0u : 4u;
+    GLOBAL const uchar* q = b + 1 + (j0 & 15u);
+    for (int j = 0; j < 8; ++j) v[j] = h * (float)fp4_doubled[(q[j] >> shift) & 15u];
+}
+DEVICE void get8_nf4(WARGS, u64 r, u64 c0, float* v)
+{
+    const u64 i = r * cols + c0, blk = i / 64;
+    const float s = mf_decode(sb[blk], 4, 3, 1) * gs[blk / 256];
+    const float scale = s + mean;
+    GLOBAL const uchar* q = w + i / 2;
+    for (int j = 0; j < 4; ++j) { v[2 * j] = nf4_values[q[j] >> 4] * scale; v[2 * j + 1] = nf4_values[q[j] & 15u] * scale; }
+}
+DEVICE void get8_bf16(WARGS, u64 r, u64 c0, float* v) { for (int j = 0; j < 8; ++j) v[j] = get_bf16(WPASS, r, c0 + (u64)j); }
+DEVICE void get8_f16(WARGS, u64 r, u64 c0, float* v) { for (int j = 0; j < 8; ++j) v[j] = get_f16(WPASS, r, c0 + (u64)j); }
+DEVICE void get8_e4m3(WARGS, u64 r, u64 c0, float* v) { for (int j = 0; j < 8; ++j) v[j] = get_e4m3(WPASS, r, c0 + (u64)j); }
+DEVICE void get8_e5m2(WARGS, u64 r, u64 c0, float* v) { for (int j = 0; j < 8; ++j) v[j] = get_e5m2(WPASS, r, c0 + (u64)j); }
 
 // float to float16, to nearest even (ml/minifloat.hpp to_minifloat<float16>): Q8_0's scale
 DEVICE uint f2h(float x)
@@ -284,35 +330,58 @@ KERNEL GROUP1(64) void quantize_q8(GLOBAL const float* x, u64 blocks, GLOBAL uch
 // The kernels of one format, instantiated with FMT (its name) and GET(r, c) (its weight) defined
 inline constexpr const char* kernels_source = R"SRC(
 #define MV_TOKENS 8
-// Matrix-vector (decode): y_t = W x_t + b for up to MV_TOKENS rows x_t. A group of 64 per output row; each item adds
-// the products of eight consecutive columns at a time, 512 apart, then the 64 partial sums are added by a fixed tree, so
+#define MV_ROWS 4
+// Matrix-vector (decode): y_t = W x_t + b for up to MV_TOKENS rows x_t. A group of 64 per MV_ROWS outputs, sharing
+// each load of x; each item decodes eight consecutive columns at a time (GET8), 512 apart, and adds their products, then the 64 partial sums are added by a fixed tree, so
 // the result is the same every run (not the reference's order: within rounding of it).
 KERNEL GROUP1(64) void CAT(qmv, FMT)(WARGS, GLOBAL const float* x, u64 n, u64 rows, GLOBAL const float* bias, int has_bias, GLOBAL float* y)
 {
-    LOCAL float red[MV_TOKENS * 64];
+    LOCAL float red[MV_ROWS * 64];
     const int l = LX;
-    const u64 r = GX;
-    float acc[MV_TOKENS];
-    for (int t = 0; t < MV_TOKENS; ++t) acc[t] = 0.0f;
-    for (u64 c0 = (u64)l * 8; c0 < cols; c0 += 512)
-        for (int j = 0; j < 8; ++j) {
-            const u64 c = c0 + (u64)j;
-            if (c < cols) {
-                const float v = GET(r, c);
-                for (int t = 0; t < MV_TOKENS; ++t)
-                    if ((u64)t < n) { const float p = v * x[(u64)t * cols + c]; acc[t] += p; }
+    const u64 r0 = GX * MV_ROWS;
+    const int nr = rows - r0 < MV_ROWS ? (int)(rows - r0) : MV_ROWS, nt = (int)n;
+    float acc[MV_ROWS][MV_TOKENS];
+    for (int k = 0; k < MV_ROWS; ++k)
+        for (int t = 0; t < MV_TOKENS; ++t) acc[k][t] = 0.0f;
+    for (u64 c0 = (u64)l * 8; c0 < cols; c0 += 512) {
+        float v[MV_ROWS][8];
+        const int e = cols - c0 < 8 ? (int)(cols - c0) : 8;
+        for (int k = 0; k < MV_ROWS; ++k)
+            if (k < nr) {
+                if (e == 8) GET8(r0 + (u64)k, c0, v[k]);
+                else for (int j = 0; j < 8; ++j) v[k][j] = j < e ? GET(r0 + (u64)k, c0 + (u64)j) : 0.0f;
             }
+        for (int t = 0; t < MV_TOKENS; ++t)
+            if (t < nt) {
+                GLOBAL const float* xt = x + (u64)t * cols + c0;
+                float xv[8];
+                if (e == 8) {   // 8 floats from a multiple of 8: two aligned vector loads
+                    const float4 lo = LOAD4(xt), hi = LOAD4(xt + 4);
+                    xv[0] = lo.x; xv[1] = lo.y; xv[2] = lo.z; xv[3] = lo.w; xv[4] = hi.x; xv[5] = hi.y; xv[6] = hi.z; xv[7] = hi.w;
+                } else
+                    for (int j = 0; j < 8; ++j) xv[j] = j < e ? xt[j] : 0.0f;
+                for (int k = 0; k < MV_ROWS; ++k)
+                    if (k < nr)
+                        for (int j = 0; j < e; ++j) { const float p = v[k][j] * xv[j]; acc[k][t] += p; }
+            }
+    }
+    // One token at a time through a small local array, so many groups fit on a compute unit
+    for (int t = 0; t < MV_TOKENS; ++t) {
+        if (t >= nt) break;
+        for (int k = 0; k < MV_ROWS; ++k) red[k * 64 + l] = acc[k][t];
+        BARRIER();
+        for (int s = 32; s > 0; s >>= 1) {
+            if (l < s)
+                for (int k = 0; k < MV_ROWS; ++k) red[k * 64 + l] += red[k * 64 + l + s];
+            BARRIER();
         }
-    for (int t = 0; t < MV_TOKENS; ++t) red[t * 64 + l] = acc[t];
-    BARRIER();
-    for (int s = 32; s > 0; s >>= 1) {
-        if (l < s)
-            for (int t = 0; t < MV_TOKENS; ++t) red[t * 64 + l] += red[t * 64 + l + s];
+        if (l < nr) {
+            float o = red[l * 64];
+            if (has_bias) o = o + bias[r0 + (u64)l];
+            y[(u64)t * rows + r0 + (u64)l] = o;
+        }
         BARRIER();
     }
-    if (l == 0)
-        for (int t = 0; t < MV_TOKENS; ++t)
-            if ((u64)t < n) { float v = red[t * 64]; if (has_bias) v = v + bias[r]; y[(u64)t * rows + r] = v; }
 }
 
 // The tiled product C (m x nn) = A (m x kk, row-major) B + beta C, plus a bias over the columns, where B (kk x nn) is
@@ -379,6 +448,7 @@ TILED(CAT(qmmt, FMT), BWD_GET, BWD_P, BWD_C)
 #undef BWD_P
 #undef BWD_C
 #undef MV_TOKENS
+#undef MV_ROWS
 )SRC";
 
 // The integer path of one format with core's dot product, instantiated with FMT, TERM and BYTES (its block's size)
@@ -410,7 +480,8 @@ inline std::string program(const char* prelude, const char* extra = "")
     std::string s = std::string(prelude) + formats_source;
     for (const auto name : names) {
         const std::string n(name);
-        s += "#define FMT " + n + "\n#define GET(r, c) get_" + n + "(WPASS, r, c)\n" + kernels_source + "#undef GET\n#undef FMT\n";
+        s += "#define FMT " + n + "\n#define GET(r, c) get_" + n + "(WPASS, r, c)\n#define GET8(r, c, v) get8_" + n + "(WPASS, r, c, v)\n" + kernels_source
+             + "#undef GET8\n#undef GET\n#undef FMT\n";
     }
     for (const auto& [name, bytes] : {std::pair{"q8_0", 34}, std::pair{"q4_0", 18}, std::pair{"mxfp4", 17}}) {
         const std::string n(name);

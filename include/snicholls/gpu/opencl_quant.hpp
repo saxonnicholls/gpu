@@ -39,7 +39,8 @@
 /// giving the weight at (row, column), decoded with core's arithmetic.
 ///
 /// - **Matrix-vector** (decode, at most `opencl_quant_kernels::matvec_max` rows, 8 by default): a work-group of 64
-///   per output, each item adding eight consecutive columns at a time, then the 64 partial sums added by a fixed tree.
+///   per four outputs, sharing each vector load of `x`; each item decodes eight consecutive columns at a time (a block's
+///   scale once), then the 64 partial sums of each output are added by a fixed tree.
 /// - **Tiled** (prefill, the backward): 64 x 64 tiles, 16 deep, the weights dequantised into local memory as the tile
 ///   is loaded, 16 x 16 items of 4 x 4 outputs, each output summed in index order: the bits of core's reference
 ///   product over the dequantised matrix (`linalg::reference`, then `add_bias_rows`, as `ml::linear_sequence` does).
@@ -259,7 +260,7 @@ public:
                 cl_kernel k = mv_[f];
                 cl_uint i = weight_args(k, s, w.cols);
                 set(k, i, part_x.mem), set(k, i, count), set(k, i, rows), set(k, i, db.mem), set(k, i, has_bias), set(k, i, part_y.mem);
-                const std::size_t global = w.rows * 64, local = 64;
+                const std::size_t global = (w.rows + detail::quant::mv_rows - 1) / detail::quant::mv_rows * 64, local = 64;
                 detail::check(clEnqueueNDRangeKernel(context_->native_queue(), k, 1, nullptr, &global, &local, 0, nullptr, nullptr), "clEnqueueNDRangeKernel");
                 detail::check(clEnqueueReadBuffer(context_->native_queue(), part_y.mem, CL_TRUE, 0, std::size_t(count) * w.rows * sizeof(float),
                                                   ys.data() + t0 * w.rows, 0, nullptr, nullptr),
