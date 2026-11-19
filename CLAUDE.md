@@ -61,10 +61,14 @@ after a fairness check that refuses to run unless the results agree to the bit; 
     make asan          # Address + UB sanitizers
     make docs          # Doxygen, warnings are errors
     make check         # version and mirror
-    make ubuntu        # seven configurations on Ubuntu 24.04 in Docker (TSan included), on PoCL
+    make ubuntu        # nine configurations on Ubuntu 24.04 and 26.04 in Docker (GCC 15, TSan included), on PoCL
     make benchmarks    # Release benchmarks; rewrites BENCHMARKS.md
 
-The local gate is macOS (its GPU) plus `make ubuntu` (PoCL). On a macOS 26 host every AddressSanitizer binary traps
+The local gate is macOS (its GPU) plus `make ubuntu` (PoCL). `make ubuntu` builds two images, as core's does:
+`docker/ubuntu` (Ubuntu 24.04: GCC 13, Clang 18, Doxygen) runs GCC and Clang Release and Debug, ASan+UBSan under both
+and Clang TSan; `docker/ubuntu-26.04` (Ubuntu 26.04: GCC 15, the `g++` of `ubuntu-latest`, which core's CI builds with) runs GCC 15 Release
+with benchmark smoke runs and GCC 15 ASan+UBSan, because GCC 15 warns where GCC 13 does not. `--quick` runs GCC 13
+Release and GCC 15 Release. On a macOS 26 host every AddressSanitizer binary traps
 before `main` (a hello world included), so sanitizer evidence comes from the Ubuntu configurations. A change to a
 kernel is also run on an NVIDIA GPU before it is pushed: the tests and the benchmark, with their bits checked. The
 CUDA backend builds only where the toolkit is (`SNICHOLLS_GPU_WITH_CUDA`), so it is built and tested on the NVIDIA
