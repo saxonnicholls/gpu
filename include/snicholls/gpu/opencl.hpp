@@ -303,6 +303,13 @@ public:
     /// \brief Whether `double` products run on the device (`cl_khr_fp64`), not on the host. \return True if they do.
     [[nodiscard]] bool has_fp64() const noexcept { return fp64_; }
 
+    /// \brief The OpenCL device, for programs of other headers built on this context (`opencl_quant.hpp`). \return The device.
+    [[nodiscard]] cl_device_id native_device() const noexcept { return device_; }
+    /// \brief The OpenCL context: buffers of other headers' programs live in it. \return The context.
+    [[nodiscard]] cl_context native_context() const noexcept { return context_; }
+    /// \brief The in-order command queue every product of this context is enqueued on. \return The queue.
+    [[nodiscard]] cl_command_queue native_queue() const noexcept { return queue_; }
+
     /// \brief `C = alpha A B + beta C` on the device. Called by `opencl_backend::gemm`.
     /// \param alpha The scale of the product.
     /// \param a `m x k`.

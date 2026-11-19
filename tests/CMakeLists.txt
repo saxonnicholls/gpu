@@ -3,6 +3,7 @@
 # implementation (PoCL in the Ubuntu image and on CI).
 
 add_executable(snicholls_gpu_tests
+    opencl_quant_test.cpp
     opencl_test.cpp
     version_test.cpp
 )

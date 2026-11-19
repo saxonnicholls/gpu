@@ -233,6 +233,20 @@ TEST(GpuOpenCl, TheContextReportsItsDevice)
         EXPECT_EQ(g.unwrap_err().kind, gpu::opencl_error::no_device);
 }
 
+TEST(GpuOpenCl, TheNativeHandlesAreTheContextsOwn)
+{
+    const auto& c = shared_context();
+    ASSERT_NE(c.native_device(), nullptr);
+    ASSERT_NE(c.native_context(), nullptr);
+    ASSERT_NE(c.native_queue(), nullptr);
+    cl_device_id device = nullptr;
+    cl_context context = nullptr;
+    ASSERT_EQ(clGetCommandQueueInfo(c.native_queue(), CL_QUEUE_DEVICE, sizeof(device), &device, nullptr), CL_SUCCESS);
+    ASSERT_EQ(clGetCommandQueueInfo(c.native_queue(), CL_QUEUE_CONTEXT, sizeof(context), &context, nullptr), CL_SUCCESS);
+    EXPECT_EQ(device, c.native_device());
+    EXPECT_EQ(context, c.native_context());
+}
+
 TEST(GpuOpenCl, AnExceptionCarriesItsCode)
 {
     const gpu::opencl_exception e("clEnqueueNDRangeKernel", CL_OUT_OF_RESOURCES);
