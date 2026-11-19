@@ -134,7 +134,7 @@ struct cuda_device {
     void forward(const host_matrix<Tag>& m, std::span<const float> xs, std::span<float> ys, std::span<const float> bias)
     {
         const auto w = to_device(m.view());
-        const on_device<float> x(xs), y(std::span<const float>(ys)), b(bias);
+        const on_device<float> x(xs), y{std::span<const float>(ys)}, b(bias);
         linear_sequence(backend(), w.view(), std::span<const float>(x.span()), y.span(), std::span<const float>(b.span()));
         const auto out = y.back();
         std::copy(out.begin(), out.end(), ys.begin());
@@ -143,7 +143,7 @@ struct cuda_device {
     void backward(const host_matrix<Tag>& m, std::span<const float> dys, std::span<float> dxs)
     {
         const auto w = to_device(m.view());
-        const on_device<float> dy(dys), dx(std::span<const float>(dxs));
+        const on_device<float> dy(dys), dx{std::span<const float>(dxs)};
         linear_sequence_backward_input(backend(), w.view(), std::span<const float>(dy.span()), dx.span());
         const auto out = dx.back();
         std::copy(out.begin(), out.end(), dxs.begin());
@@ -152,7 +152,7 @@ struct cuda_device {
     void forward_q8(const host_matrix<Tag>& m, std::span<const float> xs, std::span<float> ys, std::span<const float> bias)
     {
         const auto w = to_device(m.view());
-        const on_device<float> x(xs), y(std::span<const float>(ys)), b(bias);
+        const on_device<float> x(xs), y{std::span<const float>(ys)}, b(bias);
         linear_sequence_q8(backend(), w.view(), std::span<const float>(x.span()), y.span(), std::span<const float>(b.span()));
         const auto out = y.back();
         std::copy(out.begin(), out.end(), ys.begin());
@@ -224,12 +224,12 @@ TEST(GpuCudaQuant, AQLoraLayerRunsOnTheDeviceThroughCoresLoraSequence)
     ml::lora_sequence(la::reference, host_w, xs, ys_ref, us_ref, bias);
 
     const auto dev_base = to_device(base.view());
-    const on_device<float> da_(std::span<const float>(a)), db_(std::span<const float>(bm)), dx(std::span<const float>(xs)),
-        dbias(std::span<const float>(bias)), ddy(std::span<const float>(dys));
+    const on_device<float> da_{std::span<const float>(a)}, db_{std::span<const float>(bm)}, dx{std::span<const float>(xs)},
+        dbias{std::span<const float>(bias)}, ddy{std::span<const float>(dys)};
     const std::vector<float> zeros_y(n * rows, 0.0f), zeros_u(n * rank, 0.0f), zeros_x(n * cols, 0.0f), zeros_a(rank * cols, 0.0f),
         zeros_b(rows * rank, 0.0f);
-    const on_device<float> dys_out(std::span<const float>(zeros_y)), dus(std::span<const float>(zeros_u)), ddx(std::span<const float>(zeros_x)),
-        dda(std::span<const float>(zeros_a)), ddb(std::span<const float>(zeros_b)), ddus(std::span<const float>(zeros_u));
+    const on_device<float> dys_out{std::span<const float>(zeros_y)}, dus{std::span<const float>(zeros_u)}, ddx{std::span<const float>(zeros_x)},
+        dda{std::span<const float>(zeros_a)}, ddb{std::span<const float>(zeros_b)}, ddus{std::span<const float>(zeros_u)};
     const ml::lora_weights<ml::nf4_weights, float> dev_w{dev_base.view(), da_.span(), db_.span(), rank, host_w.scaling};
     const auto b = d.backend();
     ml::lora_sequence(b, dev_w, std::span<const float>(dx.span()), dys_out.span(), dus.span(), std::span<const float>(dbias.span()));
@@ -253,7 +253,7 @@ TEST(GpuCudaQuant, TheErrorsAreReported)
     const std::vector<ml::block_q8_0> blocks(3);
     const auto dev = to_device(ml::quantized_weights<ml::block_q8_0>{blocks, 1, 33});
     const std::vector<float> host(66, 0.0f);
-    const on_device<float> x(std::span<const float>(host)), y(std::span<const float>(host));
+    const on_device<float> x{std::span<const float>(host)}, y{std::span<const float>(host)};
     EXPECT_THROW(gpu::linear_sequence(d.backend(), dev.view(), std::span<const float>(x.span()).first(33), y.span().first(1)), std::invalid_argument);
     gpu::cuda_training_backend bare = d.backend();
     bare.quant = nullptr;
