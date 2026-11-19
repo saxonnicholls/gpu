@@ -5,6 +5,7 @@
 add_executable(snicholls_gpu_tests
     opencl_quant_test.cpp
     opencl_test.cpp
+    quant_weights_test.cpp
     version_test.cpp
 )
 target_link_libraries(snicholls_gpu_tests PRIVATE snicholls::gpu snicholls::core_conformance GTest::gtest_main)

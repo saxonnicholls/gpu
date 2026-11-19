@@ -24,7 +24,8 @@
 ///   products and core's `ml::linear` over `quantized_weights` do.
 ///
 /// `w` is one of core's views over host memory (`ml::quantized_weights<Block>`, `ml::nf4_weights`,
-/// `ml::dense_weights<S>` for `bfloat16`, `float16`, `float8_e4m3` or `float8_e5m2`), copied to the device for the
+/// `ml::dense_weights<S>` for `bfloat16`, `float16`, `float8_e4m3` or `float8_e5m2`) or a `block_weights<Block>` of
+/// Q4_1, Q5_0, Q5_1, Q2_K to Q6_K, TQ1_0 or TQ2_0 (where the pinned core has them), copied to the device for the
 /// call, or an `opencl_quant_matrix`, the same weights kept on the device by `opencl_quant_kernels::upload` (frozen
 /// weights: upload once, multiply many times). The activations are host memory, copied for each call, as
 /// `opencl_backend`'s products do.
@@ -447,6 +448,26 @@ void linear_sequence(const opencl_quant_backend& b, const ml::dense_weights<S>& 
                      std::span<const float> bias = {})
 {
     linear_sequence(b, detail::opencl_quant::kernels(b).upload(w), xs, ys, bias);
+}
+
+/// \brief `Y = X Wᵀ + b` over any other ggml blocks in host memory (Q4_1, Q5_0, Q5_1, the K-quants, the ternary, where
+/// core has them). \param b The backend. \param w The weights. \param xs `n · cols`. \param ys Written, `n · rows`.
+/// \param bias `rows`, or empty. \throws std::invalid_argument, opencl_exception.
+template <typename Block>
+    requires detail::quant::weights<block_weights<Block>>
+void linear_sequence(const opencl_quant_backend& b, const block_weights<Block>& w, std::span<const float> xs, std::span<float> ys,
+                     std::span<const float> bias = {})
+{
+    linear_sequence(b, detail::opencl_quant::kernels(b).upload(w), xs, ys, bias);
+}
+
+/// \brief `dX += dY W` over any other ggml blocks in host memory. \param b The backend. \param w The weights.
+/// \param dys `n · rows`. \param dxs Added into, `n · cols`. \throws std::invalid_argument, opencl_exception.
+template <typename Block>
+    requires detail::quant::weights<block_weights<Block>>
+void linear_sequence_backward_input(const opencl_quant_backend& b, const block_weights<Block>& w, std::span<const float> dys, std::span<float> dxs)
+{
+    linear_sequence_backward_input(b, detail::opencl_quant::kernels(b).upload(w), dys, dxs);
 }
 
 /// \brief `Y = X Wᵀ + b` over NF4 weights in host memory: QLoRA's frozen base. \param b The backend. \param w The weights.

@@ -88,6 +88,15 @@ struct device_weights_dense {
 };
 template <typename Block>
 device_weights_blocks<Block> to_device(const ml::quantized_weights<Block>& w) { return device_weights_blocks<Block>(w); }
+template <typename Block>
+struct device_block_weights {
+    on_device<Block> blocks;
+    std::size_t rows, cols;
+    explicit device_block_weights(const gpu::block_weights<Block>& w) : blocks(w.blocks), rows(w.rows), cols(w.cols) {}
+    [[nodiscard]] gpu::block_weights<Block> view() const { return {blocks.span(), rows, cols}; }
+};
+template <typename Block>
+device_block_weights<Block> to_device(const gpu::block_weights<Block>& w) { return device_block_weights<Block>(w); }
 inline device_weights_nf4 to_device(const ml::nf4_weights& w) { return device_weights_nf4(w); }
 template <typename S>
 device_weights_dense<S> to_device(const ml::dense_weights<S>& w) { return device_weights_dense<S>(w); }

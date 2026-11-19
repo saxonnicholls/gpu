@@ -22,6 +22,13 @@
 #include <snicholls/core/ml/minifloat.hpp>
 #include <snicholls/core/ml/nf4.hpp>
 #include <snicholls/core/ml/quantize.hpp>
+#include <snicholls/gpu/quant_weights.hpp>
+// The formats of core's next release (Q4_1, Q5_0, Q5_1, the K-quants, the ternary), where the pinned core has them
+#if __has_include(<snicholls/core/ml/quant_k.hpp>) && __has_include(<snicholls/core/ml/quant_ternary.hpp>)
+#include <snicholls/core/ml/quant_k.hpp>
+#include <snicholls/core/ml/quant_ternary.hpp>
+#define SNICHOLLS_GPU_QUANT_K 1
+#endif
 
 #include <array>
 #include <cstddef>
@@ -33,9 +40,13 @@
 namespace snicholls::gpu::detail::quant {
 
 // The formats, in the order of `formats`; the device source names them by `name`
-enum class format : int { q8_0, q4_0, mxfp4, nf4, bf16, f16, e4m3, e5m2 };
-inline constexpr std::size_t format_count = 8;
-inline constexpr std::array<std::string_view, format_count> names{"q8_0", "q4_0", "mxfp4", "nf4", "bf16", "f16", "e4m3", "e5m2"};
+enum class format : int { q8_0, q4_0, mxfp4, nf4, bf16, f16, e4m3, e5m2, q4_1, q5_0, q5_1, q2_k, q3_k, q4_k, q5_k, q6_k, tq1_0, tq2_0 };
+inline constexpr std::size_t format_count = 18;
+inline constexpr std::array<std::string_view, format_count> names{"q8_0", "q4_0", "mxfp4", "nf4",  "bf16", "f16",  "e4m3", "e5m2",  "q4_1",
+                                                                  "q5_0", "q5_1", "q2_k",  "q3_k", "q4_k", "q5_k", "q6_k", "tq1_0", "tq2_0"};
+// The numbers and bytes of one block of each format (NF4: 64 numbers in 32 bytes, its scales apart; dense: one number)
+inline constexpr std::array<std::size_t, format_count> block_elements{32, 32, 32, 64, 1, 1, 1, 1, 32, 32, 32, 256, 256, 256, 256, 256, 256, 256};
+inline constexpr std::array<std::size_t, format_count> block_bytes{34, 18, 17, 32, 2, 2, 1, 1, 20, 22, 24, 84, 110, 144, 176, 210, 54, 66};
 
 // Whether a format has core's integer dot product with Q8_0 activations (ml/quantize.hpp `dot`)
 constexpr bool has_q8_dot(format f) noexcept { return f == format::q8_0 || f == format::q4_0 || f == format::mxfp4; }
@@ -74,6 +85,39 @@ struct traits<ml::nf4_weights> {
     }
 };
 
+#ifdef SNICHOLLS_GPU_QUANT_K
+// The blocks of core's next release, over gpu::block_weights; their fields at ggml's offsets, as the device reads them
+template <typename B>
+inline constexpr int block_format = -1;
+template <> inline constexpr int block_format<ml::block_q4_1> = int(format::q4_1);
+template <> inline constexpr int block_format<ml::block_q5_0> = int(format::q5_0);
+template <> inline constexpr int block_format<ml::block_q5_1> = int(format::q5_1);
+template <> inline constexpr int block_format<ml::block_q2_k> = int(format::q2_k);
+template <> inline constexpr int block_format<ml::block_q3_k> = int(format::q3_k);
+template <> inline constexpr int block_format<ml::block_q4_k> = int(format::q4_k);
+template <> inline constexpr int block_format<ml::block_q5_k> = int(format::q5_k);
+template <> inline constexpr int block_format<ml::block_q6_k> = int(format::q6_k);
+template <> inline constexpr int block_format<ml::block_tq1_0> = int(format::tq1_0);
+template <> inline constexpr int block_format<ml::block_tq2_0> = int(format::tq2_0);
+
+template <typename B>
+    requires(block_format<B> >= 0)
+struct traits<block_weights<B>> {
+    static constexpr format fmt = format(block_format<B>);
+    static_assert(sizeof(B) == block_bytes[std::size_t(fmt)] && B::elements == block_elements[std::size_t(fmt)],
+                  "snicholls::gpu: a block's size differs from the device source's");
+    static parts of(const block_weights<B>& w) { return {fmt, std::as_bytes(w.blocks), {}, {}, 0.0f, w.rows, w.cols}; }
+};
+static_assert(offsetof(ml::block_q4_1, qs) == 4 && offsetof(ml::block_q5_0, qh) == 2 && offsetof(ml::block_q5_0, qs) == 6
+                  && offsetof(ml::block_q5_1, qh) == 4 && offsetof(ml::block_q5_1, qs) == 8 && offsetof(ml::block_q2_k, qs) == 16
+                  && offsetof(ml::block_q2_k, d) == 80 && offsetof(ml::block_q3_k, qs) == 32 && offsetof(ml::block_q3_k, scales) == 96
+                  && offsetof(ml::block_q3_k, d) == 108 && offsetof(ml::block_q4_k, scales) == 4 && offsetof(ml::block_q4_k, qs) == 16
+                  && offsetof(ml::block_q5_k, qh) == 16 && offsetof(ml::block_q5_k, qs) == 48 && offsetof(ml::block_q6_k, qh) == 128
+                  && offsetof(ml::block_q6_k, scales) == 192 && offsetof(ml::block_q6_k, d) == 208 && offsetof(ml::block_tq1_0, qh) == 48
+                  && offsetof(ml::block_tq1_0, d) == 52 && offsetof(ml::block_tq2_0, d) == 64,
+              "snicholls::gpu: a block's fields are not where the device source reads them");
+#endif
+
 template <typename S>
     requires(std::is_same_v<S, ml::bfloat16> || std::is_same_v<S, ml::float16> || std::is_same_v<S, ml::float8_e4m3> || std::is_same_v<S, ml::float8_e5m2>)
 struct traits<ml::dense_weights<S>> {
@@ -100,12 +144,11 @@ inline bool valid(const parts& p) noexcept
     case format::nf4:
         return p.cols % ml::nf4_block_size == 0 && p.weights.size() == ml::nf4_code_bytes(n) && p.block_scales.size() == ml::nf4_block_count(n)
                && p.group_scales.size() == ml::nf4_group_count(n) * sizeof(float);
-    case format::bf16:
-    case format::f16: return p.weights.size() == n * 2;
-    case format::e4m3:
-    case format::e5m2: return p.weights.size() == n;
+    default: {
+        const std::size_t e = block_elements[std::size_t(p.fmt)];
+        return p.cols % e == 0 && p.weights.size() == n / e * block_bytes[std::size_t(p.fmt)];
     }
-    return false;
+    }
 }
 
 // The languages' preludes: the macros the source below is written in
@@ -260,6 +303,127 @@ DEVICE void get8_bf16(WARGS, u64 r, u64 c0, float* v) { for (int j = 0; j < 8; +
 DEVICE void get8_f16(WARGS, u64 r, u64 c0, float* v) { for (int j = 0; j < 8; ++j) v[j] = get_f16(WPASS, r, c0 + (u64)j); }
 DEVICE void get8_e4m3(WARGS, u64 r, u64 c0, float* v) { for (int j = 0; j < 8; ++j) v[j] = get_e4m3(WPASS, r, c0 + (u64)j); }
 DEVICE void get8_e5m2(WARGS, u64 r, u64 c0, float* v) { for (int j = 0; j < 8; ++j) v[j] = get_e5m2(WPASS, r, c0 + (u64)j); }
+
+// The formats of core's next release (ml/quantize.hpp, ml/quant_k.hpp, ml/quant_ternary.hpp dequantize_row), each
+// weight with core's operations in core's order. Block i of row r at w + (r cols / E + c / E) B.
+DEVICE GLOBAL const uchar* block_at(GLOBAL const uchar* w, u64 cols, u64 r, u64 c, u64 e, u64 bytes) { return w + (r * (cols / e) + c / e) * bytes; }
+DEVICE uint nibble(GLOBAL const uchar* qs, uint j) { const uint q = qs[j & 15u]; return j < 16u ? q & 15u : q >> 4; }
+DEVICE uint word_at(GLOBAL const uchar* p) { return (uint)p[0] | ((uint)p[1] << 8) | ((uint)p[2] << 16) | ((uint)p[3] << 24); }
+// Q4_1 (20 bytes: d, m, qs): d q + m
+DEVICE float get_q4_1(WARGS, u64 r, u64 c)
+{
+    GLOBAL const uchar* b = block_at(w, cols, r, c, 32, 20);
+    const float a = (float)nibble(b + 4, (uint)(c % 32)) * half_at(b);
+    return a + half_at(b + 2);
+}
+// Q5_0 (22: d, qh, qs): d (q - 16), the fifth bit of element j bit j of qh
+DEVICE float get_q5_0(WARGS, u64 r, u64 c)
+{
+    GLOBAL const uchar* b = block_at(w, cols, r, c, 32, 22);
+    const uint j = (uint)(c % 32), q = nibble(b + 6, j) | (((word_at(b + 2) >> j) & 1u) << 4);
+    return (float)((int)q - 16) * half_at(b);
+}
+// Q5_1 (24: d, m, qh, qs): d q + m
+DEVICE float get_q5_1(WARGS, u64 r, u64 c)
+{
+    GLOBAL const uchar* b = block_at(w, cols, r, c, 32, 24);
+    const uint j = (uint)(c % 32), q = nibble(b + 8, j) | (((word_at(b + 4) >> j) & 1u) << 4);
+    const float a = (float)q * half_at(b);
+    return a + half_at(b + 2);
+}
+// Q2_K (84: scales[16], qs[64], d, dmin): (d s) q - (dmin m), element 128 h + 32 g + l in bits 2g of qs[32 h + l]
+DEVICE float get_q2_k(WARGS, u64 r, u64 c)
+{
+    GLOBAL const uchar* b = block_at(w, cols, r, c, 256, 84);
+    const uint e = (uint)(c % 256), h = e / 128, g = (e % 128) / 32, l = e % 32, q = (b[16 + 32 * h + l] >> (2 * g)) & 3u, sc = b[e / 16];
+    const float dl = half_at(b + 80) * (float)(sc & 15u);
+    const float ml = half_at(b + 82) * (float)(sc >> 4);
+    const float v = dl * (float)q;
+    return v - ml;
+}
+// Q3_K (110: hmask[32], qs[64], scales[12], d): (d (s - 32)) (q - 4 unless the high bit), the high bit of e bit e / 32 of hmask[e % 32]
+DEVICE float get_q3_k(WARGS, u64 r, u64 c)
+{
+    GLOBAL const uchar* b = block_at(w, cols, r, c, 256, 110);
+    const uint e = (uint)(c % 256), h = e / 128, g = (e % 128) / 32, l = e % 32, j = e / 16;
+    const int q = (int)((b[32 + 32 * h + l] >> (2 * g)) & 3u) - (((b[l] >> (e / 32)) & 1u) ? 0 : 4);
+    const uint low = j < 8u ? b[96 + j] & 15u : b[96 + j - 8] >> 4, high = (b[104 + j % 4] >> (2 * (j / 4))) & 3u;
+    const float dl = half_at(b + 108) * (float)((int)(low | (high << 4)) - 32);
+    return dl * (float)q;
+}
+// Q4_K's and Q5_K's 6-bit scale and minimum of sub-block j (ggml's get_scale_min_k4)
+DEVICE void scale_min_k4(uint j, GLOBAL const uchar* q, uint* d, uint* m)
+{
+    if (j < 4u) { *d = q[j] & 63u; *m = q[j + 4] & 63u; }
+    else { *d = (q[j + 4] & 15u) | ((q[j - 4] >> 6) << 4); *m = (q[j + 4] >> 4) | ((q[j] >> 6) << 4); }
+}
+// Q4_K (144: d, dmin, scales[12], qs[128]): (d s) q - (dmin m) per 32, element 64 h + l low nibble of qs[32 h + l], 64 h + 32 + l high
+DEVICE float get_q4_k(WARGS, u64 r, u64 c)
+{
+    GLOBAL const uchar* b = block_at(w, cols, r, c, 256, 144);
+    const uint e = (uint)(c % 256), h = e / 64, l = e % 32, byte = b[16 + 32 * h + l], q = (e % 64) < 32u ? byte & 15u : byte >> 4;
+    uint sc, mn;
+    scale_min_k4(e / 32, b + 4, &sc, &mn);
+    const float d1 = half_at(b) * (float)sc;
+    const float m1 = half_at(b + 2) * (float)mn;
+    const float v = d1 * (float)q;
+    return v - m1;
+}
+// Q5_K (176: d, dmin, scales[12], qh[32], qs[128]): Q4_K plus 16 where bit e / 32 of qh[e % 32] is set
+DEVICE float get_q5_k(WARGS, u64 r, u64 c)
+{
+    GLOBAL const uchar* b = block_at(w, cols, r, c, 256, 176);
+    const uint e = (uint)(c % 256), h = e / 64, l = e % 32, byte = b[48 + 32 * h + l];
+    const uint q = ((e % 64) < 32u ? byte & 15u : byte >> 4) + (((b[16 + l] >> (e / 32)) & 1u) ? 16u : 0u);
+    uint sc, mn;
+    scale_min_k4(e / 32, b + 4, &sc, &mn);
+    const float d1 = half_at(b) * (float)sc;
+    const float m1 = half_at(b + 2) * (float)mn;
+    const float v = d1 * (float)q;
+    return v - m1;
+}
+// Q6_K (210: ql[128], qh[64], scales[16] signed, d): (d s) (q - 32), the four quarters of 128 from ql's nibbles and qh's bit pairs
+DEVICE float get_q6_k(WARGS, u64 r, u64 c)
+{
+    GLOBAL const uchar* b = block_at(w, cols, r, c, 256, 210);
+    const uint e = (uint)(c % 256), n = e / 128, part = (e % 128) / 32, l = e % 32;
+    const uint src = b[64 * n + 32 * (part & 1u) + l], nib = part < 2u ? src & 15u : src >> 4;
+    const int q = (int)(nib | (((b[128 + 32 * n + l] >> (2 * part)) & 3u) << 4)) - 32;
+    const float ds = half_at(b + 208) * (float)(i8)b[192 + e / 16];
+    return ds * (float)q;
+}
+// TQ1_0 (54: qs[48], qh[4], d): d (t - 1), five trits a byte, trit k of byte x ((uchar)(x 3^k) 3) >> 8
+CONSTANT uint pow3[5] = {1u, 3u, 9u, 27u, 81u};
+DEVICE float get_tq1_0(WARGS, u64 r, u64 c)
+{
+    GLOBAL const uchar* b = block_at(w, cols, r, c, 256, 54);
+    const uint e = (uint)(c % 256);
+    uint byte, k;
+    if (e < 160u) { byte = b[e % 32]; k = e / 32; }
+    else if (e < 240u) { byte = b[32 + (e - 160) % 16]; k = (e - 160) / 16; }
+    else { byte = b[48 + (e - 240) % 4]; k = (e - 240) / 4; }
+    const uint t = (((byte * pow3[k]) & 255u) * 3u) >> 8;
+    return (float)((int)t - 1) * half_at(b + 52);
+}
+// TQ2_0 (66: qs[64], d): d (q - 1), element 128 g + 32 l + m in bits 2l of qs[32 g + m]
+DEVICE float get_tq2_0(WARGS, u64 r, u64 c)
+{
+    GLOBAL const uchar* b = block_at(w, cols, r, c, 256, 66);
+    const uint e = (uint)(c % 256), q = (b[32 * (e / 128) + e % 32] >> (2 * ((e % 128) / 32))) & 3u;
+    return (float)((int)q - 1) * half_at(b + 64);
+}
+#define GET8_BY_ONE(F) DEVICE void get8_##F(WARGS, u64 r, u64 c0, float* v) { for (int j = 0; j < 8; ++j) v[j] = get_##F(WPASS, r, c0 + (u64)j); }
+GET8_BY_ONE(q4_1)
+GET8_BY_ONE(q5_0)
+GET8_BY_ONE(q5_1)
+GET8_BY_ONE(q2_k)
+GET8_BY_ONE(q3_k)
+GET8_BY_ONE(q4_k)
+GET8_BY_ONE(q5_k)
+GET8_BY_ONE(q6_k)
+GET8_BY_ONE(tq1_0)
+GET8_BY_ONE(tq2_0)
+#undef GET8_BY_ONE
 
 // float to float16, to nearest even (ml/minifloat.hpp to_minifloat<float16>): Q8_0's scale
 DEVICE uint f2h(float x)

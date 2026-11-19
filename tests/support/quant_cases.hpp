@@ -13,6 +13,9 @@
 #ifndef snicholls_gpu_tests_support_quant_cases_hpp
 #define snicholls_gpu_tests_support_quant_cases_hpp
 
+#include <snicholls/gpu/detail/quant_source.hpp>
+#include <snicholls/gpu/quant_weights.hpp>
+
 #include <snicholls/core/linalg/reference.hpp>
 #include <snicholls/core/ml/linear.hpp>
 #include <snicholls/core/ml/lora.hpp>
@@ -58,17 +61,33 @@ struct bf16_tag : dense_tag<qml::bfloat16> { static constexpr const char* name =
 struct f16_tag : dense_tag<qml::float16> { static constexpr const char* name = "f16"; };
 struct e4m3_tag : dense_tag<qml::float8_e4m3> { static constexpr const char* name = "e4m3"; };
 struct e5m2_tag : dense_tag<qml::float8_e5m2> { static constexpr const char* name = "e5m2"; };
+#ifdef SNICHOLLS_GPU_QUANT_K
+// The formats of core's next release, over gpu::block_weights
+template <typename Block>
+struct block_tag { using view = snicholls::gpu::block_weights<Block>; static constexpr std::size_t unit = Block::elements; static constexpr bool q8 = false; };
+struct q4_1_tag : block_tag<qml::block_q4_1> { static constexpr const char* name = "q4_1"; };
+struct q5_0_tag : block_tag<qml::block_q5_0> { static constexpr const char* name = "q5_0"; };
+struct q5_1_tag : block_tag<qml::block_q5_1> { static constexpr const char* name = "q5_1"; };
+struct q2_k_tag : block_tag<qml::block_q2_k> { static constexpr const char* name = "q2_k"; };
+struct q3_k_tag : block_tag<qml::block_q3_k> { static constexpr const char* name = "q3_k"; };
+struct q4_k_tag : block_tag<qml::block_q4_k> { static constexpr const char* name = "q4_k"; };
+struct q5_k_tag : block_tag<qml::block_q5_k> { static constexpr const char* name = "q5_k"; };
+struct q6_k_tag : block_tag<qml::block_q6_k> { static constexpr const char* name = "q6_k"; };
+struct tq1_0_tag : block_tag<qml::block_tq1_0> { static constexpr const char* name = "tq1_0"; };
+struct tq2_0_tag : block_tag<qml::block_tq2_0> { static constexpr const char* name = "tq2_0"; };
+#endif
 
 template <typename Block, typename Tag>
 struct block_matrix {
     std::size_t rows = 0, cols = 0;
     std::vector<Block> blocks;
     std::vector<float> dense;
-    block_matrix(std::size_t r, std::size_t c, std::uint64_t seed, float scale) : rows(r), cols(c), blocks(r * c / 32), dense(r * c)
+    static constexpr std::size_t e = Tag::unit;
+    block_matrix(std::size_t r, std::size_t c, std::uint64_t seed, float scale) : rows(r), cols(c), blocks(r * c / e), dense(r * c)
     {
         const auto src = uniform(r * c, seed, scale);
         for (std::size_t i = 0; i < r; ++i) {
-            const std::span<Block> row(blocks.data() + i * (c / 32), c / 32);
+            const std::span<Block> row(blocks.data() + i * (c / e), c / e);
             qml::quantize(std::span<const float>(src.data() + i * c, c), row);
             qml::dequantize(std::span<const Block>(row), std::span<float>(dense.data() + i * c, c));
         }
@@ -81,6 +100,23 @@ template <>
 struct host_matrix<q4_0_tag> : block_matrix<qml::block_q4_0, q4_0_tag> { using block_matrix::block_matrix; };
 template <>
 struct host_matrix<mxfp4_tag> : block_matrix<qml::block_mxfp4, mxfp4_tag> { using block_matrix::block_matrix; };
+
+#ifdef SNICHOLLS_GPU_QUANT_K
+#define SNICHOLLS_GPU_BLOCK_MATRIX(T, B)                                                                                    \
+    template <>                                                                                                         \
+    struct host_matrix<T> : block_matrix<B, T> { using block_matrix::block_matrix; };
+SNICHOLLS_GPU_BLOCK_MATRIX(q4_1_tag, qml::block_q4_1)
+SNICHOLLS_GPU_BLOCK_MATRIX(q5_0_tag, qml::block_q5_0)
+SNICHOLLS_GPU_BLOCK_MATRIX(q5_1_tag, qml::block_q5_1)
+SNICHOLLS_GPU_BLOCK_MATRIX(q2_k_tag, qml::block_q2_k)
+SNICHOLLS_GPU_BLOCK_MATRIX(q3_k_tag, qml::block_q3_k)
+SNICHOLLS_GPU_BLOCK_MATRIX(q4_k_tag, qml::block_q4_k)
+SNICHOLLS_GPU_BLOCK_MATRIX(q5_k_tag, qml::block_q5_k)
+SNICHOLLS_GPU_BLOCK_MATRIX(q6_k_tag, qml::block_q6_k)
+SNICHOLLS_GPU_BLOCK_MATRIX(tq1_0_tag, qml::block_tq1_0)
+SNICHOLLS_GPU_BLOCK_MATRIX(tq2_0_tag, qml::block_tq2_0)
+#undef SNICHOLLS_GPU_BLOCK_MATRIX
+#endif
 
 template <>
 struct host_matrix<nf4_tag> {

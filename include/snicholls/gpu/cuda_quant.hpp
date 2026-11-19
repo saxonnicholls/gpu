@@ -20,7 +20,8 @@
 /// - `linear_sequence_q8(b, w, xs, ys, bias)`: Q8_0, Q4_0 or MXFP4 weights with the activations quantised to Q8_0 on
 ///   the device and core's integer block dot products.
 ///
-/// `w` is core's view (`ml::quantized_weights<Block>`, `ml::nf4_weights`, `ml::dense_weights<S>`) over device memory:
+/// `w` is core's view (`ml::quantized_weights<Block>`, `ml::nf4_weights`, `ml::dense_weights<S>`), or a
+/// `block_weights<Block>` of Q4_1, Q5_0, Q5_1, Q2_K to Q6_K, TQ1_0 or TQ2_0 where the pinned core has them, over device memory:
 /// upload the blocks into a `device_buffer` and point the view at it. NF4's `scale_mean` is a host float, as in core.
 ///
 /// \snippet cuda_quant_demo.cpp quant
@@ -431,6 +432,26 @@ void linear_sequence(const cuda_training_backend& b, const ml::dense_weights<S>&
                      std::span<const float> bias = {})
 {
     detail::cuda_quant::kernels(b).forward(b.math, detail::quant::traits<ml::dense_weights<S>>::of(w), xs, ys, bias);
+}
+
+/// \brief `Y = X Wᵀ + b` over any other ggml blocks (Q4_1, Q5_0, Q5_1, the K-quants, the ternary, where core has them).
+/// \param b The backend. \param w The weights. \param xs `n · cols`. \param ys Written, `n · rows`. \param bias `rows`,
+/// or empty. \throws std::invalid_argument, cuda_exception.
+template <typename Block>
+    requires detail::quant::weights<block_weights<Block>>
+void linear_sequence(const cuda_training_backend& b, const block_weights<Block>& w, std::span<const float> xs, std::span<float> ys,
+                     std::span<const float> bias = {})
+{
+    detail::cuda_quant::kernels(b).forward(b.math, detail::quant::traits<block_weights<Block>>::of(w), xs, ys, bias);
+}
+
+/// \brief `dX += dY W` over any other ggml blocks. \param b The backend. \param w The weights. \param dys `n · rows`.
+/// \param dxs Added into, `n · cols`. \throws std::invalid_argument, cuda_exception.
+template <typename Block>
+    requires detail::quant::weights<block_weights<Block>>
+void linear_sequence_backward_input(const cuda_training_backend& b, const block_weights<Block>& w, std::span<const float> dys, std::span<float> dxs)
+{
+    detail::cuda_quant::kernels(b).backward_input(b.math, detail::quant::traits<block_weights<Block>>::of(w), dys, dxs);
 }
 
 /// \brief `Y = X Wᵀ + b` over NF4 weights: QLoRA's frozen base. \param b The backend. \param w The weights.

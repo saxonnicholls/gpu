@@ -41,10 +41,20 @@ struct quant_case {
     using tag = Tag;
 };
 
+#ifdef SNICHOLLS_GPU_QUANT_K
+template <typename Device>
+using quant_cases_for = ::testing::Types<quant_case<Device, q8_0_tag>, quant_case<Device, q4_0_tag>, quant_case<Device, mxfp4_tag>,
+                                         quant_case<Device, nf4_tag>, quant_case<Device, bf16_tag>, quant_case<Device, f16_tag>,
+                                         quant_case<Device, e4m3_tag>, quant_case<Device, e5m2_tag>, quant_case<Device, q4_1_tag>,
+                                         quant_case<Device, q5_0_tag>, quant_case<Device, q5_1_tag>, quant_case<Device, q2_k_tag>,
+                                         quant_case<Device, q3_k_tag>, quant_case<Device, q4_k_tag>, quant_case<Device, q5_k_tag>,
+                                         quant_case<Device, q6_k_tag>, quant_case<Device, tq1_0_tag>, quant_case<Device, tq2_0_tag>>;
+#else
 template <typename Device>
 using quant_cases_for = ::testing::Types<quant_case<Device, q8_0_tag>, quant_case<Device, q4_0_tag>, quant_case<Device, mxfp4_tag>,
                                          quant_case<Device, nf4_tag>, quant_case<Device, bf16_tag>, quant_case<Device, f16_tag>,
                                          quant_case<Device, e4m3_tag>, quant_case<Device, e5m2_tag>>;
+#endif
 
 template <typename Case>
 class QuantProduct : public ::testing::Test {
