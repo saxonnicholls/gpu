@@ -3,6 +3,24 @@
 All notable changes to snicholls-gpu. The format follows Keep a Changelog; versions follow Semantic Versioning.
 A version is released when its tag is on a commit where every blocking CI leg is green.
 
+## Unreleased
+
+### Added
+
+- **The mixture of experts on the device** (`cuda_moe.hpp`, `cuda_moe_kernels`): an overload for
+  `cuda_training_backend` of every step of core's `ml/moe.hpp`, so `ml::moe_forward`, `ml::moe_backward` and the MoE
+  block of `ml/moe_block.hpp` run on the GPU: routing with a selection-only bias under each scoring (softmax over the
+  top K, softmax, normalised sigmoid) and its backward; the histogram, the offsets and the stable permutation (a
+  counting sort from integer counts, so core's unique order to the bit); gather and the weighted combine in slot order
+  and their backward (to the bit); the grouped products and their backward as one kernel each over every expert, the
+  segments read from device memory, in TF32, bfloat16 or float's accuracy (three TF32 products); the bias rule (to the
+  bit), the balance loss and the z-loss with their gradients; expert parallelism's layouts, the in-process all-to-all and
+  the row permutations; the bfloat16 payload rows. Every kernel deterministic, no atomics in any floating-point sum;
+  nothing waits for the host, so a whole MoE layer is captured as a `cuda_graph` (the losses then stay on the device).
+  `grouped_path::cublas` makes the products expert by expert through cuBLAS instead (one wait per product).
+- `cuda_training_backend::moe`: the backend's pointer to the mixture-of-experts kernels, the last member, so existing
+  initialisers are unchanged.
+
 ## 0.7.1 - 2026-11-19
 
 ### Changed
