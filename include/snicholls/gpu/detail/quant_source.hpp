@@ -36,6 +36,8 @@
 #include <span>
 #include <string>
 #include <string_view>
+#include <tuple>
+#include <utility>
 
 namespace snicholls::gpu::detail::quant {
 
@@ -48,8 +50,16 @@ inline constexpr std::array<std::string_view, format_count> names{"q8_0", "q4_0"
 inline constexpr std::array<std::size_t, format_count> block_elements{32, 32, 32, 64, 1, 1, 1, 1, 32, 32, 32, 256, 256, 256, 256, 256, 256, 256};
 inline constexpr std::array<std::size_t, format_count> block_bytes{34, 18, 17, 32, 2, 2, 1, 1, 20, 22, 24, 84, 110, 144, 176, 210, 54, 66};
 
-// Whether a format has core's integer dot product with Q8_0 activations (ml/quantize.hpp `dot`)
-constexpr bool has_q8_dot(format f) noexcept { return f == format::q8_0 || f == format::q4_0 || f == format::mxfp4; }
+// Whether a format has core's integer dot product with Q8_0 activations (ml/quantize.hpp `dot`), or with Q8_K (the
+// K-quants, ml/quant_k.hpp `dot`)
+constexpr bool has_q8_0_dot(format f) noexcept { return f == format::q8_0 || f == format::q4_0 || f == format::mxfp4; }
+constexpr bool has_q8_k_dot(format f) noexcept
+{
+    return f == format::q2_k || f == format::q3_k || f == format::q4_k || f == format::q5_k || f == format::q6_k;
+}
+constexpr bool has_q8_dot(format f) noexcept { return has_q8_0_dot(f) || has_q8_k_dot(f); }
+// Blocks of Q8_K activations: a float scale, 256 codes, 16 sums of 16 (ml/quantize.hpp block_q8_k)
+inline constexpr std::size_t q8k_bytes = 292;
 
 // The tokens a matrix-vector launch takes at once: as MV_TOKENS in the source
 inline constexpr std::size_t mv_tokens = 8;
@@ -425,6 +435,86 @@ GET8_BY_ONE(tq1_0)
 GET8_BY_ONE(tq2_0)
 #undef GET8_BY_ONE
 
+// Rows of activations quantised to Q8_K (ml/quantize.hpp quantize_row<block_q8_k>), a thread per block of 256: the
+// value of largest magnitude (the first), -127 / it, ggml's nearest_int, the sums of 16, then d = 1 / iscale
+DEVICE int nearest_int(float x) { const float v = x + 12582912.0f; return (int)(AS_UINT(v) & 0x007fffffu) - 0x00400000; }
+KERNEL GROUP1(64) void quantize_q8k(GLOBAL const float* x, u64 blocks, GLOBAL uchar* out)
+{
+    const u64 i = GX * 64 + (u64)LX;
+    if (i >= blocks) return;
+    GLOBAL const float* v = x + i * 256;
+    GLOBAL uchar* o = out + i * 292;
+    GLOBAL i8* qs = (GLOBAL i8*)(o + 4);
+    GLOBAL short* bsums = (GLOBAL short*)(o + 260);
+    float max = 0.0f, amax = 0.0f;
+    for (int j = 0; j < 256; ++j) { const float a = v[j] < 0.0f ? -v[j] : v[j]; if (a > amax) { amax = a; max = v[j]; } }
+    if (amax == 0.0f) {
+        *(GLOBAL float*)o = 0.0f;
+        for (int j = 0; j < 256; ++j) qs[j] = 0;
+        for (int j = 0; j < 16; ++j) bsums[j] = 0;
+        return;
+    }
+    const float iscale = -127.0f / max;
+    for (int j = 0; j < 256; ++j) { const float s = iscale * v[j]; const int q = nearest_int(s); qs[j] = (i8)(q < 127 ? q : 127); }
+    for (int j = 0; j < 16; ++j) { int sum = 0; for (int k = 0; k < 16; ++k) sum += qs[16 * j + k]; bsums[j] = (short)sum; }
+    *(GLOBAL float*)o = 1.0f / iscale;
+}
+// A K-quant block's integer code of element e (ml/quant_k.hpp unpack) and the scale of its sixteen (lanes' scale)
+DEVICE int code_q3_k(GLOBAL const uchar* b, uint e) { const uint h = e / 128, g = (e % 128) / 32, l = e % 32; return (int)((b[32 + 32 * h + l] >> (2 * g)) & 3u) - (((b[l] >> (e / 32)) & 1u) ? 0 : 4); }
+DEVICE int scale_q3_k(GLOBAL const uchar* b, uint j) { const uint low = j < 8u ? b[96 + j] & 15u : b[96 + j - 8] >> 4, high = (b[104 + j % 4] >> (2 * (j / 4))) & 3u; return (int)(low | (high << 4)) - 32; }
+DEVICE int code_q4_k(GLOBAL const uchar* b, uint e) { const uint byte = b[16 + 32 * (e / 64) + e % 32]; return (int)((e % 64) < 32u ? byte & 15u : byte >> 4); }
+DEVICE int scale_q4_k(GLOBAL const uchar* b, uint j) { uint sc, mn; scale_min_k4(j / 2, b + 4, &sc, &mn); return (int)sc; }
+DEVICE int code_q5_k(GLOBAL const uchar* b, uint e) { const uint byte = b[48 + 32 * (e / 64) + e % 32]; return (int)(((e % 64) < 32u ? byte & 15u : byte >> 4) + (((b[16 + e % 32] >> (e / 32)) & 1u) ? 16u : 0u)); }
+DEVICE int scale_q5_k(GLOBAL const uchar* b, uint j) { uint sc, mn; scale_min_k4(j / 2, b + 4, &sc, &mn); return (int)sc; }
+DEVICE int code_q6_k(GLOBAL const uchar* b, uint e)
+{
+    const uint n = e / 128, part = (e % 128) / 32, l = e % 32, src = b[64 * n + 32 * (part & 1u) + l], nib = part < 2u ? src & 15u : src >> 4;
+    return (int)(nib | (((b[128 + 32 * n + l] >> (2 * part)) & 3u) << 4)) - 32;
+}
+DEVICE int scale_q6_k(GLOBAL const uchar* b, uint j) { return (int)(i8)b[192 + j]; }
+DEVICE float q8k_d(GLOBAL const uchar* y) { return *(GLOBAL const float*)y; }
+DEVICE int q8k_q(GLOBAL const uchar* y, uint e) { return (int)(i8)y[4 + e]; }
+DEVICE int q8k_bsum(GLOBAL const uchar* y, uint j) { return (int)((GLOBAL const short*)(y + 260))[j]; }
+// ggml's eight lanes (ml/quant_k.hpp lanes): lane l sums scale(e / 16) q8[e] a[e] over e = 8 j + l, then d times it
+#define K_LANES(F, B, D)                                                                                                \
+    for (int l = 0; l < 8; ++l) {                                                                                       \
+        int aux = 0;                                                                                                    \
+        for (uint j = 0; j < 32; ++j) aux += scale_##F(B, j / 2) * (q8k_q(y, 8 * j + (uint)l) * code_##F(B, 8 * j + (uint)l)); \
+        lanes[l] = (D) * (float)aux;                                                                                    \
+    }
+// A block's eight lane terms and its scalar term (Q2_K: added, Q4_K and Q5_K: subtracted, Q3_K and Q6_K: none)
+DEVICE void kterm_q3_k(GLOBAL const uchar* b, GLOBAL const uchar* y, float* lanes, float* t) { const float d = half_at(b + 108) * q8k_d(y); K_LANES(q3_k, b, d) *t = 0.0f; }
+DEVICE void kterm_q6_k(GLOBAL const uchar* b, GLOBAL const uchar* y, float* lanes, float* t) { const float d = half_at(b + 208) * q8k_d(y); K_LANES(q6_k, b, d) *t = 0.0f; }
+DEVICE void kterm_k4(GLOBAL const uchar* b, GLOBAL const uchar* y, float* lanes, float* t, int five)
+{
+    int sumi = 0;
+    for (uint j = 0; j < 8; ++j) { uint sc, mn; scale_min_k4(j, b + 4, &sc, &mn); sumi += q8k_bsum(y, 2 * j) * (int)mn; sumi += q8k_bsum(y, 2 * j + 1) * (int)mn; }
+    const float d = half_at(b) * q8k_d(y);
+    if (five) { K_LANES(q5_k, b, d) } else { K_LANES(q4_k, b, d) }
+    const float dmin = half_at(b + 2) * q8k_d(y);
+    *t = dmin * (float)sumi;
+}
+DEVICE void kterm_q4_k(GLOBAL const uchar* b, GLOBAL const uchar* y, float* lanes, float* t) { kterm_k4(b, y, lanes, t, 0); }
+DEVICE void kterm_q5_k(GLOBAL const uchar* b, GLOBAL const uchar* y, float* lanes, float* t) { kterm_k4(b, y, lanes, t, 1); }
+// Q2_K (ml/quant_k.hpp dot): one term a block, (dy dx) isum - (dy dmin) summs
+DEVICE void kterm_q2_k(GLOBAL const uchar* b, GLOBAL const uchar* y, float* lanes, float* t)
+{
+    int summs = 0, isum = 0;
+    for (uint j = 0; j < 16; ++j) summs += q8k_bsum(y, j) * (int)(b[j] >> 4);
+    for (uint j = 0; j < 16; ++j) {
+        int isuml = 0;
+        for (uint l = 0; l < 16; ++l) { const uint e = 16 * j + l; isuml += q8k_q(y, e) * (int)((b[16 + 32 * (e / 128) + e % 32] >> (2 * ((e % 128) / 32))) & 3u); }
+        isum += (int)(b[j] & 15u) * isuml;
+    }
+    const float dall = q8k_d(y) * half_at(b + 80);
+    const float dmin = q8k_d(y) * half_at(b + 82);
+    const float p = dall * (float)isum;
+    const float q = dmin * (float)summs;
+    *t = p - q;
+    for (int l = 0; l < 8; ++l) lanes[l] = 0.0f;
+}
+#undef K_LANES
+
 // float to float16, to nearest even (ml/minifloat.hpp to_minifloat<float16>): Q8_0's scale
 DEVICE uint f2h(float x)
 {
@@ -637,6 +727,44 @@ KERNEL GROUP1(64) void CAT(qdot, FMT)(GLOBAL const uchar* w, u64 cols, GLOBAL co
 }
 )SRC";
 
+// The Q8_K path of one K-quant, instantiated with FMT, BYTES and KIND (0: lanes only, 1: lanes less the scalar terms,
+// 2: the scalar terms only). As core's dot: the lanes' sums and the scalar sum each over the blocks in order, then the
+// scalar sum plus the eight lanes in order. A group per (row, token), 64 blocks at a time; the first item adds.
+inline constexpr const char* q8k_source = R"SRC(
+KERNEL GROUP1(64) void CAT(qkdot, FMT)(GLOBAL const uchar* w, u64 cols, GLOBAL const uchar* xq, u64 rows, u64 t0, GLOBAL const float* bias, int has_bias,
+                                       GLOBAL float* y)
+{
+    LOCAL float terms[9 * 64];
+    const int l = LX;
+    const u64 r = GX, t = t0 + GY, nb = cols / 256;
+    float sums[8], sumf = 0.0f;
+    for (int k = 0; k < 8; ++k) sums[k] = 0.0f;
+    for (u64 b0 = 0; b0 < nb; b0 += 64) {
+        const u64 b = b0 + (u64)l;
+        if (b < nb) {
+            float lanes[8], s;
+            CAT(kterm, FMT)(w + (r * nb + b) * BYTES, xq + (t * nb + b) * 292, lanes, &s);
+            for (int k = 0; k < 8; ++k) terms[k * 64 + l] = lanes[k];
+            terms[8 * 64 + l] = s;
+        }
+        BARRIER();
+        if (l == 0) {
+            const int e = nb - b0 < 64 ? (int)(nb - b0) : 64;
+            for (int i = 0; i < e; ++i) {
+                if (KIND != 2) for (int k = 0; k < 8; ++k) sums[k] += terms[k * 64 + i];
+                if (KIND == 1) sumf -= terms[8 * 64 + i];
+                if (KIND == 2) sumf += terms[8 * 64 + i];
+            }
+        }
+        BARRIER();
+    }
+    if (l == 0) {
+        if (KIND != 2) for (int k = 0; k < 8; ++k) sumf += sums[k];
+        y[t * rows + r] = has_bias ? bias[r] + sumf : sumf;
+    }
+}
+)SRC";
+
 // The whole program for one language: the prelude, the formats, each format's kernels, the integer paths, then `extra`
 // (the CUDA tensor-core kernels)
 inline std::string program(const char* prelude, const char* extra = "")
@@ -651,6 +779,12 @@ inline std::string program(const char* prelude, const char* extra = "")
         const std::string n(name);
         s += "#define FMT " + n + "\n#define TERM term_" + n + "\n#define BYTES " + std::to_string(bytes) + "\n" + q8_source
              + "#undef BYTES\n#undef TERM\n#undef FMT\n";
+    }
+    for (const auto& [name, bytes, kind] : {std::tuple{"q2_k", 84, 2}, std::tuple{"q3_k", 110, 0}, std::tuple{"q4_k", 144, 1}, std::tuple{"q5_k", 176, 1},
+                                           std::tuple{"q6_k", 210, 0}}) {
+        const std::string n(name);
+        s += "#define FMT " + n + "\n#define BYTES " + std::to_string(bytes) + "\n#define KIND " + std::to_string(kind) + "\n" + q8k_source
+             + "#undef KIND\n#undef BYTES\n#undef FMT\n";
     }
     return s + extra;
 }

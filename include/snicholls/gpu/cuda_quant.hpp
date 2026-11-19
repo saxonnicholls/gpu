@@ -17,8 +17,8 @@
 ///
 /// - `linear_sequence(b, w, xs, ys, bias)`: `Y = X Wᵀ + b`, float activations.
 /// - `linear_sequence_backward_input(b, w, dys, dxs)`: `dX += dY W` (the base is frozen: no weight gradient).
-/// - `linear_sequence_q8(b, w, xs, ys, bias)`: Q8_0, Q4_0 or MXFP4 weights with the activations quantised to Q8_0 on
-///   the device and core's integer block dot products.
+/// - `linear_sequence_q8(b, w, xs, ys, bias)`: the activations quantised on the device to the 8-bit blocks core's dot
+///   product pairs the weights with (Q8_0 for Q8_0, Q4_0, MXFP4; Q8_K for Q2_K to Q6_K), and core's integer block dot products.
 ///
 /// `w` is core's view (`ml::quantized_weights<Block>`, `ml::nf4_weights`, `ml::dense_weights<S>`), or a
 /// `block_weights<Block>` of Q4_1, Q5_0, Q5_1, Q2_K to Q6_K, TQ1_0 or TQ2_0 where the pinned core has them, over device memory:
@@ -237,7 +237,7 @@ public:
             std::fprintf(stderr, "snicholls::gpu::cuda_quant_kernels: cudaLibraryLoadData: %s\n", cudaGetErrorString(e));
             return err(cuda_failure{cuda_error::call_failed, static_cast<int>(e)});
         }
-        std::vector<std::pair<std::string, cudaKernel_t*>> all{{"quantize_q8", &k->quantize_}};
+        std::vector<std::pair<std::string, cudaKernel_t*>> all{{"quantize_q8", &k->quantize_}, {"quantize_q8k", &k->quantize_k_}};
         for (std::size_t f = 0; f < detail::quant::format_count; ++f) {
             const std::string n(detail::quant::names[f]);
             all.emplace_back("qmv_" + n, &k->mv_[f]);
@@ -245,8 +245,10 @@ public:
             all.emplace_back("qmmt_" + n, &k->mmt_[f]);
             all.emplace_back("qmma_" + n, &k->mma_[f]);
             all.emplace_back("qmmat_" + n, &k->mmat_[f]);
-            if (detail::quant::has_q8_dot(detail::quant::format(f)))
+            if (detail::quant::has_q8_0_dot(detail::quant::format(f)))
                 all.emplace_back("qdot_" + n, &k->dot_[f]);
+            if (detail::quant::has_q8_k_dot(detail::quant::format(f)))
+                all.emplace_back("qkdot_" + n, &k->dot_[f]);
         }
         for (const auto& [name, slot] : all)
             if (const cudaError_t e = cudaLibraryGetKernel(slot, k->library_, name.c_str()); e != cudaSuccess) {
@@ -310,24 +312,27 @@ public:
         tiled(math == cuda_math::bf16 ? mmat_[f] : mmt_[f], math == cuda_math::bf16, w, n, w.cols, w.rows, dys.data(), nullptr, 0, 1.0f, dxs.data());
     }
 
-    /// \brief `Y = X Wᵀ + b` with `X` quantised to Q8_0 and core's block dot products, over device memory.
-    /// \param w Q8_0, Q4_0 or MXFP4 weights. \param xs `n · cols`. \param ys Written, `n · rows`. \param bias `rows`, or empty.
+    /// \brief `Y = X Wᵀ + b` with `X` quantised as core's dot product pairs the weights (Q8_0 for Q8_0, Q4_0 and MXFP4;
+    /// Q8_K for Q2_K to Q6_K) and core's block dot products, over device memory.
+    /// \param w Weights of one of those formats. \param xs `n · cols`. \param ys Written, `n · rows`. \param bias `rows`, or empty.
     /// \throws std::invalid_argument for another format or sizes that do not fit; cuda_exception if a launch fails.
     void forward_q8(const detail::quant::parts& w, std::span<const float> xs, std::span<float> ys, std::span<const float> bias) const
     {
         const std::size_t n = rows_of(w, xs, w.cols, ys, w.rows, bias);
         if (!detail::quant::has_q8_dot(w.fmt))
-            throw std::invalid_argument("snicholls::gpu: Q8_0 activations need Q8_0, Q4_0 or MXFP4 weights");
+            throw std::invalid_argument("snicholls::gpu: 8-bit activations need Q8_0, Q4_0, MXFP4 or Q2_K to Q6_K weights");
         if (n == 0 || w.rows == 0)
             return;
-        u64 blocks = n * w.cols / 32, cols = w.cols, rows = w.rows;
-        if (!q8_ || q8_->size() < blocks * detail::quant::q8_bytes)
-            q8_ = std::make_unique<device_buffer<std::uint8_t>>(*context_, std::size_t(blocks) * detail::quant::q8_bytes);
+        const bool k_quant = detail::quant::has_q8_k_dot(w.fmt);
+        const std::size_t block_bytes = k_quant ? detail::quant::q8k_bytes : detail::quant::q8_bytes;
+        u64 blocks = n * w.cols / (k_quant ? 256 : 32), cols = w.cols, rows = w.rows;
+        if (!q8_ || q8_->size() < blocks * block_bytes)
+            q8_ = std::make_unique<device_buffer<std::uint8_t>>(*context_, std::size_t(blocks) * block_bytes);
         const float* x = xs.data();
         std::uint8_t* q = q8_->span().data();
         if (blocks > 0) {
             void* args[] = {&x, &blocks, &q};
-            launch(quantize_, dim3(unsigned((blocks + 63) / 64)), dim3(64), args);
+            launch(k_quant ? quantize_k_ : quantize_, dim3(unsigned((blocks + 63) / 64)), dim3(64), args);
         }
         const auto* wp = reinterpret_cast<const std::uint8_t*>(w.weights.data());
         const float* bp = bias.empty() ? nullptr : bias.data();
@@ -397,7 +402,7 @@ private:
     const cuda_context* context_;
     cudaLibrary_t library_ = nullptr;
     std::array<cudaKernel_t, detail::quant::format_count> mv_{}, mm_{}, mmt_{}, mma_{}, mmat_{}, dot_{};
-    cudaKernel_t quantize_ = nullptr;
+    cudaKernel_t quantize_ = nullptr, quantize_k_ = nullptr;
     mutable std::unique_ptr<device_buffer<std::uint8_t>> q8_;
 };
 
@@ -443,6 +448,17 @@ void linear_sequence(const cuda_training_backend& b, const block_weights<Block>&
                      std::span<const float> bias = {})
 {
     detail::cuda_quant::kernels(b).forward(b.math, detail::quant::traits<block_weights<Block>>::of(w), xs, ys, bias);
+}
+
+/// \brief `Y = X Wᵀ + b` with Q8_K activations over K-quant blocks (Q2_K to Q6_K): core's `dot`. \param b The backend.
+/// \param w The weights. \param xs `n · cols`. \param ys Written, `n · rows`. \param bias `rows`, or empty.
+/// \throws std::invalid_argument, cuda_exception.
+template <typename Block>
+    requires detail::quant::weights<block_weights<Block>>
+void linear_sequence_q8(const cuda_training_backend& b, const block_weights<Block>& w, std::span<const float> xs, std::span<float> ys,
+                        std::span<const float> bias = {})
+{
+    detail::cuda_quant::kernels(b).forward_q8(detail::quant::traits<block_weights<Block>>::of(w), xs, ys, bias);
 }
 
 /// \brief `dX += dY W` over any other ggml blocks. \param b The backend. \param w The weights. \param dys `n · rows`.

@@ -220,7 +220,7 @@ TYPED_TEST_P(QuantProduct, Q8ActivationsGiveCoresDotProduct)
         auto& d = TestFixture::dev();
         for (const std::size_t n : {std::size_t(1), std::size_t(5), std::size_t(70)})
             for (const bool with_bias : {false, true}) {
-                const std::size_t rows = 37, cols = 32 * 70;   // more blocks than a work-group adds at once
+                const std::size_t rows = 37, cols = Tag::unit * 70;   // more blocks than a work-group adds at once
                 const host_matrix<Tag> m(rows, cols, 71 + n, 1.0f);
                 const auto xs = uniform(n * cols, 72 + n, 3.0f);
                 const auto bias = with_bias ? uniform(rows, 73) : std::vector<float>{};

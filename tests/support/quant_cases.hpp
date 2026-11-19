@@ -68,11 +68,11 @@ struct block_tag { using view = snicholls::gpu::block_weights<Block>; static con
 struct q4_1_tag : block_tag<qml::block_q4_1> { static constexpr const char* name = "q4_1"; };
 struct q5_0_tag : block_tag<qml::block_q5_0> { static constexpr const char* name = "q5_0"; };
 struct q5_1_tag : block_tag<qml::block_q5_1> { static constexpr const char* name = "q5_1"; };
-struct q2_k_tag : block_tag<qml::block_q2_k> { static constexpr const char* name = "q2_k"; };
-struct q3_k_tag : block_tag<qml::block_q3_k> { static constexpr const char* name = "q3_k"; };
-struct q4_k_tag : block_tag<qml::block_q4_k> { static constexpr const char* name = "q4_k"; };
-struct q5_k_tag : block_tag<qml::block_q5_k> { static constexpr const char* name = "q5_k"; };
-struct q6_k_tag : block_tag<qml::block_q6_k> { static constexpr const char* name = "q6_k"; };
+struct q2_k_tag : block_tag<qml::block_q2_k> { static constexpr const char* name = "q2_k"; static constexpr bool q8 = true; };
+struct q3_k_tag : block_tag<qml::block_q3_k> { static constexpr const char* name = "q3_k"; static constexpr bool q8 = true; };
+struct q4_k_tag : block_tag<qml::block_q4_k> { static constexpr const char* name = "q4_k"; static constexpr bool q8 = true; };
+struct q5_k_tag : block_tag<qml::block_q5_k> { static constexpr const char* name = "q5_k"; static constexpr bool q8 = true; };
+struct q6_k_tag : block_tag<qml::block_q6_k> { static constexpr const char* name = "q6_k"; static constexpr bool q8 = true; };
 struct tq1_0_tag : block_tag<qml::block_tq1_0> { static constexpr const char* name = "tq1_0"; };
 struct tq2_0_tag : block_tag<qml::block_tq2_0> { static constexpr const char* name = "tq2_0"; };
 #endif
@@ -181,23 +181,35 @@ inline void reference_backward_input(const std::vector<float>& dense, std::size_
     qml::linear_sequence_backward_input(snicholls::linalg::reference, qml::dense_weights<float>{dense, rows, cols}, dys, dxs);
 }
 
-// The integer path's reference: each row of X quantised to Q8_0, each output core's dot product plus its bias, as
-// ml::linear over quantized_weights
-template <typename Block>
-std::vector<float> reference_q8(const qml::quantized_weights<Block>& w, std::span<const float> xs, std::span<const float> bias)
+// The integer path's reference: each row of X quantised to the activation blocks core pairs the format with (Q8_0, or
+// Q8_K for the K-quants), each output core's dot product plus its bias, as ml::linear over quantized_weights
+template <typename A, typename W>
+std::vector<float> reference_q8_with(const W& w, std::span<const float> xs, std::span<const float> bias)
 {
-    const std::size_t n = xs.size() / w.cols;
+    const std::size_t n = xs.size() / w.cols, per = sizeof(A) == sizeof(qml::block_q8_0) ? 32 : 256;
     std::vector<float> ys(n * w.rows);
-    std::vector<qml::block_q8_0> q(w.cols / 32);
+    std::vector<A> q(w.cols / per);
     for (std::size_t t = 0; t < n; ++t) {
-        qml::quantize(xs.subspan(t * w.cols, w.cols), std::span<qml::block_q8_0>(q));
+        qml::quantize(xs.subspan(t * w.cols, w.cols), std::span<A>(q));
         for (std::size_t i = 0; i < w.rows; ++i) {
-            const float d = qml::dot(w.row(i), std::span<const qml::block_q8_0>(q));
+            const float d = qml::dot(w.row(i), std::span<const A>(q));
             ys[t * w.rows + i] = bias.empty() ? d : bias[i] + d;
         }
     }
     return ys;
 }
+template <typename Block>
+std::vector<float> reference_q8(const qml::quantized_weights<Block>& w, std::span<const float> xs, std::span<const float> bias)
+{
+    return reference_q8_with<qml::block_q8_0>(w, xs, bias);
+}
+#ifdef SNICHOLLS_GPU_QUANT_K
+template <typename Block>
+std::vector<float> reference_q8(const snicholls::gpu::block_weights<Block>& w, std::span<const float> xs, std::span<const float> bias)
+{
+    return reference_q8_with<qml::block_q8_k>(w, xs, bias);
+}
+#endif
 
 // The bound of a sum of k products added in another order, per output: k 2^-23 Σ|w x| plus one rounding of the
 // result (the bias added after)
