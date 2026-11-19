@@ -84,3 +84,50 @@ Against PyTorch's loss and gradients on llm.c's reference batch (4 x 64 tokens, 
 | llm.c's own float32 CPU code, for comparison | 5.269997 | 0.075% |
 
 In float, ten AdamW steps on that batch give PyTorch's ten losses within 1.1e-4.
+
+## A mixture of experts
+
+`cuda_moe.hpp` runs core's mixture of experts (`ml/moe.hpp`) on the device. Measured with
+`benchmarks/cuda_moe_benchmark.cpp` on the same RTX PRO 4000 Blackwell, CUDA 13.3, Release, 2026-11-19, **while another
+training job kept the GPU fully busy**: every figure is an upper bound and the pairs are compared with each other, not
+with the tables above. Medians of five where stated. Two shapes over 4096 tokens of 768: eight experts of 2048, two per
+token (Mixtral's), and 64 experts of 256, eight per token, with one shared expert (DeepSeekMoE's), routed from random
+tokens so the segments are as uneven as a router makes them.
+
+**The grouped product.** The segments' sizes come from the routing and so live on the device. Three ways to multiply
+them were measured; cuBLASLt's grouped layouts (`CUBLASLT_BATCH_MODE_GROUPED`) return `CUBLAS_STATUS_NOT_SUPPORTED` on
+this device (sm_120) for float, TF32 and bfloat16 alike, and `cublasGemmGroupedBatchedEx` takes no bfloat16 inputs with
+float outputs. The experts' up projection, forward:
+
+| shape, math | grouped kernel | cuBLAS per expert | `cublasGemmGroupedBatchedEx` |
+|---|---|---|---|
+| 8 x 2048, float | 7.5 ms | 7.7 ms | 7.8 ms |
+| 8 x 2048, TF32 | 3.8 ms | 3.5 ms | 3.4 ms |
+| 8 x 2048, bfloat16 | 3.3 ms | 2.9 ms | (not supported) |
+| 64 x 256, float | 4.0 ms | 6.9 ms | 4.0 ms |
+| 64 x 256, TF32 | 3.3 ms | 3.3 ms | 3.4 ms |
+| 64 x 256, bfloat16 | 2.9 ms | 3.3 ms | (not supported) |
+
+Both cuBLAS ways need the segments' sizes on the host: one wait for the offsets per product, and nothing of it can be
+captured in a graph. The grouped kernel reads them on the device: 128 x 128 tiles on the tensor cores (TF32, bfloat16,
+or three TF32 products for float's accuracy), the fragments kept in shared memory in the order they are read (one
+128-bit load per fragment; the first layout, a word per load, took 5.8 ms where this takes 3.8), no atomics. It is
+within about 10% of cuBLAS for large segments and as fast or faster for many small ones.
+
+**A whole layer**, `ml::moe_forward` and `ml::moe_backward` (router, routing, permutation, gather, the three grouped
+products and their backward, the activations, combine, the shared expert, the balance losses), medians of five:
+
+| shape, math | queued | captured graph | queued, cuBLAS per expert |
+|---|---|---|---|
+| 8 x 2048, float | 71.6 ms | 69.3 ms | 72.1 ms |
+| 8 x 2048, TF32 | 39.8 ms | 35.3 ms | 43.0 ms |
+| 8 x 2048, bfloat16 | 32.3 ms | 30.0 ms | 38.6 ms |
+| 64 x 256 + shared, float | 53.9 ms | 51.5 ms | 66.2 ms |
+| 64 x 256 + shared, TF32 | 35.0 ms | 30.6 ms | 39.1 ms |
+| 64 x 256 + shared, bfloat16 | 31.3 ms | 29.1 ms | 41.0 ms |
+
+So the grouped kernel is the default (`grouped_path::kernel`): with it nothing in a layer waits for the host except the
+two auxiliary losses' values, which go to device memory instead when the step is captured
+(`cuda_moe_kernels::losses_on_device`), and the whole layer replays as one graph. The steps around the products
+(routing, the histogram, the permutation, gather and combine) take 2.4 ms for the first shape and 2.9 ms for the second.
+`BENCHMARKS.md` is not rewritten from these contended figures; that waits for a free GPU.

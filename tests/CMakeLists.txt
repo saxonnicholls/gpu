@@ -14,7 +14,7 @@ gtest_discover_tests(snicholls_gpu_tests PROPERTIES LABELS unit DISCOVERY_TIMEOU
 
 # The CUDA backend's tests, where CUDA is
 if(SNICHOLLS_GPU_WITH_CUDA)
-    add_executable(snicholls_gpu_cuda_tests cuda_ops_test.cpp cuda_test.cpp)
+    add_executable(snicholls_gpu_cuda_tests cuda_moe_test.cpp cuda_ops_test.cpp cuda_test.cpp)
     target_link_libraries(snicholls_gpu_cuda_tests PRIVATE snicholls::gpu_cuda snicholls::core_conformance GTest::gtest_main)
     snicholls_gpu_compile_options(snicholls_gpu_cuda_tests)
     snicholls_gpu_sanitize(snicholls_gpu_cuda_tests)

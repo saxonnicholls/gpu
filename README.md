@@ -14,6 +14,8 @@ implementation with its conformance suites. This library implements them on a de
 
 - **`snicholls::gpu::cuda_backend`** (`include/snicholls/gpu/cuda.hpp`): the NVIDIA backend, cuBLAS over device memory
   in place (`device_buffer<T>`) or host memory staged; built where the CUDA toolkit is (`snicholls::gpu_cuda`).
+- **`snicholls::gpu::cuda_training_backend`** (`cuda_ops.hpp`, `cuda_moe.hpp`): core's batched training passes with
+  every step a kernel over device memory, dense blocks and mixtures of experts alike.
 - **`snicholls::gpu::opencl_backend`** (`include/snicholls/gpu/opencl.hpp`): matrix products on any OpenCL 1.2
   device, a GPU by preference: AMD, NVIDIA, Intel, Apple. Code written against core's `linalg::gemm` (and through it
   core's batched transformer training) runs on the GPU by changing the backend it is handed. The products give the

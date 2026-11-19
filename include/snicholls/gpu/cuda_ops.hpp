@@ -1266,6 +1266,8 @@ private:
     mutable std::unique_ptr<device_buffer<float>> partials_;
 };
 
+class cuda_moe_kernels;   // cuda_moe.hpp
+
 /// \brief The CUDA backend with the training steps' kernels: core's batched passes run entirely on the device over
 /// `device_buffer` memory. Trivially copyable.
 struct cuda_training_backend : cuda_backend {
@@ -1275,6 +1277,8 @@ struct cuda_training_backend : cuda_backend {
     std::size_t gemm_attention_max = 4096;   ///< The longest sequence whose attention runs as matrix products (cuBLAS,
                                              ///< so on the tensor cores under `cuda_math::tf32`), its `n x n` scores
                                              ///< three times in the kernels' scratch; longer ones take the tiled kernels.
+    const cuda_moe_kernels* moe = nullptr;   ///< The mixture-of-experts kernels (`cuda_moe.hpp`), or none; must outlive the
+                                             ///< backend. Last, so the members before it initialise as before.
 
     /// \brief `C = alpha A B + beta C` in float: under `cuda_math::bf16`, with every operand device memory in a BLAS
     /// layout whose leading dimensions are multiples of 8, `A` and `B` rounded to bfloat16 by a kernel and multiplied on
