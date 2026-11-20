@@ -75,7 +75,9 @@
 /// **Dependencies.** `opencl.hpp`, `detail/quant_source.hpp`, core's `ml/linear.hpp`, `ml/nf4.hpp`, `ml/quantize.hpp`,
 /// `ml/minifloat.hpp`, `<algorithm>`, `<array>`, `<cstddef>`, `<memory>`, `<mutex>`, `<span>`, `<stdexcept>`, `<string>`, `<vector>`.
 ///
-/// **Known issues.** BitNet's TL1 and TL2 are lookup-table tilings of the same ternary weights shaped for CPU SIMD
+/// **Known issues.** PoCL 6 keeps a program's build files under its cache directory at paths given by the program, so
+/// processes that build the same program at the same moment can load each other's half-written kernels: build it once
+/// before starting many processes (the tests do, in a CTest fixture). BitNet's TL1 and TL2 are lookup-table tilings of the same ternary weights shaped for CPU SIMD
 /// kernels; on a device the weights are read as I2_S. OpenCL 1.2 has no integer dot instructions or tensor cores: everything is in float and int32 on
 /// the vector units. The device's division is correctly rounded only where it says so
 /// (`CL_FP_CORRECTLY_ROUNDED_DIVIDE_SQRT`); elsewhere a Q8_0 scale can differ from core's in its last bit.

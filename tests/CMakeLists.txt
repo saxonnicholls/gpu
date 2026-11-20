@@ -12,7 +12,12 @@ target_link_libraries(snicholls_gpu_tests PRIVATE snicholls::gpu snicholls::core
 snicholls_gpu_compile_options(snicholls_gpu_tests)
 snicholls_gpu_sanitize(snicholls_gpu_tests)
 include(GoogleTest)
-gtest_discover_tests(snicholls_gpu_tests PROPERTIES LABELS unit DISCOVERY_TIMEOUT 60)
+# PoCL 6 keeps a program's build files under its cache directory at paths given by the program, so processes that
+# compile the same program at once (ctest -j) can read each other's half-written files and run wrong kernels. One test
+# compiles every OpenCL program first, in one process; the others need it, so they find the programs in the cache.
+add_test(NAME opencl.compile_programs COMMAND snicholls_gpu_tests --gtest_filter=GpuOpenCl.TheContextReportsItsDevice:GpuOpenClQuant.TheErrorsAreReported)
+set_tests_properties(opencl.compile_programs PROPERTIES LABELS unit FIXTURES_SETUP opencl_programs)
+gtest_discover_tests(snicholls_gpu_tests PROPERTIES LABELS unit FIXTURES_REQUIRED opencl_programs DISCOVERY_TIMEOUT 60)
 
 # The CUDA backend's tests, where CUDA is
 if(SNICHOLLS_GPU_WITH_CUDA)

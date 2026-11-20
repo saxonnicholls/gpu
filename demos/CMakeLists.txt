@@ -20,4 +20,6 @@ endif()
 snicholls_gpu_add_demo(opencl_demo opencl_demo.cpp)
 snicholls_gpu_add_demo(opencl_quant_demo opencl_quant_demo.cpp)
 snicholls_gpu_add_demo(quant_weights_demo quant_weights_demo.cpp)
+# The OpenCL demos compile their programs after tests/CMakeLists.txt's opencl.compile_programs, not beside each other
+set_tests_properties(demo.opencl_demo demo.opencl_quant_demo PROPERTIES FIXTURES_REQUIRED opencl_programs)
 snicholls_gpu_add_demo(version_demo version_demo.cpp)

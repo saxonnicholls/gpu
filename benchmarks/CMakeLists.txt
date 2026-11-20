@@ -12,7 +12,7 @@ if(SNICHOLLS_GPU_BUILD_TESTS)
              --benchmark_filter=/64/)
     add_test(NAME benchmark.opencl_quant COMMAND snicholls_gpu_opencl_quant_benchmark --benchmark_min_time=0.01s
              --benchmark_filter=4096/4096$)
-    set_tests_properties(benchmark.opencl benchmark.opencl_quant PROPERTIES LABELS benchmark)
+    set_tests_properties(benchmark.opencl benchmark.opencl_quant PROPERTIES LABELS benchmark FIXTURES_REQUIRED opencl_programs)
 endif()
 
 if(SNICHOLLS_GPU_WITH_CUDA)
