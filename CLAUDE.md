@@ -47,6 +47,11 @@ Every source file starts with the banner
     machine, where both run on one device) and reports both speeds and both accuracies: against core's reference
     and against each other, to the bit where the contract is bits, and as measured error against its stated bound
     where a path may round differently (bf16 tensor cores). A result from one backend alone is half a result.
+  - **When the NVIDIA machine is unavailable, the OpenCL side ships.** A release does not wait for CUDA hardware:
+    it goes out with OpenCL tested, demonstrated and benchmarked, and the CUDA code compiled without the toolkit
+    where it can be (clang's NVPTX target, a host syntax check against the CUDA headers). Its CHANGELOG entry and
+    release notes say so in a line of their own, `CUDA: not yet run on an NVIDIA GPU; coming in X.Y.Z`, and the
+    CUDA run and the CUDA-against-OpenCL comparison are the first work when the machine returns.
 
 ## Layout
 
