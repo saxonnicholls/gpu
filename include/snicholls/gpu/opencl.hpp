@@ -150,8 +150,9 @@ namespace detail {
 __kernel __attribute__((reqd_work_group_size(RTS, RTS, 1)))                                                        \
 void NAME(const long m, const long n, const long k, const T alpha,                                                 \
           __global const T* a, const long sa0, const long sa1, __global const T* b, const long sb0, const long sb1,  \
-          const T beta, __global T* c, const long sc0, const long sc1)                                             \
+          const T beta, __global T* c, const long sc0, const long sc1, const long oa, const long ob, const long oc)  \
 {                                                                                                                  \
+    a += oa, b += ob, c += oc;                                                                                     \
     __local T as[TSK][TSM];                                                                                        \
     __local T bs[TSK][TSN];                                                                                        \
     const int tc = get_local_id(0), tr = get_local_id(1), tid = tr * RTS + tc;                                     \
@@ -333,20 +334,38 @@ public:
         const bool upload = beta != T(0) || !c.mapping().is_exhaustive();
         detail::buffer dc(context_, upload ? CL_MEM_READ_WRITE | CL_MEM_COPY_HOST_PTR : CL_MEM_WRITE_ONLY, sc * sizeof(T),
                           upload ? c.data_handle() : nullptr);
-        const cl_long args[] = {cl_long(m), cl_long(n), cl_long(k), cl_long(a.stride(0)), cl_long(a.stride(1)), cl_long(b.stride(0)),
-                                cl_long(b.stride(1)), cl_long(c.stride(0)), cl_long(c.stride(1))};
+        gemm_buffers(alpha, m, n, k, da.mem, 0, a.stride(0), a.stride(1), db.mem, 0, b.stride(0), b.stride(1), beta, dc.mem, 0, c.stride(0),
+                     c.stride(1));
+        detail::check(clEnqueueReadBuffer(queue_, dc.mem, CL_TRUE, 0, sc * sizeof(T), c.data_handle(), 0, nullptr, nullptr),
+                      "clEnqueueReadBuffer");
+    }
+
+    /// \brief `C = alpha A B + beta C` over operands already in device buffers, at element offsets, with element
+    /// strides; enqueued on `native_queue()` and not waited for. The same kernel and the same bits as `gemm`.
+    /// \param alpha The scale. \param m The rows of `C`. \param n Its columns. \param k The inner dimension.
+    /// \param a `A`'s buffer. \param oa Its first element. \param sa0 Its row stride. \param sa1 Its column stride.
+    /// \param b `B`'s buffer. \param ob Its first element. \param sb0 Its row stride. \param sb1 Its column stride.
+    /// \param beta The scale of `C`. \param c `C`'s buffer, not overlapping `A` or `B`. \param oc Its first element.
+    /// \param sc0 Its row stride. \param sc1 Its column stride. \throws opencl_exception if an OpenCL call fails.
+    template <typename T>
+    void gemm_buffers(T alpha, std::size_t m, std::size_t n, std::size_t k, cl_mem a, std::size_t oa, std::size_t sa0, std::size_t sa1, cl_mem b,
+                      std::size_t ob, std::size_t sb0, std::size_t sb1, T beta, cl_mem c, std::size_t oc, std::size_t sc0, std::size_t sc1) const
+    {
+        if (m == 0 || n == 0)
+            return;
+        const cl_long args[] = {cl_long(m), cl_long(n), cl_long(k), cl_long(sa0), cl_long(sa1), cl_long(sb0), cl_long(sb1), cl_long(sc0),
+                                cl_long(sc1), cl_long(oa), cl_long(ob), cl_long(oc)};
         const std::lock_guard lock(mutex_);
         cl_kernel kernel = std::is_same_v<T, float> ? gemm_float_ : gemm_double_;
         cl_uint i = 0;
         auto set = [&](std::size_t size, const void* value) { detail::check(clSetKernelArg(kernel, i++, size, value), "clSetKernelArg"); };
         set(sizeof(cl_long), &args[0]), set(sizeof(cl_long), &args[1]), set(sizeof(cl_long), &args[2]), set(sizeof(T), &alpha);
-        set(sizeof(cl_mem), &da.mem), set(sizeof(cl_long), &args[3]), set(sizeof(cl_long), &args[4]);
-        set(sizeof(cl_mem), &db.mem), set(sizeof(cl_long), &args[5]), set(sizeof(cl_long), &args[6]);
-        set(sizeof(T), &beta), set(sizeof(cl_mem), &dc.mem), set(sizeof(cl_long), &args[7]), set(sizeof(cl_long), &args[8]);
+        set(sizeof(cl_mem), &a), set(sizeof(cl_long), &args[3]), set(sizeof(cl_long), &args[4]);
+        set(sizeof(cl_mem), &b), set(sizeof(cl_long), &args[5]), set(sizeof(cl_long), &args[6]);
+        set(sizeof(T), &beta), set(sizeof(cl_mem), &c), set(sizeof(cl_long), &args[7]), set(sizeof(cl_long), &args[8]);
+        set(sizeof(cl_long), &args[9]), set(sizeof(cl_long), &args[10]), set(sizeof(cl_long), &args[11]);
         const std::size_t global[2] = {(n + 63) / 64 * 16, (m + 63) / 64 * 16}, local[2] = {16, 16};   // 64 x 64 per group
         detail::check(clEnqueueNDRangeKernel(queue_, kernel, 2, nullptr, global, local, 0, nullptr, nullptr), "clEnqueueNDRangeKernel");
-        detail::check(clEnqueueReadBuffer(queue_, dc.mem, CL_TRUE, 0, sc * sizeof(T), c.data_handle(), 0, nullptr, nullptr),
-                      "clEnqueueReadBuffer");
     }
 
 private:
