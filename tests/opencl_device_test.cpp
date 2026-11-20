@@ -106,6 +106,11 @@ TEST(GpuOpenClDevice, TheArenaHoldsWhatIsWrittenAndRefusesForeignSpans)
     // A larger allocation than a chunk gets a buffer of its own
     const auto big = d.arena->allocate<float>((std::size_t{64} << 20) / sizeof(float) + 10);
     EXPECT_NE(d.arena->locate(big.data()).mem, d.arena->locate(s.data()).mem);
+    // Freed blocks are reused, and neighbours join
+    const auto a = d.arena->allocate<float>(100), b = d.arena->allocate<float>(100);
+    d.arena->deallocate(a), d.arena->deallocate(b);
+    const auto c = d.arena->allocate<float>(150);
+    EXPECT_EQ(static_cast<void*>(c.data()), static_cast<void*>(a.data()));
     d.arena->release(mark);
 }
 

@@ -77,6 +77,7 @@
 #include <sys/mman.h>
 
 #include <algorithm>
+#include <iterator>
 #include <cstddef>
 #include <cstdint>
 #include <memory>
@@ -91,7 +92,8 @@
 namespace snicholls::gpu {
 
 /// \brief Device memory addressed by spans: a reserved range of host addresses, each allocation a place in a device
-/// buffer. Allocation is a bump within the current buffer (a new one when full); `release` frees back to a mark.
+/// buffer. Allocation reuses a freed block that fits (first fit), else bumps within the current buffer (a new one when
+/// full); `deallocate` returns one allocation, `release` everything after a mark.
 class opencl_arena {
 public:
     /// \brief Where a span's first element is. \see locate
@@ -130,8 +132,17 @@ public:
     [[nodiscard]] std::span<T> allocate(std::size_t n)
     {
         static_assert(std::is_trivially_copyable_v<T>);
-        const std::size_t bytes = std::max<std::size_t>(n * sizeof(T), 1);
+        const std::size_t bytes = round(std::max<std::size_t>(n * sizeof(T), 1));
         const std::lock_guard lock(mutex_);
+        for (auto it = free_.begin(); it != free_.end(); ++it)   // first fit among the freed blocks
+            if (it->size >= bytes) {
+                const std::size_t at = it->start;
+                if (it->size == bytes)
+                    free_.erase(it);
+                else
+                    it->start += bytes, it->size -= bytes;
+                return {reinterpret_cast<T*>(base_ + at), n};
+            }
         if (chunks_.empty() || round(top_) + bytes > chunks_.back().start + chunks_.back().size) {
             const std::size_t start = chunks_.empty() ? 0 : round(chunks_.back().start + chunks_.back().size);
             const std::size_t size = std::max(chunk_, round(bytes));
@@ -146,6 +157,26 @@ public:
         const std::size_t at = round(top_);
         top_ = at + bytes;
         return {reinterpret_cast<T*>(base_ + at), n};
+    }
+
+    /// \brief Returns an allocation for reuse (neighbouring free blocks are joined). \param s A span `allocate` gave, whole.
+    template <typename T>
+    void deallocate(std::span<T> s)
+    {
+        if (!owns(s.data()))
+            return;
+        const std::size_t at = std::size_t(reinterpret_cast<const std::byte*>(s.data()) - base_), bytes = round(std::max<std::size_t>(s.size_bytes(), 1));
+        const std::lock_guard lock(mutex_);
+        auto it = free_.begin();
+        while (it != free_.end() && it->start < at)
+            ++it;
+        it = free_.insert(it, {at, bytes});
+        if (std::next(it) != free_.end() && it->start + it->size == std::next(it)->start && same_chunk(it->start, std::next(it)->start))
+            it->size += std::next(it)->size, free_.erase(std::next(it));
+        if (it != free_.begin() && std::prev(it)->start + std::prev(it)->size == it->start && same_chunk(std::prev(it)->start, it->start)) {
+            std::prev(it)->size += it->size;
+            free_.erase(it);
+        }
     }
 
     /// \brief Where a device address is. \param p An address inside an allocation. \return Its buffer and offset.
@@ -203,6 +234,7 @@ public:
     {
         const std::lock_guard lock(mutex_);
         top_ = std::min(top_, m);
+        std::erase_if(free_, [&](const block& b) { return b.start >= top_; });
         while (!chunks_.empty() && chunks_.back().start > top_) {
             clReleaseMemObject(chunks_.back().mem);
             chunks_.pop_back();
@@ -225,6 +257,16 @@ private:
         cl_mem mem;
         std::size_t start, size;
     };
+    struct block {
+        std::size_t start, size;
+    };
+    bool same_chunk(std::size_t a, std::size_t b) const noexcept
+    {
+        for (const auto& c : chunks_)
+            if (a >= c.start && a < c.start + c.size)
+                return b >= c.start && b < c.start + c.size;
+        return false;
+    }
     opencl_arena(const opencl_context& c, std::byte* base, std::size_t reserve, std::size_t chunk_bytes, std::size_t max_alloc)
         : context_(&c), base_(base), reserve_(reserve), chunk_(chunk_bytes), max_alloc_(max_alloc)
     {
@@ -235,6 +277,7 @@ private:
     std::byte* base_;
     std::size_t reserve_, chunk_, max_alloc_;
     std::vector<chunk> chunks_;
+    std::vector<block> free_;
     std::size_t top_ = 0;
     mutable std::mutex mutex_;
 };
