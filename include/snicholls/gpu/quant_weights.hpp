@@ -10,7 +10,7 @@
 /// \ingroup gpu
 ///
 /// **Overview.** Core's `ml::quantized_weights<Block>` holds the blocks of 32 that pair with Q8_0 activations (Q8_0,
-/// Q4_0, MXFP4). The other ggml formats the device kernels read (Q4_1, Q5_0, Q5_1, the K-quants Q2_K to Q6_K of 256,
+/// Q4_0, MXFP4). The other ggml formats the device kernels read (Q4_1, Q5_0, Q5_1, NVFP4, Q1_0, Q2_0, the K-quants Q2_K to Q6_K of 256,
 /// the ternary TQ1_0 and TQ2_0, IQ4_NL and IQ4_XS) need the same view without that pairing: `rows` rows of `cols / Block::elements`
 /// blocks, end to end, over the caller's memory (host memory for `opencl_quant.hpp`, device memory for
 /// `cuda_quant.hpp`).

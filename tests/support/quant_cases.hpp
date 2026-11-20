@@ -76,6 +76,9 @@ struct q6_k_tag : block_tag<qml::block_q6_k> { static constexpr const char* name
 struct tq1_0_tag : block_tag<qml::block_tq1_0> { static constexpr const char* name = "tq1_0"; static constexpr bool q8 = true; };
 struct iq4_nl_tag : block_tag<qml::block_iq4_nl> { static constexpr const char* name = "iq4_nl"; static constexpr bool q8 = true; };
 struct iq4_xs_tag : block_tag<qml::block_iq4_xs> { static constexpr const char* name = "iq4_xs"; static constexpr bool q8 = true; };
+struct nvfp4_tag : block_tag<qml::block_nvfp4> { static constexpr const char* name = "nvfp4"; static constexpr bool q8 = true; };
+struct q1_0_tag : block_tag<qml::block_q1_0> { static constexpr const char* name = "q1_0"; static constexpr bool q8 = true; };
+struct q2_0_tag : block_tag<qml::block_q2_0> { static constexpr const char* name = "q2_0"; static constexpr bool q8 = true; };
 struct tq2_0_tag : block_tag<qml::block_tq2_0> { static constexpr const char* name = "tq2_0"; static constexpr bool q8 = true; };
 #endif
 
@@ -119,6 +122,9 @@ SNICHOLLS_GPU_BLOCK_MATRIX(tq1_0_tag, qml::block_tq1_0)
 SNICHOLLS_GPU_BLOCK_MATRIX(tq2_0_tag, qml::block_tq2_0)
 SNICHOLLS_GPU_BLOCK_MATRIX(iq4_nl_tag, qml::block_iq4_nl)
 SNICHOLLS_GPU_BLOCK_MATRIX(iq4_xs_tag, qml::block_iq4_xs)
+SNICHOLLS_GPU_BLOCK_MATRIX(nvfp4_tag, qml::block_nvfp4)
+SNICHOLLS_GPU_BLOCK_MATRIX(q1_0_tag, qml::block_q1_0)
+SNICHOLLS_GPU_BLOCK_MATRIX(q2_0_tag, qml::block_q2_0)
 #undef SNICHOLLS_GPU_BLOCK_MATRIX
 #endif
 

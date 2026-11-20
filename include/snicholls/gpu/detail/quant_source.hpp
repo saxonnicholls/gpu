@@ -43,20 +43,25 @@
 namespace snicholls::gpu::detail::quant {
 
 // The formats, in the order of `formats`; the device source names them by `name`
-enum class format : int { q8_0, q4_0, mxfp4, nf4, bf16, f16, e4m3, e5m2, q4_1, q5_0, q5_1, q2_k, q3_k, q4_k, q5_k, q6_k, tq1_0, tq2_0, iq4_nl, iq4_xs };
-inline constexpr std::size_t format_count = 20;
-inline constexpr std::array<std::string_view, format_count> names{"q8_0", "q4_0", "mxfp4", "nf4",   "bf16",  "f16",   "e4m3",
-                                                                  "e5m2", "q4_1", "q5_0",  "q5_1",  "q2_k",  "q3_k",  "q4_k",
-                                                                  "q5_k", "q6_k", "tq1_0", "tq2_0", "iq4_nl", "iq4_xs"};
+enum class format : int {
+    q8_0, q4_0, mxfp4, nf4, bf16, f16, e4m3, e5m2, q4_1, q5_0, q5_1, q2_k, q3_k, q4_k, q5_k, q6_k, tq1_0, tq2_0, iq4_nl, iq4_xs, nvfp4, q1_0, q2_0
+};
+inline constexpr std::size_t format_count = 23;
+inline constexpr std::array<std::string_view, format_count> names{"q8_0", "q4_0", "mxfp4", "nf4",   "bf16",  "f16",    "e4m3",   "e5m2",
+                                                                  "q4_1", "q5_0", "q5_1",  "q2_k",  "q3_k",  "q4_k",   "q5_k",   "q6_k",
+                                                                  "tq1_0", "tq2_0", "iq4_nl", "iq4_xs", "nvfp4", "q1_0", "q2_0"};
 // The numbers and bytes of one block of each format (NF4: 64 numbers in 32 bytes, its scales apart; dense: one number)
-inline constexpr std::array<std::size_t, format_count> block_elements{32, 32, 32, 64, 1, 1, 1, 1, 32, 32, 32, 256, 256, 256, 256, 256, 256, 256, 32, 256};
-inline constexpr std::array<std::size_t, format_count> block_bytes{34, 18, 17, 32, 2, 2, 1, 1, 20, 22, 24, 84, 110, 144, 176, 210, 54, 66, 18, 136};
+inline constexpr std::array<std::size_t, format_count> block_elements{32,  32,  32,  64,  1,   1,  1,   1,  32, 32, 32, 256,
+                                                                    256, 256, 256, 256, 256, 256, 32, 256, 64, 128, 64};
+inline constexpr std::array<std::size_t, format_count> block_bytes{34,  18,  17,  32, 2,  2,  1,   1,  20, 22, 24, 84,
+                                                                 110, 144, 176, 210, 54, 66, 18, 136, 36, 18, 18};
 
 // Whether a format has core's integer dot product with Q8_0 activations (ml/quantize.hpp `dot`), or with Q8_K (the
 // K-quants, ml/quant_k.hpp `dot`)
 constexpr bool has_q8_0_dot(format f) noexcept
 {
-    return f == format::q8_0 || f == format::q4_0 || f == format::mxfp4 || f == format::q5_0 || f == format::iq4_nl;
+    return f == format::q8_0 || f == format::q4_0 || f == format::mxfp4 || f == format::q5_0 || f == format::iq4_nl || f == format::nvfp4 || f == format::q1_0
+           || f == format::q2_0;
 }
 constexpr bool has_q8_1_dot(format f) noexcept { return f == format::q4_1 || f == format::q5_1; }
 constexpr bool has_q8_k_dot(format f) noexcept
@@ -123,6 +128,9 @@ template <> inline constexpr int block_format<ml::block_tq1_0> = int(format::tq1
 template <> inline constexpr int block_format<ml::block_tq2_0> = int(format::tq2_0);
 template <> inline constexpr int block_format<ml::block_iq4_nl> = int(format::iq4_nl);
 template <> inline constexpr int block_format<ml::block_iq4_xs> = int(format::iq4_xs);
+template <> inline constexpr int block_format<ml::block_nvfp4> = int(format::nvfp4);
+template <> inline constexpr int block_format<ml::block_q1_0> = int(format::q1_0);
+template <> inline constexpr int block_format<ml::block_q2_0> = int(format::q2_0);
 
 template <typename B>
     requires(block_format<B> >= 0)
@@ -146,7 +154,8 @@ static_assert(offsetof(ml::block_q4_1, qs) == 4 && offsetof(ml::block_q5_0, qh) 
                   && offsetof(ml::block_q5_k, qh) == 16 && offsetof(ml::block_q5_k, qs) == 48 && offsetof(ml::block_q6_k, qh) == 128
                   && offsetof(ml::block_q6_k, scales) == 192 && offsetof(ml::block_q6_k, d) == 208 && offsetof(ml::block_tq1_0, qh) == 48
                   && offsetof(ml::block_tq1_0, d) == 52 && offsetof(ml::block_tq2_0, d) == 64 && offsetof(ml::block_iq4_nl, qs) == 2
-                  && offsetof(ml::block_iq4_xs, scales_h) == 2 && offsetof(ml::block_iq4_xs, scales_l) == 4 && offsetof(ml::block_iq4_xs, qs) == 8,
+                  && offsetof(ml::block_iq4_xs, scales_h) == 2 && offsetof(ml::block_iq4_xs, scales_l) == 4 && offsetof(ml::block_iq4_xs, qs) == 8
+                  && offsetof(ml::block_nvfp4, qs) == 4 && offsetof(ml::block_q1_0, qs) == 2 && offsetof(ml::block_q2_0, qs) == 2,
               "snicholls::gpu: a block's fields are not where the device source reads them");
 #endif
 
@@ -465,6 +474,35 @@ DEVICE float get_iq4_xs(WARGS, u64 r, u64 c)
     const float dl = half_at(b) * (float)iq4_xs_scale(b, ib);
     return dl * (float)iq4nl_values[nibble(b + 8 + 16 * ib, e % 32)];
 }
+// NVFP4 (36: d[4] UE4M3, qs[32]): per 16, ue4m3_half(d) 2v, element j of a sixteen the low nibble of byte j, j + 8 the
+// high; Q1_0 (18: d, 128 sign bits): ±d; Q2_0 (18: d, qs[16]): d (q - 1)
+DEVICE float ue4m3_half(uint x)
+{
+    if (x == 0u || x == 0x7fu) return 0.0f;
+    const uint e = (x >> 3) & 15u, man = x & 7u;
+    const float raw = e == 0u ? (float)man * AS_FLOAT(118u << 23) : AS_FLOAT((e - 7u + 127u) << 23) * (1.0f + (float)man / 8.0f);
+    return raw * 0.5f;
+}
+DEVICE float get_nvfp4(WARGS, u64 r, u64 c)
+{
+    GLOBAL const uchar* b = block_at(w, cols, r, c, 64, 36);
+    const uint e = (uint)(c % 64), sg = e / 16, j = e % 16, q = b[4 + 8 * sg + (j & 7u)];
+    return ue4m3_half(b[sg]) * (float)fp4_doubled[j < 8u ? q & 15u : q >> 4];
+}
+DEVICE float get_q1_0(WARGS, u64 r, u64 c)
+{
+    GLOBAL const uchar* b = block_at(w, cols, r, c, 128, 18);
+    const uint j = (uint)(c % 128);
+    const float d = half_at(b);
+    const float neg = -d;
+    return ((b[2 + j / 8] >> (j % 8)) & 1u) ? d : neg;
+}
+DEVICE float get_q2_0(WARGS, u64 r, u64 c)
+{
+    GLOBAL const uchar* b = block_at(w, cols, r, c, 64, 18);
+    const uint j = (uint)(c % 64);
+    return (float)((int)((b[2 + j / 4] >> (2 * (j % 4))) & 3u) - 1) * half_at(b);
+}
 #define GET8_BY_ONE(F) DEVICE void get8_##F(WARGS, u64 r, u64 c0, float* v) { for (int j = 0; j < 8; ++j) v[j] = get_##F(WPASS, r, c0 + (u64)j); }
 GET8_BY_ONE(q4_1)
 GET8_BY_ONE(q5_0)
@@ -478,6 +516,9 @@ GET8_BY_ONE(tq1_0)
 GET8_BY_ONE(tq2_0)
 GET8_BY_ONE(iq4_nl)
 GET8_BY_ONE(iq4_xs)
+GET8_BY_ONE(nvfp4)
+GET8_BY_ONE(q1_0)
+GET8_BY_ONE(q2_0)
 #undef GET8_BY_ONE
 
 // Rows of activations quantised to Q8_K (ml/quantize.hpp quantize_row<block_q8_k>), a thread per block of 256: the
@@ -566,6 +607,49 @@ DEVICE float term_iq4_nl(GLOBAL const uchar* wb, GLOBAL const uchar* xb)
     int s1 = 0, s2 = 0;
     for (uint j = 0; j < 16; ++j) { s1 += (int)(i8)xb[2 + j] * iq4nl_values[wb[2 + j] & 15u]; s2 += (int)(i8)xb[18 + j] * iq4nl_values[wb[2 + j] >> 4]; }
     return d * (float)(s1 + s2);
+}
+// NVFP4 with Q8_0 (two activation blocks a block): four terms, (dy d) (lo + hi) per sixteen, added in order
+DEVICE void terms_nvfp4(GLOBAL const uchar* wb, GLOBAL const uchar* xb, float* sub)
+{
+    for (uint sg = 0; sg < 4; ++sg) {
+        const float d = ue4m3_half(wb[sg]);
+        GLOBAL const uchar* yb = xb + 34 * (sg / 2);
+        const uint off = (sg % 2) * 16;
+        const float dy = half_at(yb);
+        int lo = 0, hi = 0;
+        for (uint j = 0; j < 8; ++j) {
+            const uint q = wb[4 + 8 * sg + j];
+            lo += (int)(i8)yb[2 + off + j] * fp4_doubled[q & 15u];
+            hi += (int)(i8)yb[2 + off + j + 8] * fp4_doubled[q >> 4];
+        }
+        const float dd = dy * d;
+        sub[sg] = dd * (float)(lo + hi);
+    }
+}
+// Q1_0 (four activation blocks) and Q2_0 (two): d_x Σ_k (d_k s_k), the inner sum from 0 in order
+DEVICE float term_q1_0(GLOBAL const uchar* wb, GLOBAL const uchar* xb)
+{
+    float sumi = 0.0f;
+    for (uint k = 0; k < 4; ++k) {
+        GLOBAL const uchar* yb = xb + 34 * k;
+        int s = 0;
+        for (uint j = 0; j < 32; ++j) { const int q = (int)(i8)yb[2 + j]; s += ((wb[2 + 4 * k + j / 8] >> (j % 8)) & 1u) ? q : -q; }
+        const float term = half_at(yb) * (float)s;
+        sumi += term;
+    }
+    return half_at(wb) * sumi;
+}
+DEVICE float term_q2_0(GLOBAL const uchar* wb, GLOBAL const uchar* xb)
+{
+    float sumi = 0.0f;
+    for (uint k = 0; k < 2; ++k) {
+        GLOBAL const uchar* yb = xb + 34 * k;
+        int s = 0;
+        for (uint j = 0; j < 32; ++j) s += ((int)((wb[2 + 8 * k + j / 4] >> (2 * (j % 4))) & 3u) - 1) * (int)(i8)yb[2 + j];
+        const float term = half_at(yb) * (float)s;
+        sumi += term;
+    }
+    return half_at(wb) * sumi;
 }
 // IQ4_XS with Q8_K: eight terms a block, (dx dy (s - 32)) (s1 + s2) per 32, added in order (KIND 3)
 DEVICE void kterm_iq4_xs(GLOBAL const uchar* b, GLOBAL const uchar* y, float* lanes, float* t)
@@ -856,20 +940,29 @@ TILED(CAT(qmmt, FMT), BWD_GET, BWD_P, BWD_C)
 
 // The integer path of one format with core's dot product, instantiated with FMT, TERM and BYTES (its block's size)
 inline constexpr const char* q8_source = R"SRC(
-// y_t = b + Σ over blocks of core's term (W row r's block with x_t's Q8_0 block), the terms added in block order as
-// core's dot does: a group per (row, token), 64 terms at a time into local memory, the first item adding them in order.
+// y_t = b + Σ over blocks of core's terms (W row r's block of WE numbers with x_t's WE / 32 activation blocks), NSUB
+// terms a block (NVFP4's four sixteens), added in order as core's dot does: a group per (row, token), 64 blocks at a
+// time into local memory, the first item adding them in order.
 KERNEL GROUP1(64) void CAT(qdot, FMT)(GLOBAL const uchar* w, u64 cols, GLOBAL const uchar* xq, u64 rows, u64 t0, GLOBAL const float* bias, int has_bias,
                                       GLOBAL float* y)
 {
-    LOCAL float terms[64];
+    LOCAL float terms[NSUB * 64];
     const int l = LX;
-    const u64 r = GX, t = t0 + GY, nb = cols / 32;
+    const u64 r = GX, t = t0 + GY, nb = cols / WE, xb = cols / 32;
     float sum = 0.0f;
     for (u64 b0 = 0; b0 < nb; b0 += 64) {
         const u64 b = b0 + (u64)l;
-        terms[l] = b < nb ? TERM(w + (r * nb + b) * BYTES, xq + (t * nb + b) * XBYTES) : 0.0f;
+        if (b < nb) {
+            float sub[NSUB];
+            TERM(w + (r * nb + b) * BYTES, xq + (t * xb + b * (WE / 32)) * XBYTES, sub);
+            for (int k = 0; k < NSUB; ++k) terms[k * 64 + l] = sub[k];
+        }
         BARRIER();
-        if (l == 0) { const u64 e = nb - b0 < 64 ? nb - b0 : 64; for (u64 i = 0; i < e; ++i) sum += terms[i]; }
+        if (l == 0) {
+            const u64 e = nb - b0 < 64 ? nb - b0 : 64;
+            for (u64 i = 0; i < e; ++i)
+                for (int k = 0; k < NSUB; ++k) sum += terms[k * 64 + (int)i];
+        }
         BARRIER();
     }
     if (l == 0) y[t * rows + r] = has_bias ? bias[r] + sum : sum;
@@ -925,11 +1018,16 @@ inline std::string program(const char* prelude, const char* extra = "")
         s += "#define FMT " + n + "\n#define GET(r, c) get_" + n + "(WPASS, r, c)\n#define GET8(r, c, v) get8_" + n + "(WPASS, r, c, v)\n" + kernels_source
              + "#undef GET8\n#undef GET\n#undef FMT\n";
     }
-    for (const auto& [name, bytes, xbytes] : {std::tuple{"q8_0", 34, 34}, std::tuple{"q4_0", 18, 34}, std::tuple{"mxfp4", 17, 34}, std::tuple{"q5_0", 22, 34},
-                                              std::tuple{"q4_1", 20, 36}, std::tuple{"q5_1", 24, 36}, std::tuple{"iq4_nl", 18, 34}}) {
+    // name, block bytes, activation block bytes, numbers a block, terms a block
+    for (const auto& [name, bytes, xbytes, we, nsub] :
+         {std::tuple{"q8_0", 34, 34, 32, 1}, std::tuple{"q4_0", 18, 34, 32, 1}, std::tuple{"mxfp4", 17, 34, 32, 1}, std::tuple{"q5_0", 22, 34, 32, 1},
+          std::tuple{"q4_1", 20, 36, 32, 1}, std::tuple{"q5_1", 24, 36, 32, 1}, std::tuple{"iq4_nl", 18, 34, 32, 1}, std::tuple{"nvfp4", 36, 34, 64, 4},
+          std::tuple{"q1_0", 18, 34, 128, 1}, std::tuple{"q2_0", 18, 34, 64, 1}}) {
         const std::string n(name);
-        s += "#define FMT " + n + "\n#define TERM term_" + n + "\n#define BYTES " + std::to_string(bytes) + "\n#define XBYTES " + std::to_string(xbytes)
-             + "\n" + q8_source + "#undef XBYTES\n#undef BYTES\n#undef TERM\n#undef FMT\n";
+        s += "#define FMT " + n + "\n#define BYTES " + std::to_string(bytes) + "\n#define XBYTES " + std::to_string(xbytes) + "\n#define WE "
+             + std::to_string(we) + "\n#define NSUB " + std::to_string(nsub) + "\n"
+             + (nsub == 1 ? "#define TERM(wb, xb, sub) (sub)[0] = term_" + n + "(wb, xb)\n" : "#define TERM terms_" + n + "\n") + q8_source
+             + "#undef NSUB\n#undef WE\n#undef XBYTES\n#undef BYTES\n#undef TERM\n#undef FMT\n";
     }
     for (const auto& [name, bytes, kind] : {std::tuple{"q2_k", 84, 2}, std::tuple{"q3_k", 110, 0}, std::tuple{"q4_k", 144, 1}, std::tuple{"q5_k", 176, 1},
                                            std::tuple{"q6_k", 210, 0}, std::tuple{"tq1_0", 54, 2}, std::tuple{"tq2_0", 66, 2},
