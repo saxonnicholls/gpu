@@ -22,7 +22,7 @@
 ///   core's integer block dot products.
 ///
 /// `w` is core's view (`ml::quantized_weights<Block>`, `ml::nf4_weights`, `ml::dense_weights<S>`), or a
-/// `block_weights<Block>` of Q4_1, Q5_0, Q5_1, NVFP4, Q1_0, Q2_0, Q2_K to Q6_K, TQ1_0, TQ2_0, IQ4_NL or IQ4_XS where the pinned core has them, over device memory:
+/// `block_weights<Block>` of Q4_1, Q5_0, Q5_1, NVFP4, Q1_0, Q2_0, Q2_K to Q6_K, TQ1_0, TQ2_0, the IQ family (IQ1_S, IQ1_M, IQ2_XXS, IQ2_XS, IQ2_S, IQ3_XXS, IQ3_S, IQ4_NL, IQ4_XS) where the pinned core has them, over device memory:
 /// upload the blocks into a `device_buffer` and point the view at it. NF4's `scale_mean` is a host float, as in core.
 ///
 /// \snippet cuda_quant_demo.cpp quant
@@ -187,8 +187,10 @@ TCORE(CAT(qmmat, FMT), 1)
     inline std::string program()
     {
         std::string extra = mma_helpers;
-        for (const auto name : quant::names) {
-            const std::string n(name);
+        for (std::size_t f = 0; f < quant::format_count; ++f) {
+            if (!quant::available(quant::format(f)))
+                continue;
+            const std::string n(quant::names[f]);
             extra += "#define FMT " + n + "\n#define GET(r, c) get_" + n + "(WPASS, r, c)\n" + mma_source + "#undef GET\n#undef FMT\n";
         }
         return quant::program(quant::cuda_prelude, extra.c_str());
@@ -240,6 +242,8 @@ public:
         }
         std::vector<std::pair<std::string, cudaKernel_t*>> all{{"quantize_q8", &k->quantize_}, {"quantize_q8_1", &k->quantize_1_}, {"quantize_q8k", &k->quantize_k_}};
         for (std::size_t f = 0; f < detail::quant::format_count; ++f) {
+            if (!detail::quant::available(detail::quant::format(f)))
+                continue;
             const std::string n(detail::quant::names[f]);
             all.emplace_back("qmv_" + n, &k->mv_[f]);
             all.emplace_back("qmm_" + n, &k->mm_[f]);

@@ -50,7 +50,9 @@ using quant_cases_for = ::testing::Types<quant_case<Device, q8_0_tag>, quant_cas
                                          quant_case<Device, q3_k_tag>, quant_case<Device, q4_k_tag>, quant_case<Device, q5_k_tag>,
                                          quant_case<Device, q6_k_tag>, quant_case<Device, tq1_0_tag>, quant_case<Device, tq2_0_tag>,
                                          quant_case<Device, iq4_nl_tag>, quant_case<Device, iq4_xs_tag>, quant_case<Device, nvfp4_tag>,
-                                         quant_case<Device, q1_0_tag>, quant_case<Device, q2_0_tag>>;
+                                         quant_case<Device, q1_0_tag>, quant_case<Device, q2_0_tag>, quant_case<Device, iq2_xxs_tag>,
+                                         quant_case<Device, iq2_xs_tag>, quant_case<Device, iq2_s_tag>, quant_case<Device, iq3_xxs_tag>,
+                                         quant_case<Device, iq3_s_tag>, quant_case<Device, iq1_s_tag>, quant_case<Device, iq1_m_tag>>;
 #else
 template <typename Device>
 using quant_cases_for = ::testing::Types<quant_case<Device, q8_0_tag>, quant_case<Device, q4_0_tag>, quant_case<Device, mxfp4_tag>,

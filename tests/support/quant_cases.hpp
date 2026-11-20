@@ -79,6 +79,13 @@ struct iq4_xs_tag : block_tag<qml::block_iq4_xs> { static constexpr const char* 
 struct nvfp4_tag : block_tag<qml::block_nvfp4> { static constexpr const char* name = "nvfp4"; static constexpr bool q8 = true; };
 struct q1_0_tag : block_tag<qml::block_q1_0> { static constexpr const char* name = "q1_0"; static constexpr bool q8 = true; };
 struct q2_0_tag : block_tag<qml::block_q2_0> { static constexpr const char* name = "q2_0"; static constexpr bool q8 = true; };
+struct iq2_xxs_tag : block_tag<qml::block_iq2_xxs> { static constexpr const char* name = "iq2_xxs"; static constexpr bool q8 = true; static constexpr bool importance = true; };
+struct iq2_xs_tag : block_tag<qml::block_iq2_xs> { static constexpr const char* name = "iq2_xs"; static constexpr bool q8 = true; static constexpr bool importance = true; };
+struct iq2_s_tag : block_tag<qml::block_iq2_s> { static constexpr const char* name = "iq2_s"; static constexpr bool q8 = true; static constexpr bool importance = true; };
+struct iq3_xxs_tag : block_tag<qml::block_iq3_xxs> { static constexpr const char* name = "iq3_xxs"; static constexpr bool q8 = true; static constexpr bool importance = true; };
+struct iq3_s_tag : block_tag<qml::block_iq3_s> { static constexpr const char* name = "iq3_s"; static constexpr bool q8 = true; static constexpr bool importance = true; };
+struct iq1_s_tag : block_tag<qml::block_iq1_s> { static constexpr const char* name = "iq1_s"; static constexpr bool q8 = true; static constexpr bool importance = true; };
+struct iq1_m_tag : block_tag<qml::block_iq1_m> { static constexpr const char* name = "iq1_m"; static constexpr bool q8 = true; static constexpr bool importance = true; };
 struct tq2_0_tag : block_tag<qml::block_tq2_0> { static constexpr const char* name = "tq2_0"; static constexpr bool q8 = true; };
 #endif
 
@@ -91,11 +98,21 @@ struct block_matrix {
     block_matrix(std::size_t r, std::size_t c, std::uint64_t seed, float scale) : rows(r), cols(c), blocks(r * c / e), dense(r * c)
     {
         const auto src = uniform(r * c, seed, scale);
+        // ggml quantises some IQ formats only with an importance matrix: 1 + x², as from activations of unit scale
+        std::vector<float> weight(c);
         for (std::size_t i = 0; i < r; ++i) {
             const std::span<Block> row(blocks.data() + i * (c / e), c / e);
-            qml::quantize(std::span<const float>(src.data() + i * c, c), row);
+            const std::span<const float> x(src.data() + i * c, c);
+            if constexpr (requires { Tag::importance; }) {
+                for (std::size_t j = 0; j < c; ++j)
+                    weight[j] = 1.0f + x[j] * x[j];
+                qml::quantize(x, std::span<const float>(weight), row);
+            } else {
+                qml::quantize(x, row);
+            }
             qml::dequantize(std::span<const Block>(row), std::span<float>(dense.data() + i * c, c));
         }
+        (void)weight;
     }
     [[nodiscard]] typename Tag::view view() const { return {std::span<const Block>(blocks), rows, cols}; }
 };
@@ -125,6 +142,13 @@ SNICHOLLS_GPU_BLOCK_MATRIX(iq4_xs_tag, qml::block_iq4_xs)
 SNICHOLLS_GPU_BLOCK_MATRIX(nvfp4_tag, qml::block_nvfp4)
 SNICHOLLS_GPU_BLOCK_MATRIX(q1_0_tag, qml::block_q1_0)
 SNICHOLLS_GPU_BLOCK_MATRIX(q2_0_tag, qml::block_q2_0)
+SNICHOLLS_GPU_BLOCK_MATRIX(iq2_xxs_tag, qml::block_iq2_xxs)
+SNICHOLLS_GPU_BLOCK_MATRIX(iq2_xs_tag, qml::block_iq2_xs)
+SNICHOLLS_GPU_BLOCK_MATRIX(iq2_s_tag, qml::block_iq2_s)
+SNICHOLLS_GPU_BLOCK_MATRIX(iq3_xxs_tag, qml::block_iq3_xxs)
+SNICHOLLS_GPU_BLOCK_MATRIX(iq3_s_tag, qml::block_iq3_s)
+SNICHOLLS_GPU_BLOCK_MATRIX(iq1_s_tag, qml::block_iq1_s)
+SNICHOLLS_GPU_BLOCK_MATRIX(iq1_m_tag, qml::block_iq1_m)
 #undef SNICHOLLS_GPU_BLOCK_MATRIX
 #endif
 

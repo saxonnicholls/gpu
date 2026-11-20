@@ -31,7 +31,9 @@
 #define SNICHOLLS_GPU_QUANT_K 1
 #endif
 
+#include <algorithm>
 #include <array>
+#include <cstdio>
 #include <cstddef>
 #include <cstdint>
 #include <span>
@@ -44,17 +46,26 @@ namespace snicholls::gpu::detail::quant {
 
 // The formats, in the order of `formats`; the device source names them by `name`
 enum class format : int {
-    q8_0, q4_0, mxfp4, nf4, bf16, f16, e4m3, e5m2, q4_1, q5_0, q5_1, q2_k, q3_k, q4_k, q5_k, q6_k, tq1_0, tq2_0, iq4_nl, iq4_xs, nvfp4, q1_0, q2_0
+    q8_0, q4_0, mxfp4, nf4, bf16, f16, e4m3, e5m2, q4_1, q5_0, q5_1, q2_k, q3_k, q4_k, q5_k, q6_k, tq1_0, tq2_0, iq4_nl, iq4_xs, nvfp4, q1_0, q2_0,
+    iq2_xxs, iq2_xs, iq2_s, iq3_xxs, iq3_s, iq1_s, iq1_m
 };
-inline constexpr std::size_t format_count = 23;
-inline constexpr std::array<std::string_view, format_count> names{"q8_0", "q4_0", "mxfp4", "nf4",   "bf16",  "f16",    "e4m3",   "e5m2",
-                                                                  "q4_1", "q5_0", "q5_1",  "q2_k",  "q3_k",  "q4_k",   "q5_k",   "q6_k",
-                                                                  "tq1_0", "tq2_0", "iq4_nl", "iq4_xs", "nvfp4", "q1_0", "q2_0"};
+inline constexpr std::size_t format_count = 30;
+inline constexpr std::array<std::string_view, format_count> names{
+    "q8_0", "q4_0", "mxfp4", "nf4",  "bf16",   "f16",    "e4m3",  "e5m2",   "q4_1",  "q5_0",  "q5_1",  "q2_k",  "q3_k",  "q4_k",  "q5_k",
+    "q6_k", "tq1_0", "tq2_0", "iq4_nl", "iq4_xs", "nvfp4", "q1_0", "q2_0", "iq2_xxs", "iq2_xs", "iq2_s", "iq3_xxs", "iq3_s", "iq1_s", "iq1_m"};
+// The grid-based IQ formats read core's codebooks, which the device source embeds from core's tables: present only
+// where the pinned core has them
+constexpr bool grid_format(format f) noexcept { return f >= format::iq2_xxs; }
+#ifdef SNICHOLLS_GPU_QUANT_K
+constexpr bool available(format) noexcept { return true; }
+#else
+constexpr bool available(format f) noexcept { return !grid_format(f); }
+#endif
 // The numbers and bytes of one block of each format (NF4: 64 numbers in 32 bytes, its scales apart; dense: one number)
-inline constexpr std::array<std::size_t, format_count> block_elements{32,  32,  32,  64,  1,   1,  1,   1,  32, 32, 32, 256,
-                                                                    256, 256, 256, 256, 256, 256, 32, 256, 64, 128, 64};
-inline constexpr std::array<std::size_t, format_count> block_bytes{34,  18,  17,  32, 2,  2,  1,   1,  20, 22, 24, 84,
-                                                                 110, 144, 176, 210, 54, 66, 18, 136, 36, 18, 18};
+inline constexpr std::array<std::size_t, format_count> block_elements{32,  32,  32,  64,  1,   1,   1,   1,   32,  32,  32,  256, 256, 256, 256,
+                                                                    256, 256, 256, 32,  256, 64,  128, 64,  256, 256, 256, 256, 256, 256, 256};
+inline constexpr std::array<std::size_t, format_count> block_bytes{34,  18, 17, 32, 2,   2,  1,  1,  20, 22, 24, 84, 110, 144, 176,
+                                                                 210, 54, 66, 18, 136, 36, 18, 18, 66, 74, 82, 98, 110, 50,  56};
 
 // Whether a format has core's integer dot product with Q8_0 activations (ml/quantize.hpp `dot`), or with Q8_K (the
 // K-quants, ml/quant_k.hpp `dot`)
@@ -67,7 +78,7 @@ constexpr bool has_q8_1_dot(format f) noexcept { return f == format::q4_1 || f =
 constexpr bool has_q8_k_dot(format f) noexcept
 {
     return f == format::q2_k || f == format::q3_k || f == format::q4_k || f == format::q5_k || f == format::q6_k || f == format::tq1_0
-           || f == format::tq2_0 || f == format::iq4_xs;
+           || f == format::tq2_0 || f == format::iq4_xs || grid_format(f);
 }
 constexpr bool has_q8_dot(format f) noexcept { return has_q8_0_dot(f) || has_q8_1_dot(f) || has_q8_k_dot(f); }
 // Blocks of Q8_1 activations: Q8_0's with the float16 sum s = d Σ q after the scale
@@ -131,6 +142,13 @@ template <> inline constexpr int block_format<ml::block_iq4_xs> = int(format::iq
 template <> inline constexpr int block_format<ml::block_nvfp4> = int(format::nvfp4);
 template <> inline constexpr int block_format<ml::block_q1_0> = int(format::q1_0);
 template <> inline constexpr int block_format<ml::block_q2_0> = int(format::q2_0);
+template <> inline constexpr int block_format<ml::block_iq2_xxs> = int(format::iq2_xxs);
+template <> inline constexpr int block_format<ml::block_iq2_xs> = int(format::iq2_xs);
+template <> inline constexpr int block_format<ml::block_iq2_s> = int(format::iq2_s);
+template <> inline constexpr int block_format<ml::block_iq3_xxs> = int(format::iq3_xxs);
+template <> inline constexpr int block_format<ml::block_iq3_s> = int(format::iq3_s);
+template <> inline constexpr int block_format<ml::block_iq1_s> = int(format::iq1_s);
+template <> inline constexpr int block_format<ml::block_iq1_m> = int(format::iq1_m);
 
 template <typename B>
     requires(block_format<B> >= 0)
@@ -155,7 +173,10 @@ static_assert(offsetof(ml::block_q4_1, qs) == 4 && offsetof(ml::block_q5_0, qh) 
                   && offsetof(ml::block_q6_k, scales) == 192 && offsetof(ml::block_q6_k, d) == 208 && offsetof(ml::block_tq1_0, qh) == 48
                   && offsetof(ml::block_tq1_0, d) == 52 && offsetof(ml::block_tq2_0, d) == 64 && offsetof(ml::block_iq4_nl, qs) == 2
                   && offsetof(ml::block_iq4_xs, scales_h) == 2 && offsetof(ml::block_iq4_xs, scales_l) == 4 && offsetof(ml::block_iq4_xs, qs) == 8
-                  && offsetof(ml::block_nvfp4, qs) == 4 && offsetof(ml::block_q1_0, qs) == 2 && offsetof(ml::block_q2_0, qs) == 2,
+                  && offsetof(ml::block_nvfp4, qs) == 4 && offsetof(ml::block_q1_0, qs) == 2 && offsetof(ml::block_q2_0, qs) == 2
+                  && offsetof(ml::block_iq2_xs, scales) == 66 && offsetof(ml::block_iq2_s, qh) == 66 && offsetof(ml::block_iq2_s, scales) == 74
+                  && offsetof(ml::block_iq3_s, qh) == 66 && offsetof(ml::block_iq3_s, signs) == 74 && offsetof(ml::block_iq3_s, scales) == 106
+                  && offsetof(ml::block_iq1_s, qh) == 34 && offsetof(ml::block_iq1_m, qh) == 32 && offsetof(ml::block_iq1_m, scales) == 48,
               "snicholls::gpu: a block's fields are not where the device source reads them");
 #endif
 
@@ -213,6 +234,7 @@ typedef char i8;
 #define AS_FLOAT(u) as_float((uint)(u))
 #define AS_UINT(f) as_uint(f)
 #define LOAD4(p) vload4(0, p)
+#define U64C(x) x##UL
 )CLC";
 
 inline constexpr const char* cuda_prelude = R"CU(
@@ -237,6 +259,7 @@ typedef unsigned int uint;
 #define AS_FLOAT(u) __uint_as_float((uint)(u))
 #define AS_UINT(f) __float_as_uint(f)
 // A vector load where the address allows it (an odd row width or a span's offset may not), else four scalar loads
+#define U64C(x) x##ULL
 #define LOAD4(p) ((((u64)(p)) & 15ull) == 0 ? *(const float4*)(p) : make_float4((p)[0], (p)[1], (p)[2], (p)[3]))
 )CU";
 
@@ -969,6 +992,249 @@ KERNEL GROUP1(64) void CAT(qdot, FMT)(GLOBAL const uchar* w, u64 cols, GLOBAL co
 }
 )SRC";
 
+// The grid-based IQ formats (ml/quant_iq.hpp dequantize_row and dot), after their codebooks (iq_tables()): each weight
+// with core's operations in core's order; each dot one integer sum a block, d_x d_y times it, the blocks in order, then
+// the format's final factor (FINAL)
+inline constexpr const char* iq_source = R"SRC(
+#define GET8_BY_ONE(F) DEVICE void get8_##F(WARGS, u64 r, u64 c0, float* v) { for (int j = 0; j < 8; ++j) v[j] = get_##F(WPASS, r, c0 + (u64)j); }
+DEVICE uint u16_at(GLOBAL const uchar* p) { return (uint)p[0] | ((uint)p[1] << 8); }
+DEVICE uint grid_byte(u64 g, uint j) { return (uint)((g >> (8 * j)) & 255u); }
+DEVICE int grid_sbyte(u64 g, uint j) { return (int)(i8)(uchar)((g >> (8 * j)) & 255u); }
+DEVICE float signed_by(float g, uint signs, uint j) { return ((signs >> j) & 1u) ? -g : g; }
+DEVICE int sign_of(uint signs, uint j) { return ((signs >> j) & 1u) ? -1 : 1; }
+// IQ2_XXS (66: d, qs[32] u16): per 32 the words a0 (four grid indices) and a1 (four 7-bit signs, the scale on top)
+DEVICE float get_iq2_xxs(WARGS, u64 r, u64 c)
+{
+    GLOBAL const uchar* b = block_at(w, cols, r, c, 256, 66);
+    const uint e = (uint)(c % 256), ib = e / 32, l = (e % 32) / 8, j = e % 8;
+    const uint a0 = word_at(b + 2 + 8 * ib), a1 = word_at(b + 6 + 8 * ib);
+    const float s = 0.5f + (float)(a1 >> 28);
+    const float ds = half_at(b) * s;
+    const float db = ds * 0.25f;
+    const float g = db * (float)grid_byte(iq2xxs_grid[(a0 >> (8 * l)) & 255u], j);
+    return signed_by(g, iq2_signs[(a1 >> (7 * l)) & 127u], j);
+}
+// IQ2_XS (74: d, qs[32] u16 of a 9-bit index and 7-bit signs, scales[8] two a byte)
+DEVICE float get_iq2_xs(WARGS, u64 r, u64 c)
+{
+    GLOBAL const uchar* b = block_at(w, cols, r, c, 256, 74);
+    const uint e = (uint)(c % 256), ib = e / 32, l = (e % 32) / 8, j = e % 8, q = u16_at(b + 2 + 2 * (4 * ib + l));
+    const float s = 0.5f + (float)((b[66 + ib] >> (4 * (l / 2))) & 15u);
+    const float ds = half_at(b) * s;
+    const float db = ds * 0.25f;
+    const float g = db * (float)grid_byte(iq2xs_grid[q & 511u], j);
+    return signed_by(g, iq2_signs[q >> 9], j);
+}
+// IQ2_S (82: d, qs[64] indices' low bits then signs, qh[8], scales[8])
+DEVICE float get_iq2_s(WARGS, u64 r, u64 c)
+{
+    GLOBAL const uchar* b = block_at(w, cols, r, c, 256, 82);
+    const uint e = (uint)(c % 256), ib = e / 32, l = (e % 32) / 8, j = e % 8;
+    const float s = 0.5f + (float)((b[74 + ib] >> (4 * (l / 2))) & 15u);
+    const float ds = half_at(b) * s;
+    const float db = ds * 0.25f;
+    const uint idx = (uint)b[2 + 4 * ib + l] | (((uint)b[66 + ib] << (8 - 2 * l)) & 0x300u);
+    const float g = db * (float)grid_byte(iq2s_grid[idx], j);
+    return signed_by(g, b[2 + 32 + 4 * ib + l], j);
+}
+// IQ3_XXS (98: d, qs[96]: 64 indices of four, then per 32 a word of four 7-bit signs and the scale)
+DEVICE float get_iq3_xxs(WARGS, u64 r, u64 c)
+{
+    GLOBAL const uchar* b = block_at(w, cols, r, c, 256, 98);
+    const uint e = (uint)(c % 256), ib = e / 32, l = (e % 32) / 8, j = e % 8, aux = word_at(b + 2 + 64 + 4 * ib);
+    const float s = 0.5f + (float)(aux >> 28);
+    const float ds = half_at(b) * s;
+    const float db = ds * 0.5f;
+    const float g = db * (float)grid_byte(iq3xxs_grid[b[2 + 8 * ib + 2 * l + j / 4]], j % 4);
+    return signed_by(g, iq2_signs[(aux >> (7 * l)) & 127u], j);
+}
+// IQ3_S (110: d, qs[64], qh[8] the 9th bits, signs[32], scales[4])
+DEVICE float get_iq3_s(WARGS, u64 r, u64 c)
+{
+    GLOBAL const uchar* b = block_at(w, cols, r, c, 256, 110);
+    const uint e = (uint)(c % 256), ib = e / 32, l = (e % 32) / 8, j = e % 8, h = j / 4;
+    const float db = half_at(b) * (float)(1u + 2u * ((b[106 + ib / 2] >> (4 * (ib % 2))) & 15u));
+    const uint idx = (uint)b[2 + 8 * ib + 2 * l + h] | (((uint)b[66 + ib] << (8 - 2 * l - h)) & 256u);
+    const float g = db * (float)grid_byte(iq3s_grid[idx], j % 4);
+    return signed_by(g, b[74 + 4 * ib + l], j);
+}
+// IQ1_S (50: d, qs[32], qh[8] u16: index high bits, the 3-bit scale, the shift's sign)
+DEVICE float get_iq1_s(WARGS, u64 r, u64 c)
+{
+    GLOBAL const uchar* b = block_at(w, cols, r, c, 256, 50);
+    const uint e = (uint)(c % 256), ib = e / 32, l = (e % 32) / 8, j = e % 8, qh = u16_at(b + 34 + 2 * ib);
+    const float dl = half_at(b) * (float)(2u * ((qh >> 12) & 7u) + 1u);
+    const float delta = (qh & 0x8000u) ? -0.125f : 0.125f;
+    const u64 g = iq1s_grid[(uint)b[2 + 4 * ib + l] | (((qh >> (3 * l)) & 7u) << 8)];
+    const float v = (float)grid_sbyte(g, j) + delta;
+    return dl * v;
+}
+// IQ1_M (56: qs[32], qh[16], scales[8]: four words of 3-bit scales, the float16 scale's nibbles on top)
+DEVICE float iq1_m_d(GLOBAL const uchar* b)
+{
+    const uint s0 = u16_at(b + 48), s1 = u16_at(b + 50), s2 = u16_at(b + 52), s3 = u16_at(b + 54);
+    return mf_decode((s0 >> 12) | ((s1 >> 8) & 0x00f0u) | ((s2 >> 4) & 0x0f00u) | (s3 & 0xf000u), 5, 10, 0);
+}
+DEVICE uint iq1_m_ls(GLOBAL const uchar* b, uint ib, uint second) { return 2u * ((u16_at(b + 48 + 2 * (ib / 2)) >> (6 * (ib % 2) + 3 * second)) & 7u) + 1u; }
+DEVICE uint iq1_m_index(GLOBAL const uchar* b, uint ib, uint l)
+{
+    const uint h = b[32 + 2 * ib + l / 2];
+    return (uint)b[4 * ib + l] | ((h << (8 - 4 * (l % 2))) & 0x700u);
+}
+DEVICE float get_iq1_m(WARGS, u64 r, u64 c)
+{
+    GLOBAL const uchar* b = block_at(w, cols, r, c, 256, 56);
+    const uint e = (uint)(c % 256), ib = e / 32, l = (e % 32) / 8, j = e % 8;
+    const float dl = iq1_m_d(b) * (float)iq1_m_ls(b, ib, l / 2);
+    const uint h = b[32 + 2 * ib + l / 2];
+    const float delta = (h & ((l % 2) ? 0x80u : 0x08u)) ? -0.125f : 0.125f;
+    const float v = (float)grid_sbyte(iq1s_grid[iq1_m_index(b, ib, l)], j) + delta;
+    return dl * v;
+}
+GET8_BY_ONE(iq2_xxs)
+GET8_BY_ONE(iq2_xs)
+GET8_BY_ONE(iq2_s)
+GET8_BY_ONE(iq3_xxs)
+GET8_BY_ONE(iq3_s)
+GET8_BY_ONE(iq1_s)
+GET8_BY_ONE(iq1_m)
+#undef GET8_BY_ONE
+// The dot products' terms with Q8_K
+DEVICE void kterm_iq2_xxs(GLOBAL const uchar* b, GLOBAL const uchar* y, float* lanes, float* t)
+{
+    const float d = half_at(b) * q8k_d(y);
+    int bsum = 0;
+    for (uint ib = 0; ib < 8; ++ib) {
+        const uint a0 = word_at(b + 2 + 8 * ib), a1 = word_at(b + 6 + 8 * ib);
+        int sumi = 0;
+        for (uint l = 0; l < 4; ++l) {
+            const u64 g = iq2xxs_grid[(a0 >> (8 * l)) & 255u];
+            const uint sg = iq2_signs[(a1 >> (7 * l)) & 127u];
+            for (uint j = 0; j < 8; ++j) sumi += (int)grid_byte(g, j) * q8k_q(y, 32 * ib + 8 * l + j) * sign_of(sg, j);
+        }
+        bsum += sumi * (int)(2u * (a1 >> 28) + 1u);
+    }
+    *t = d * (float)bsum;
+    for (int k = 0; k < 8; ++k) lanes[k] = 0.0f;
+}
+DEVICE void kterm_iq2_xs(GLOBAL const uchar* b, GLOBAL const uchar* y, float* lanes, float* t)
+{
+    const float d = half_at(b) * q8k_d(y);
+    int bsum = 0;
+    for (uint ib = 0; ib < 8; ++ib)
+        for (uint h = 0; h < 2; ++h) {
+            int sumi = 0;
+            for (uint l = 2 * h; l < 2 * h + 2; ++l) {
+                const uint q = u16_at(b + 2 + 2 * (4 * ib + l));
+                const u64 g = iq2xs_grid[q & 511u];
+                for (uint j = 0; j < 8; ++j) sumi += (int)grid_byte(g, j) * q8k_q(y, 32 * ib + 8 * l + j) * sign_of(iq2_signs[q >> 9], j);
+            }
+            bsum += sumi * (int)(2u * ((b[66 + ib] >> (4 * h)) & 15u) + 1u);
+        }
+    *t = d * (float)bsum;
+    for (int k = 0; k < 8; ++k) lanes[k] = 0.0f;
+}
+DEVICE void kterm_iq2_s(GLOBAL const uchar* b, GLOBAL const uchar* y, float* lanes, float* t)
+{
+    const float d = half_at(b) * q8k_d(y);
+    int bsum = 0;
+    for (uint ib = 0; ib < 8; ++ib) {
+        int sumi[2] = {0, 0};
+        for (uint l = 0; l < 4; ++l) {
+            const u64 g = iq2s_grid[(uint)b[2 + 4 * ib + l] | (((uint)b[66 + ib] << (8 - 2 * l)) & 0x300u)];
+            const uint sg = b[2 + 32 + 4 * ib + l];
+            for (uint j = 0; j < 8; ++j) sumi[l / 2] += q8k_q(y, 32 * ib + 8 * l + j) * (int)grid_byte(g, j) * sign_of(sg, j);
+        }
+        bsum += (int)(1u + 2u * (b[74 + ib] & 15u)) * sumi[0] + (int)(1u + 2u * (b[74 + ib] >> 4)) * sumi[1];
+    }
+    *t = d * (float)bsum;
+    for (int k = 0; k < 8; ++k) lanes[k] = 0.0f;
+}
+DEVICE void kterm_iq3_xxs(GLOBAL const uchar* b, GLOBAL const uchar* y, float* lanes, float* t)
+{
+    const float d = half_at(b) * q8k_d(y);
+    int bsum = 0;
+    for (uint ib = 0; ib < 8; ++ib) {
+        const uint aux = word_at(b + 2 + 64 + 4 * ib);
+        int sumi = 0;
+        for (uint l = 0; l < 4; ++l) {
+            const uint g1 = iq3xxs_grid[b[2 + 8 * ib + 2 * l]], g2 = iq3xxs_grid[b[2 + 8 * ib + 2 * l + 1]], sg = iq2_signs[(aux >> (7 * l)) & 127u];
+            for (uint j = 0; j < 4; ++j) {
+                sumi += (int)grid_byte(g1, j) * q8k_q(y, 32 * ib + 8 * l + j) * sign_of(sg, j);
+                sumi += (int)grid_byte(g2, j) * q8k_q(y, 32 * ib + 8 * l + j + 4) * sign_of(sg, j + 4);
+            }
+        }
+        bsum += sumi * (int)(2u * (aux >> 28) + 1u);
+    }
+    *t = d * (float)bsum;
+    for (int k = 0; k < 8; ++k) lanes[k] = 0.0f;
+}
+DEVICE void kterm_iq3_s(GLOBAL const uchar* b, GLOBAL const uchar* y, float* lanes, float* t)
+{
+    const float d = half_at(b) * q8k_d(y);
+    int bsum = 0;
+    for (uint ib = 0; ib < 8; ++ib) {
+        int sumi = 0;
+        for (uint l = 0; l < 4; ++l) {
+            const uint g1 = iq3s_grid[(uint)b[2 + 8 * ib + 2 * l] | (((uint)b[66 + ib] << (8 - 2 * l)) & 256u)];
+            const uint g2 = iq3s_grid[(uint)b[2 + 8 * ib + 2 * l + 1] | (((uint)b[66 + ib] << (7 - 2 * l)) & 256u)];
+            const uint sg = b[74 + 4 * ib + l];
+            for (uint j = 0; j < 4; ++j) {
+                sumi += (int)grid_byte(g1, j) * q8k_q(y, 32 * ib + 8 * l + j) * sign_of(sg, j);
+                sumi += (int)grid_byte(g2, j) * q8k_q(y, 32 * ib + 8 * l + j + 4) * sign_of(sg, j + 4);
+            }
+        }
+        bsum += sumi * (int)(2u * ((b[106 + ib / 2] >> (4 * (ib % 2))) & 15u) + 1u);
+    }
+    *t = d * (float)bsum;
+    for (int k = 0; k < 8; ++k) lanes[k] = 0.0f;
+}
+DEVICE void kterm_iq1_s(GLOBAL const uchar* b, GLOBAL const uchar* y, float* lanes, float* t)
+{
+    int sumi = 0, sumi1 = 0;
+    for (uint ib = 0; ib < 8; ++ib) {
+        const uint qh = u16_at(b + 34 + 2 * ib);
+        const int ls = (int)(2u * ((qh >> 12) & 7u) + 1u), delta = (qh & 0x8000u) ? -1 : 1;
+        int lsum = 0;
+        for (uint l = 0; l < 4; ++l) {
+            const u64 g = iq1s_grid[(uint)b[2 + 4 * ib + l] | (((qh >> (3 * l)) & 7u) << 8)];
+            for (uint j = 0; j < 8; ++j) lsum += q8k_q(y, 32 * ib + 8 * l + j) * grid_sbyte(g, j);
+        }
+        sumi += ls * lsum;
+        sumi1 += ls * delta * (q8k_bsum(y, 2 * ib) + q8k_bsum(y, 2 * ib + 1));
+    }
+    const float dd = half_at(b) * q8k_d(y);
+    const float shift = 0.125f * (float)sumi1;
+    const float s = (float)sumi + shift;
+    *t = dd * s;
+    for (int k = 0; k < 8; ++k) lanes[k] = 0.0f;
+}
+DEVICE void kterm_iq1_m(GLOBAL const uchar* b, GLOBAL const uchar* y, float* lanes, float* t)
+{
+    int sumi1 = 0, sumi2 = 0;
+    for (uint ib = 0; ib < 8; ++ib) {
+        int sum1[2] = {0, 0}, sum2[2] = {0, 0};
+        for (uint l = 0; l < 4; ++l) {
+            const uint h = b[32 + 2 * ib + l / 2];
+            const int delta = (h & ((l % 2) ? 0x80u : 0x08u)) ? -1 : 1;
+            const u64 g = iq1s_grid[iq1_m_index(b, ib, l)];
+            int lsum1 = 0, lsum2 = 0;
+            for (uint j = 0; j < 8; ++j) { const int q = q8k_q(y, 32 * ib + 8 * l + j); lsum1 += q * grid_sbyte(g, j); lsum2 += q; }
+            sum1[l / 2] += lsum1;
+            sum2[l / 2] += lsum2 * delta;
+        }
+        const int ls1 = (int)iq1_m_ls(b, ib, 0), ls2 = (int)iq1_m_ls(b, ib, 1);
+        sumi1 += sum1[0] * ls1 + sum1[1] * ls2;
+        sumi2 += sum2[0] * ls1 + sum2[1] * ls2;
+    }
+    const float dd = iq1_m_d(b) * q8k_d(y);
+    const float shift = 0.125f * (float)sumi2;
+    const float s = (float)sumi1 + shift;
+    *t = dd * s;
+    for (int k = 0; k < 8; ++k) lanes[k] = 0.0f;
+}
+)SRC";
+
 // The Q8_K path of one format, instantiated with FMT, BYTES and KIND (0: lanes only, 1: lanes less the scalar terms,
 // 2: the scalar terms only, 3: the eight terms of each block added in order, IQ4_XS). As core's dot: the lanes' sums and the scalar sum each over the blocks in order, then the
 // scalar sum plus the eight lanes in order. A group per (row, token), 64 blocks at a time; the first item adds.
@@ -1003,18 +1269,52 @@ KERNEL GROUP1(64) void CAT(qkdot, FMT)(GLOBAL const uchar* w, u64 cols, GLOBAL c
     }
     if (l == 0) {
         if (KIND == 0 || KIND == 1) for (int k = 0; k < 8; ++k) sumf += sums[k];
+        if (FINAL != 1.0f) sumf = FINAL * sumf;
         y[t * rows + r] = has_bias ? bias[r] + sumf : sumf;
     }
 }
 )SRC";
 
+// Core's IQ codebooks as device constants, printed from core's own tables (ml/quant_iq_grids.hpp), or nothing where the
+// pinned core has none
+inline std::string iq_tables()
+{
+#ifdef SNICHOLLS_GPU_QUANT_K
+    std::string s;
+    char buf[32];
+    const auto table = [&](const char* type, const char* name, const auto& t, bool wide) {
+        s += std::string("CONSTANT ") + type + " " + name + "[" + std::to_string(t.size()) + "] = {";
+        for (std::size_t i = 0; i < t.size(); ++i) {
+            if (wide)
+                std::snprintf(buf, sizeof buf, "U64C(0x%016llx),", static_cast<unsigned long long>(t[i]));
+            else
+                std::snprintf(buf, sizeof buf, "0x%08xu,", static_cast<unsigned>(t[i]));
+            s += buf;
+        }
+        s += "};\n";
+    };
+    table("u64", "iq2xxs_grid", ml::iq2xxs_grid, true);
+    table("u64", "iq2xs_grid", ml::iq2xs_grid, true);
+    table("u64", "iq2s_grid", ml::iq2s_grid, true);
+    table("u64", "iq1s_grid", ml::iq1s_grid, true);
+    table("uint", "iq3xxs_grid", ml::iq3xxs_grid, false);
+    table("uint", "iq3s_grid", ml::iq3s_grid, false);
+    table("uint", "iq2_signs", ml::iq2_signs, false);
+    return s;
+#else
+    return {};
+#endif
+}
+
 // The whole program for one language: the prelude, the formats, each format's kernels, the integer paths, then `extra`
 // (the CUDA tensor-core kernels)
 inline std::string program(const char* prelude, const char* extra = "")
 {
-    std::string s = std::string(prelude) + formats_source;
-    for (const auto name : names) {
-        const std::string n(name);
+    std::string s = std::string(prelude) + formats_source + iq_tables() + (available(format::iq2_xxs) ? iq_source : "");
+    for (std::size_t f = 0; f < format_count; ++f) {
+        if (!available(format(f)))
+            continue;
+        const std::string n(names[f]);
         s += "#define FMT " + n + "\n#define GET(r, c) get_" + n + "(WPASS, r, c)\n#define GET8(r, c, v) get8_" + n + "(WPASS, r, c, v)\n" + kernels_source
              + "#undef GET8\n#undef GET\n#undef FMT\n";
     }
@@ -1029,12 +1329,17 @@ inline std::string program(const char* prelude, const char* extra = "")
              + (nsub == 1 ? "#define TERM(wb, xb, sub) (sub)[0] = term_" + n + "(wb, xb)\n" : "#define TERM terms_" + n + "\n") + q8_source
              + "#undef NSUB\n#undef WE\n#undef XBYTES\n#undef BYTES\n#undef TERM\n#undef FMT\n";
     }
-    for (const auto& [name, bytes, kind] : {std::tuple{"q2_k", 84, 2}, std::tuple{"q3_k", 110, 0}, std::tuple{"q4_k", 144, 1}, std::tuple{"q5_k", 176, 1},
-                                           std::tuple{"q6_k", 210, 0}, std::tuple{"tq1_0", 54, 2}, std::tuple{"tq2_0", 66, 2},
-                                           std::tuple{"iq4_xs", 136, 3}}) {
+    // name, block bytes, kind, final factor
+    for (const auto& [name, bytes, kind, final] :
+         {std::tuple{"q2_k", 84, 2, "1.0f"}, std::tuple{"q3_k", 110, 0, "1.0f"}, std::tuple{"q4_k", 144, 1, "1.0f"}, std::tuple{"q5_k", 176, 1, "1.0f"},
+          std::tuple{"q6_k", 210, 0, "1.0f"}, std::tuple{"tq1_0", 54, 2, "1.0f"}, std::tuple{"tq2_0", 66, 2, "1.0f"}, std::tuple{"iq4_xs", 136, 3, "1.0f"},
+          std::tuple{"iq2_xxs", 66, 2, "0.125f"}, std::tuple{"iq2_xs", 74, 2, "0.125f"}, std::tuple{"iq2_s", 82, 2, "0.125f"},
+          std::tuple{"iq3_xxs", 98, 2, "0.25f"}, std::tuple{"iq3_s", 110, 2, "1.0f"}, std::tuple{"iq1_s", 50, 2, "1.0f"}, std::tuple{"iq1_m", 56, 2, "1.0f"}}) {
         const std::string n(name);
-        s += "#define FMT " + n + "\n#define BYTES " + std::to_string(bytes) + "\n#define KIND " + std::to_string(kind) + "\n" + q8k_source
-             + "#undef KIND\n#undef BYTES\n#undef FMT\n";
+        if (!available(format(std::size_t(std::find(names.begin(), names.end(), std::string_view(name)) - names.begin()))))
+            continue;
+        s += "#define FMT " + n + "\n#define BYTES " + std::to_string(bytes) + "\n#define KIND " + std::to_string(kind) + "\n#define FINAL " + final + "\n"
+             + q8k_source + "#undef FINAL\n#undef KIND\n#undef BYTES\n#undef FMT\n";
     }
     return s + extra;
 }
