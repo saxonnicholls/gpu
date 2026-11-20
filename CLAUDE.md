@@ -30,8 +30,28 @@ Every source file starts with the banner
   says which parts it does not (`GTEST_ALLOW_UNINSTANTIATED_PARAMETERIZED_TEST`).
 - **What the device does not do runs on the host by core's reference**, documented per operation, never silently
   skipped.
-- **Portable APIs first.** OpenCL 1.2 runs on AMD, NVIDIA, Intel and Apple devices and on PoCL, so one kernel is
-  tested everywhere; a vendor API (CUDA, Metal, HIP) joins as a second backend only with a measured reason.
+- **CUDA and OpenCL, both, always.** Every device capability has a CUDA backend and an OpenCL backend; neither
+  ships without the other. OpenCL 1.2 runs on AMD, NVIDIA, Intel and Apple devices and on PoCL; CUDA is the NVIDIA
+  machines' fast path. Another API (Metal, HIP) joins only with a measured reason.
+  - **One compile-time interface.** CUDA and OpenCL implement the same core concept, and code above them is written
+    once, against the concept, with the backend a template parameter: no virtual base, no run-time dispatch inside
+    a pass; a program chooses its backend once, at the top (a `std::variant` of the instantiations at most). Kernels
+    are written once where the two languages allow it (one source built by NVRTC and by the OpenCL compiler, as
+    `opencl_quant.hpp` / `cuda_quant.hpp` are), with the differences in a thin compile-time layer of macros or
+    traits, not in two copies. Where a vendor feature has no counterpart (tensor cores), it sits behind the same
+    interface, and the other backend's path is the comparison.
+  - **Tested on both:** every test runs on every backend the build has: OpenCL on the Mac's GPU and on PoCL in
+    `make ubuntu`, CUDA on the NVIDIA machine before a push.
+  - **Demonstrated on both:** a demo runs on each backend the build has and checks each result.
+  - **Benchmarked one against the other:** each benchmark runs CUDA and OpenCL on the same inputs (on the NVIDIA
+    machine, where both run on one device) and reports both speeds and both accuracies: against core's reference
+    and against each other, to the bit where the contract is bits, and as measured error against its stated bound
+    where a path may round differently (bf16 tensor cores). A result from one backend alone is half a result.
+  - **When the NVIDIA machine is unavailable, the OpenCL side ships.** A release does not wait for CUDA hardware:
+    it goes out with OpenCL tested, demonstrated and benchmarked, and the CUDA code compiled without the toolkit
+    where it can be (clang's NVPTX target, a host syntax check against the CUDA headers). Its CHANGELOG entry and
+    release notes say so in a line of their own, `CUDA: not yet run on an NVIDIA GPU; coming in X.Y.Z`, and the
+    CUDA run and the CUDA-against-OpenCL comparison are the first work when the machine returns.
 
 ## Layout
 
@@ -72,7 +92,8 @@ Release and GCC 15 Release. On a macOS 26 host every AddressSanitizer binary tra
 before `main` (a hello world included), so sanitizer evidence comes from the Ubuntu configurations. A change to a
 kernel is also run on an NVIDIA GPU before it is pushed: the tests and the benchmark, with their bits checked. The
 CUDA backend builds only where the toolkit is (`SNICHOLLS_GPU_WITH_CUDA`), so it is built and tested on the NVIDIA
-machine, every test and the benchmark, before a push; CI runs Linux with PoCL and macOS, without CUDA.
+machine, every test and the benchmark, before a push, with the OpenCL backend run beside it on the same GPU for the
+CUDA-against-OpenCL comparison; CI runs Linux with PoCL and macOS, without CUDA.
 
 CI also builds the documentation on every run (warnings are errors, the CUDA headers included: Doxygen reads them
 without the toolkit) and publishes it to GitHub Pages, as core does: <https://saxonnicholls.github.io/gpu/>, the newest
