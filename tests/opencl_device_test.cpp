@@ -11,6 +11,7 @@
 #include <snicholls/core/ml/embedding.hpp>
 #include <snicholls/core/ml/kv_cache.hpp>
 #include <snicholls/core/ml/rope.hpp>
+#include <snicholls/core/ml/quantize.hpp>
 #include <snicholls/core/ml/softmax.hpp>
 #include <snicholls/core/ml/transformer_block.hpp>
 #include <snicholls/core/stats/random.hpp>
@@ -35,6 +36,7 @@ struct device {
     std::unique_ptr<gpu::opencl_context> context;
     std::unique_ptr<gpu::opencl_device_kernels> kernels;
     std::unique_ptr<gpu::opencl_arena> arena;
+    std::unique_ptr<gpu::opencl_quant_kernels> quant;
 
     static device& get()
     {
@@ -44,7 +46,7 @@ struct device {
                 std::fprintf(stderr, "opencl_device_test: no OpenCL device\n");
                 std::abort();
             }
-            device out{std::move(c).unwrap(), nullptr, nullptr};
+            device out{std::move(c).unwrap(), nullptr, nullptr, nullptr};
             auto k = gpu::opencl_device_kernels::create(*out.context);
             if (k.is_err()) {
                 std::fprintf(stderr, "opencl_device_test: the program did not build:\n%s\n", k.unwrap_err().log.c_str());
@@ -52,11 +54,17 @@ struct device {
             }
             out.kernels = std::move(k).unwrap();
             out.arena = gpu::opencl_arena::create(*out.context, std::size_t{4} << 30, std::size_t{64} << 20);
+            auto q = gpu::opencl_quant_kernels::create(*out.context);
+            if (q.is_err()) {
+                std::fprintf(stderr, "opencl_device_test: the quantised kernels did not build\n");
+                std::abort();
+            }
+            out.quant = std::move(q).unwrap();
             return out;
         }();
         return d;
     }
-    [[nodiscard]] gpu::opencl_device_backend backend() const { return {context.get(), arena.get(), kernels.get()}; }
+    [[nodiscard]] gpu::opencl_device_backend backend() const { return {context.get(), arena.get(), kernels.get(), quant.get()}; }
     // A device copy of host values
     template <typename T>
     std::span<T> up(const std::vector<T>& v)
@@ -142,6 +150,29 @@ TEST(GpuOpenClDevice, ProductsOverTheArenaAreTheReferencesBits)
                     bound += std::abs(double(x[r * k + p]) * w[j * k + p]);
                 EXPECT_LE(std::abs(double(got[r * m + j]) - few[r * m + j]), double(k) * 0x1p-23 * bound + 0x1p-23 * std::abs(bias[j])) << rows;
             }
+    }
+    d.arena->release(mark);
+}
+
+TEST(GpuOpenClDevice, QuantisedProductsOverTheArenaAreTheQuantisedKernelsResults)
+{
+    auto& d = device::get();
+    const auto mark = d.arena->mark();
+    constexpr std::size_t m = 70, k = 128;
+    const auto w = random_values(m * k, 60);
+    std::vector<ml::block_q8_0> blocks(m * k / 32);
+    for (std::size_t r = 0; r < m; ++r)
+        ml::quantize_row(std::span<const float>(w).subspan(r * k, k), {}, std::span<ml::block_q8_0>(blocks).subspan(r * k / 32, k / 32));
+    const auto resident = d.quant->upload(ml::quantized_weights<ml::block_q8_0>{blocks, m, k});
+    const gpu::opencl_quant_backend host_path{{d.context.get()}, d.quant.get()};
+    for (const std::size_t n : {1u, 3u, 33u}) {   // the matrix-vector and the tiled kernels
+        const auto x = random_values(n * k + 5, 61 + n), bias = random_values(m, 62);
+        std::vector<float> want(n * m);
+        gpu::linear_sequence(host_path, resident, std::span<const float>(x).subspan(5, n * k), want, bias);
+        const auto dx = d.up(x), db = d.up(bias);
+        const auto dy = d.arena->allocate<float>(n * m + 3);
+        gpu::linear_sequence(d.backend(), resident, std::span<const float>(dx).subspan(5, n * k), dy.subspan(3, n * m), std::span<const float>(db));
+        EXPECT_EQ(d.down(std::span<const float>(dy.subspan(3, n * m))), want) << n;   // at offsets no sub-buffer may start at
     }
     d.arena->release(mark);
 }

@@ -71,6 +71,7 @@
 #include <snicholls/gpu/detail/quant_source.hpp>
 #include <snicholls/gpu/detail/rows_source.hpp>
 #include <snicholls/gpu/opencl.hpp>
+#include <snicholls/gpu/opencl_quant.hpp>
 
 #include <snicholls/core/ml/attention_layer.hpp>
 #include <snicholls/core/ml/mlp.hpp>
@@ -134,7 +135,13 @@ public:
     [[nodiscard]] std::span<T> allocate(std::size_t n)
     {
         static_assert(std::is_trivially_copyable_v<T>);
-        const std::size_t bytes = round(std::max<std::size_t>(n * sizeof(T), 1));
+        return allocate_bytes<T>(n, round(std::max<std::size_t>(n * sizeof(T), 1)));
+    }
+
+private:
+    template <typename T>
+    [[nodiscard]] std::span<T> allocate_bytes(std::size_t n, std::size_t bytes)
+    {
         const std::lock_guard lock(mutex_);
         for (auto it = free_.begin(); it != free_.end(); ++it)   // first fit among the freed blocks
             if (it->size >= bytes) {
@@ -160,6 +167,8 @@ public:
         top_ = at + bytes;
         return {reinterpret_cast<T*>(base_ + at), n};
     }
+
+public:
 
     /// \brief Returns an allocation for reuse (neighbouring free blocks are joined). \param s A span `allocate` gave, whole.
     template <typename T>
@@ -317,6 +326,9 @@ public:
     opencl_device_kernels& operator=(const opencl_device_kernels&) = delete;
     ~opencl_device_kernels()
     {
+        for (const auto& sc : scratch_)
+            if (sc.mem)
+                clReleaseMemObject(sc.mem);
         for (cl_kernel kernel : kernels_)
             if (kernel)
                 clReleaseKernel(kernel);
@@ -343,10 +355,45 @@ public:
                       "clEnqueueNDRangeKernel");
     }
 
+    /// \brief A quantised product over arena operands at any offset: the activations copied into this object's
+    /// scratch buffers (whole buffers, as the quantised kernels take them), the product, the result copied back; all
+    /// enqueued in order, nothing waited for. Serialised (one scratch). \param quant The kernels. \param w The weights.
+    /// \param x Where `X` is. \param xb Its bytes. \param y Where `Y` goes. \param yb Its bytes. \param bias Where the
+    /// bias is (`mem` null for none). \param bb Its bytes. \param n The rows.
+    void quant_product(const opencl_quant_kernels& quant, const opencl_quant_matrix& w, opencl_arena::location x, std::size_t xb,
+                       opencl_arena::location y, std::size_t yb, opencl_arena::location bias, std::size_t bb, std::size_t n) const
+    {
+        const std::lock_guard lock(scratch_mutex_);
+        const cl_command_queue q = context_->native_queue();
+        grow(scratch_[0], xb), grow(scratch_[1], yb), grow(scratch_[2], std::max<std::size_t>(bb, 4));
+        detail::check(clEnqueueCopyBuffer(q, x.mem, scratch_[0].mem, x.offset, 0, xb, 0, nullptr, nullptr), "clEnqueueCopyBuffer");
+        if (bias.mem)
+            detail::check(clEnqueueCopyBuffer(q, bias.mem, scratch_[2].mem, bias.offset, 0, bb, 0, nullptr, nullptr), "clEnqueueCopyBuffer");
+        quant.forward_buffers(w, scratch_[0].mem, scratch_[1].mem, scratch_[2].mem, bias.mem != nullptr, n);
+        detail::check(clEnqueueCopyBuffer(q, scratch_[1].mem, y.mem, 0, y.offset, yb, 0, nullptr, nullptr), "clEnqueueCopyBuffer");
+    }
+
     /// \brief The context. \return It.
     [[nodiscard]] const opencl_context& context() const noexcept { return *context_; }
 
 private:
+    struct scratch {
+        cl_mem mem = nullptr;
+        std::size_t bytes = 0;
+    };
+    void grow(scratch& s, std::size_t bytes) const
+    {
+        if (s.bytes >= bytes)
+            return;
+        if (s.mem)
+            clReleaseMemObject(s.mem);   // OpenCL frees it once the commands queued on it have run
+        cl_int code = CL_SUCCESS;
+        s.mem = clCreateBuffer(context_->native_context(), CL_MEM_READ_WRITE, bytes, nullptr, &code);
+        detail::check(code, "clCreateBuffer (scratch)");
+        s.bytes = bytes;
+    }
+    mutable scratch scratch_[3];
+    mutable std::mutex scratch_mutex_;
     static constexpr std::size_t kernel_count = 13;
     static constexpr const char* names[kernel_count] = {"rows_fill",   "rows_copy",     "rows_add",    "rows_add_bias", "rows_embed",
                                                         "rows_norm",   "rows_swiglu",   "rows_position", "rows_attend", "rows_store",
@@ -364,6 +411,8 @@ struct opencl_device_backend {
     const opencl_context* context = nullptr;          ///< The device; must outlive the backend.
     const opencl_arena* arena = nullptr;              ///< The memory every operand is in.
     const opencl_device_kernels* kernels = nullptr;   ///< The row kernels.
+    const opencl_quant_kernels* quant = nullptr;      ///< The quantised-weight kernels (`opencl_quant.hpp`), for products over
+                                                      ///< `opencl_quant_matrix` weights; or none.
     std::size_t matvec_max = 4;                       ///< Products of at most this many rows by a weight matrix: a work-group an output
                                                       ///< (within the bound above, not the reference's bits); 0 for the tiled product.
 
@@ -627,6 +676,23 @@ void attention_attend_rows(const opencl_device_backend& b, const ml::attention_a
         attention_attend_cached_rows<C>(b, std::span<const float>(act.q).subspan(s * n * qn, n * qn), std::span<const float>(act.k).subspan(s * n * kn, n * kn),
                                         std::span<const float>(act.v).subspan(s * n * kn, n * kn), 0, n, n, act.y.subspan(s * n * qn, n * qn),
                                         act.lse.subspan(s * n * C.n_heads, n * C.n_heads));
+}
+
+/// \brief `Y = X Wᵀ + b` with `W` an `opencl_quant_matrix` (quantised weights kept on the device) and `X`, `Y` in the
+/// arena: the quantised kernels of `opencl_quant.hpp` (`forward_buffers`), their results. \param b The backend (with
+/// `quant`). \param w The weights. \param xs `n · cols`. \param ys `n · rows`. \param bias `rows`, or empty.
+/// \throws std::logic_error without `quant`; opencl_exception.
+inline void linear_sequence(const opencl_device_backend& b, const opencl_quant_matrix& w, std::type_identity_t<std::span<const float>> xs,
+                            std::type_identity_t<std::span<float>> ys, std::type_identity_t<std::span<const float>> bias = {})
+{
+    namespace d = detail::opencl_device;
+    if (b.quant == nullptr)
+        throw std::logic_error("snicholls::gpu: a quantised product on opencl_device_backend needs its quant kernels");
+    const std::size_t n = w.cols == 0 ? 0 : xs.size() / w.cols;
+    if (n == 0 || w.rows == 0)
+        return;
+    b.kernels->quant_product(*b.quant, w, b.arena->locate(xs.data()), xs.size_bytes(), b.arena->locate(ys.data()), ys.size_bytes(),
+                             bias.empty() ? opencl_arena::location{} : b.arena->locate(bias.data()), bias.size_bytes(), n);
 }
 
 /// \brief Each row's cross-entropy over its first `classes` columns, the row replaced by `scale · (softmax - onehot)`

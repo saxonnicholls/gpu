@@ -256,34 +256,58 @@ public:
         const std::size_t n = rows_of(w, xs, w.cols, ys, w.rows, bias);
         if (n == 0 || w.rows == 0)
             return;
-        detail::buffer db(context_->native_context(), CL_MEM_READ_ONLY | CL_MEM_COPY_HOST_PTR, bias.size_bytes(), const_cast<float*>(bias.data()));
-        const cl_int has_bias = bias.empty() ? 0 : 1;
+        const cl_context ctx = context_->native_context();
+        detail::buffer db(ctx, CL_MEM_READ_ONLY | CL_MEM_COPY_HOST_PTR, bias.size_bytes(), const_cast<float*>(bias.data()));
+        detail::buffer dx(ctx, CL_MEM_READ_ONLY | CL_MEM_COPY_HOST_PTR, xs.size_bytes(), const_cast<float*>(xs.data()));
+        detail::buffer dy(ctx, CL_MEM_WRITE_ONLY, ys.size_bytes(), nullptr);
+        forward_buffers(w, dx.mem, dy.mem, db.mem, !bias.empty(), n);
+        detail::check(clEnqueueReadBuffer(context_->native_queue(), dy.mem, CL_TRUE, 0, ys.size_bytes(), ys.data(), 0, nullptr, nullptr),
+                      "clEnqueueReadBuffer");
+    }
+
+    /// \brief `Y = X Wᵀ + b` over activations already in device buffers (`opencl_device.hpp`'s arena): `n` rows of `x`
+    /// from the buffer's start, `y` written from its start; enqueued and not waited for. The same kernels as `forward`
+    /// (matrix-vector up to `matvec_max` rows, else tiled), so the same results.
+    /// \param w The weights. \param x `n · cols` floats. \param y `n · rows` floats. \param bias `rows` floats (read when
+    /// `has_bias`). \param has_bias Whether there is a bias. \param n The rows of `x`. \throws opencl_exception.
+    void forward_buffers(const opencl_quant_matrix& w, cl_mem x, cl_mem y, cl_mem bias, bool has_bias, std::size_t n) const
+    {
+        if (n == 0 || w.rows == 0)
+            return;
         const auto& s = *w.s_;
         const std::size_t f = std::size_t(s.fmt);
+        const cl_int hb = has_bias ? 1 : 0;
         if (n <= matvec_max) {
             for (std::size_t t0 = 0; t0 < n; t0 += detail::quant::mv_tokens) {
                 const cl_ulong count = cl_ulong(std::min(detail::quant::mv_tokens, n - t0));
-                detail::buffer part_x(context_->native_context(), CL_MEM_READ_ONLY | CL_MEM_COPY_HOST_PTR, std::size_t(count) * w.cols * sizeof(float),
-                                      const_cast<float*>(xs.data() + t0 * w.cols));
-                detail::buffer part_y(context_->native_context(), CL_MEM_WRITE_ONLY, std::size_t(count) * w.rows * sizeof(float), nullptr);
+                cl_mem px = x, py = y;
+                cl_mem subs[2] = {nullptr, nullptr};
+                if (t0 > 0) {   // the later rows as sub-buffers (row blocks of mv_tokens rows start where the device allows)
+                    cl_int code = CL_SUCCESS;
+                    const cl_buffer_region rx{t0 * w.cols * sizeof(float), std::size_t(count) * w.cols * sizeof(float)};
+                    const cl_buffer_region ry{t0 * w.rows * sizeof(float), std::size_t(count) * w.rows * sizeof(float)};
+                    subs[0] = px = clCreateSubBuffer(x, CL_MEM_READ_ONLY, CL_BUFFER_CREATE_TYPE_REGION, &rx, &code);
+                    detail::check(code, "clCreateSubBuffer");
+                    subs[1] = py = clCreateSubBuffer(y, CL_MEM_READ_WRITE, CL_BUFFER_CREATE_TYPE_REGION, &ry, &code);
+                    detail::check(code, "clCreateSubBuffer");
+                }
                 const cl_ulong rows = w.rows;
-                const std::lock_guard lock(mutex_);
-                cl_kernel k = mv_[f];
-                cl_uint i = weight_args(k, s, w.cols);
-                set(k, i, part_x.mem), set(k, i, count), set(k, i, rows), set(k, i, db.mem), set(k, i, has_bias), set(k, i, part_y.mem);
-                const std::size_t global = (w.rows + detail::quant::mv_rows - 1) / detail::quant::mv_rows * 64, local = 64;
-                detail::check(clEnqueueNDRangeKernel(context_->native_queue(), k, 1, nullptr, &global, &local, 0, nullptr, nullptr), "clEnqueueNDRangeKernel");
-                detail::check(clEnqueueReadBuffer(context_->native_queue(), part_y.mem, CL_TRUE, 0, std::size_t(count) * w.rows * sizeof(float),
-                                                  ys.data() + t0 * w.rows, 0, nullptr, nullptr),
-                              "clEnqueueReadBuffer");
+                {
+                    const std::lock_guard lock(mutex_);
+                    cl_kernel k = mv_[f];
+                    cl_uint i = weight_args(k, s, w.cols);
+                    set(k, i, px), set(k, i, count), set(k, i, rows), set(k, i, bias), set(k, i, hb), set(k, i, py);
+                    const std::size_t global = (w.rows + detail::quant::mv_rows - 1) / detail::quant::mv_rows * 64, local = 64;
+                    detail::check(clEnqueueNDRangeKernel(context_->native_queue(), k, 1, nullptr, &global, &local, 0, nullptr, nullptr),
+                                  "clEnqueueNDRangeKernel");
+                }
+                for (cl_mem m : subs)
+                    if (m)
+                        clReleaseMemObject(m);
             }
             return;
         }
-        detail::buffer dx(context_->native_context(), CL_MEM_READ_ONLY | CL_MEM_COPY_HOST_PTR, xs.size_bytes(), const_cast<float*>(xs.data()));
-        detail::buffer dy(context_->native_context(), CL_MEM_WRITE_ONLY, ys.size_bytes(), nullptr);
-        tiled(mm_[f], s, w.cols, n, w.rows, w.cols, dx.mem, db.mem, has_bias, 0.0f, dy.mem);
-        detail::check(clEnqueueReadBuffer(context_->native_queue(), dy.mem, CL_TRUE, 0, ys.size_bytes(), ys.data(), 0, nullptr, nullptr),
-                      "clEnqueueReadBuffer");
+        tiled(mm_[f], s, w.cols, n, w.rows, w.cols, x, bias, hb, 0.0f, y);
     }
 
     /// \brief `dX += dY W`, the tiled kernel.
