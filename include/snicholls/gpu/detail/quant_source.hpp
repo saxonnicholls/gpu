@@ -24,7 +24,8 @@
 #include <snicholls/core/ml/quantize.hpp>
 #include <snicholls/gpu/quant_weights.hpp>
 // The formats of core's next release (Q4_1, Q5_0, Q5_1, the K-quants, the ternary), where the pinned core has them
-#if __has_include(<snicholls/core/ml/quant_k.hpp>) && __has_include(<snicholls/core/ml/quant_ternary.hpp>) && __has_include(<snicholls/core/ml/quant_iq.hpp>)
+#if __has_include(<snicholls/core/ml/quant_k.hpp>) && __has_include(<snicholls/core/ml/quant_ternary.hpp>) && __has_include(<snicholls/core/ml/quant_iq.hpp>) \
+    && __has_include(<snicholls/core/ml/bitnet_kernels.hpp>)
 #include <snicholls/core/ml/quant_iq.hpp>
 #include <snicholls/core/ml/quant_k.hpp>
 #include <snicholls/core/ml/quant_ternary.hpp>
@@ -47,15 +48,15 @@ namespace snicholls::gpu::detail::quant {
 // The formats, in the order of `formats`; the device source names them by `name`
 enum class format : int {
     q8_0, q4_0, mxfp4, nf4, bf16, f16, e4m3, e5m2, q4_1, q5_0, q5_1, q2_k, q3_k, q4_k, q5_k, q6_k, tq1_0, tq2_0, iq4_nl, iq4_xs, nvfp4, q1_0, q2_0,
-    iq2_xxs, iq2_xs, iq2_s, iq3_xxs, iq3_s, iq1_s, iq1_m
+    iq2_xxs, iq2_xs, iq2_s, iq3_xxs, iq3_s, iq1_s, iq1_m, i2_s
 };
-inline constexpr std::size_t format_count = 30;
+inline constexpr std::size_t format_count = 31;
 inline constexpr std::array<std::string_view, format_count> names{
     "q8_0", "q4_0", "mxfp4", "nf4",  "bf16",   "f16",    "e4m3",  "e5m2",   "q4_1",  "q5_0",  "q5_1",  "q2_k",  "q3_k",  "q4_k",  "q5_k",
-    "q6_k", "tq1_0", "tq2_0", "iq4_nl", "iq4_xs", "nvfp4", "q1_0", "q2_0", "iq2_xxs", "iq2_xs", "iq2_s", "iq3_xxs", "iq3_s", "iq1_s", "iq1_m"};
+    "q6_k", "tq1_0", "tq2_0", "iq4_nl", "iq4_xs", "nvfp4", "q1_0", "q2_0", "iq2_xxs", "iq2_xs", "iq2_s", "iq3_xxs", "iq3_s", "iq1_s", "iq1_m", "i2_s"};
 // The grid-based IQ formats read core's codebooks, which the device source embeds from core's tables: present only
 // where the pinned core has them
-constexpr bool grid_format(format f) noexcept { return f >= format::iq2_xxs; }
+constexpr bool grid_format(format f) noexcept { return f >= format::iq2_xxs && f <= format::iq1_m; }
 #ifdef SNICHOLLS_GPU_QUANT_K
 constexpr bool available(format) noexcept { return true; }
 #else
@@ -63,9 +64,9 @@ constexpr bool available(format f) noexcept { return !grid_format(f); }
 #endif
 // The numbers and bytes of one block of each format (NF4: 64 numbers in 32 bytes, its scales apart; dense: one number)
 inline constexpr std::array<std::size_t, format_count> block_elements{32,  32,  32,  64,  1,   1,   1,   1,   32,  32,  32,  256, 256, 256, 256,
-                                                                    256, 256, 256, 32,  256, 64,  128, 64,  256, 256, 256, 256, 256, 256, 256};
+                                                                    256, 256, 256, 32,  256, 64,  128, 64,  256, 256, 256, 256, 256, 256, 256, 128};
 inline constexpr std::array<std::size_t, format_count> block_bytes{34,  18, 17, 32, 2,   2,  1,  1,  20, 22, 24, 84, 110, 144, 176,
-                                                                 210, 54, 66, 18, 136, 36, 18, 18, 66, 74, 82, 98, 110, 50,  56};
+                                                                 210, 54, 66, 18, 136, 36, 18, 18, 66, 74, 82, 98, 110, 50,  56, 32};
 
 // Whether a format has core's integer dot product with Q8_0 activations (ml/quantize.hpp `dot`), or with Q8_K (the
 // K-quants, ml/quant_k.hpp `dot`)
@@ -80,7 +81,9 @@ constexpr bool has_q8_k_dot(format f) noexcept
     return f == format::q2_k || f == format::q3_k || f == format::q4_k || f == format::q5_k || f == format::q6_k || f == format::tq1_0
            || f == format::tq2_0 || f == format::iq4_xs || grid_format(f);
 }
-constexpr bool has_q8_dot(format f) noexcept { return has_q8_0_dot(f) || has_q8_1_dot(f) || has_q8_k_dot(f); }
+// BitNet's I2_S: BitLinear's per-token absmax int8 activations (ml/bitnet.hpp bitlinear)
+constexpr bool has_absmax_dot(format f) noexcept { return f == format::i2_s; }
+constexpr bool has_q8_dot(format f) noexcept { return has_q8_0_dot(f) || has_q8_1_dot(f) || has_q8_k_dot(f) || has_absmax_dot(f); }
 // Blocks of Q8_1 activations: Q8_0's with the float16 sum s = d Σ q after the scale
 inline constexpr std::size_t q8_1_bytes = 36;
 // Blocks of Q8_K activations: a float scale, 256 codes, 16 sums of 16 (ml/quantize.hpp block_q8_k)
@@ -179,6 +182,18 @@ static_assert(offsetof(ml::block_q4_1, qs) == 4 && offsetof(ml::block_q5_0, qh) 
                   && offsetof(ml::block_iq1_s, qh) == 34 && offsetof(ml::block_iq1_m, qh) == 32 && offsetof(ml::block_iq1_m, scales) == 48,
               "snicholls::gpu: a block's fields are not where the device source reads them");
 #endif
+
+// BitNet's I2_S: the codes as the weights, the scale where NF4 keeps its mean
+template <>
+struct traits<i2_s_weights> {
+    static constexpr format fmt = format::i2_s;
+    static parts of(const i2_s_weights& w)
+    {
+        const auto bytes = std::as_bytes(w.packed);
+        const std::size_t codes = w.rows * w.cols / 4;
+        return {fmt, bytes.size() == codes + 32 ? bytes.first(codes) : bytes, {}, {}, w.scale, w.rows, w.cols};
+    }
+};
 
 template <typename S>
     requires(std::is_same_v<S, ml::bfloat16> || std::is_same_v<S, ml::float16> || std::is_same_v<S, ml::float8_e4m3> || std::is_same_v<S, ml::float8_e5m2>)
@@ -526,7 +541,12 @@ DEVICE float get_q2_0(WARGS, u64 r, u64 c)
     const uint j = (uint)(c % 64);
     return (float)((int)((b[2 + j / 4] >> (2 * (j % 4))) & 3u) - 1) * half_at(b);
 }
+// BitNet's I2_S (bitnet.cpp's x86 layout): weight j of the tensor the 2-bit code at bits 6 - 2 ((j % 128) / 32) of byte
+// j / 128 · 32 + j % 32, less 1, times the scale (passed as mean)
+DEVICE int code_i2_s(GLOBAL const uchar* w, u64 j) { return (int)((w[j / 128 * 32 + j % 32] >> (6 - 2 * ((j % 128) / 32))) & 3u) - 1; }
+DEVICE float get_i2_s(WARGS, u64 r, u64 c) { return (float)code_i2_s(w, r * cols + c) * mean; }
 #define GET8_BY_ONE(F) DEVICE void get8_##F(WARGS, u64 r, u64 c0, float* v) { for (int j = 0; j < 8; ++j) v[j] = get_##F(WPASS, r, c0 + (u64)j); }
+GET8_BY_ONE(i2_s)
 GET8_BY_ONE(q4_1)
 GET8_BY_ONE(q5_0)
 GET8_BY_ONE(q5_1)
@@ -567,6 +587,49 @@ KERNEL GROUP1(64) void quantize_q8k(GLOBAL const float* x, u64 blocks, GLOBAL uc
     for (int j = 0; j < 256; ++j) { const float s = iscale * v[j]; const int q = nearest_int(s); qs[j] = (i8)(q < 127 ? q : 127); }
     for (int j = 0; j < 16; ++j) { int sum = 0; for (int k = 0; k < 16; ++k) sum += qs[16 * j + k]; bsums[j] = (short)sum; }
     *(GLOBAL float*)o = 1.0f / iscale;
+}
+// BitLinear's activations (ml/bitnet.hpp absmax_quantize<8>): per token s = 127 / max(amax, 1e-5), codes
+// nearest_int(clamp(x s, -128, 127)); a group of 64 per token, the token's s then its codes at t (cols + 4)
+KERNEL GROUP1(64) void quantize_absmax(GLOBAL const float* x, u64 cols, GLOBAL uchar* out)
+{
+    LOCAL float red[64];
+    const int l = LX;
+    const u64 t = GX;
+    GLOBAL const float* v = x + t * cols;
+    float amax = 0.0f;
+    for (u64 j = (u64)l; j < cols; j += 64) { const float a = v[j] < 0.0f ? -v[j] : v[j]; amax = amax > a ? amax : a; }
+    red[l] = amax;
+    BARRIER();
+    for (int s = 32; s > 0; s >>= 1) { if (l < s) red[l] = red[l] > red[l + s] ? red[l] : red[l + s]; BARRIER(); }
+    const float m = red[0];
+    const float s = 127.0f / (m > 1e-5f ? m : 1e-5f);
+    GLOBAL uchar* o = out + t * (cols + 4);
+    if (l == 0) *(GLOBAL float*)o = s;
+    for (u64 j = (u64)l; j < cols; j += 64) {
+        const float q = v[j] * s;
+        const float c = q < -128.0f ? -128.0f : q > 127.0f ? 127.0f : q;
+        o[4 + j] = (uchar)(i8)nearest_int(c);
+    }
+}
+// BitLinear (ml/bitnet.hpp bitlinear): y = (acc / s) γ, acc the exact sum of t q; a group per (row, token), the
+// integer partial sums added by a tree (exact in any order)
+KERNEL GROUP1(64) void qdot_i2_s(GLOBAL const uchar* w, u64 cols, GLOBAL const uchar* xq, u64 rows, u64 t0, float gamma, GLOBAL const float* bias,
+                                 int has_bias, GLOBAL float* y)
+{
+    LOCAL int red[64];
+    const int l = LX;
+    const u64 r = GX, t = t0 + GY;
+    GLOBAL const uchar* a = xq + t * (cols + 4);
+    int acc = 0;
+    for (u64 j = (u64)l; j < cols; j += 64) acc += code_i2_s(w, r * cols + j) * (int)(i8)a[4 + j];
+    red[l] = acc;
+    BARRIER();
+    for (int s = 32; s > 0; s >>= 1) { if (l < s) red[l] += red[l + s]; BARRIER(); }
+    if (l == 0) {
+        const float q = (float)red[0] / *(GLOBAL const float*)a;
+        const float o = q * gamma;
+        y[t * rows + r] = has_bias ? bias[r] + o : o;
+    }
 }
 // A K-quant block's integer code of element e (ml/quant_k.hpp unpack) and the scale of its sixteen (lanes' scale)
 DEVICE int code_q3_k(GLOBAL const uchar* b, uint e) { const uint h = e / 128, g = (e % 128) / 32, l = e % 32; return (int)((b[32 + 32 * h + l] >> (2 * g)) & 3u) - (((b[l] >> (e / 32)) & 1u) ? 0 : 4); }

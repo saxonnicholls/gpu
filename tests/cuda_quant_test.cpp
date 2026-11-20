@@ -97,6 +97,14 @@ struct device_block_weights {
 };
 template <typename Block>
 device_block_weights<Block> to_device(const gpu::block_weights<Block>& w) { return device_block_weights<Block>(w); }
+struct device_i2_s {
+    on_device<std::uint8_t> packed;
+    std::size_t rows, cols;
+    float scale;
+    explicit device_i2_s(const gpu::i2_s_weights& w) : packed(w.packed), rows(w.rows), cols(w.cols), scale(w.scale) {}
+    [[nodiscard]] gpu::i2_s_weights view() const { return {packed.span(), rows, cols, scale}; }
+};
+inline device_i2_s to_device(const gpu::i2_s_weights& w) { return device_i2_s(w); }
 inline device_weights_nf4 to_device(const ml::nf4_weights& w) { return device_weights_nf4(w); }
 template <typename S>
 device_weights_dense<S> to_device(const ml::dense_weights<S>& w) { return device_weights_dense<S>(w); }

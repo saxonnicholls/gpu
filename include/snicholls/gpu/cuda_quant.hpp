@@ -22,7 +22,7 @@
 ///   core's integer block dot products.
 ///
 /// `w` is core's view (`ml::quantized_weights<Block>`, `ml::nf4_weights`, `ml::dense_weights<S>`), or a
-/// `block_weights<Block>` of Q4_1, Q5_0, Q5_1, NVFP4, Q1_0, Q2_0, Q2_K to Q6_K, TQ1_0, TQ2_0, the IQ family (IQ1_S, IQ1_M, IQ2_XXS, IQ2_XS, IQ2_S, IQ3_XXS, IQ3_S, IQ4_NL, IQ4_XS) where the pinned core has them, over device memory:
+/// `block_weights<Block>` of Q4_1, Q5_0, Q5_1, NVFP4, Q1_0, Q2_0, Q2_K to Q6_K, TQ1_0, TQ2_0, the IQ family (IQ1_S, IQ1_M, IQ2_XXS, IQ2_XS, IQ2_S, IQ3_XXS, IQ3_S, IQ4_NL, IQ4_XS), or BitNet's I2_S as an `i2_s_weights` where the pinned core has them, over device memory:
 /// upload the blocks into a `device_buffer` and point the view at it. NF4's `scale_mean` is a host float, as in core.
 ///
 /// \snippet cuda_quant_demo.cpp quant
@@ -63,7 +63,8 @@
 /// **Dependencies.** `cuda_ops.hpp`, `detail/quant_source.hpp`, `<nvrtc.h>`, core's `ml/linear.hpp`, `ml/nf4.hpp`,
 /// `ml/quantize.hpp`, `ml/minifloat.hpp`.
 ///
-/// **Known issues.** The integer path uses int32 multiply-adds, not `dp4a` (the blocks are 2-byte aligned) or the
+/// **Known issues.** BitNet's TL1 and TL2 are lookup-table tilings of the same ternary weights shaped for CPU SIMD
+/// kernels; on a device the weights are read as I2_S. The integer path uses int32 multiply-adds, not `dp4a` (the blocks are 2-byte aligned) or the
 /// integer tensor cores; the matrix-vector kernels read bytes. Both are the next steps for speed.
 ///
 /// **Status.** Experimental, new in 0.9.0.
@@ -240,7 +241,7 @@ public:
             std::fprintf(stderr, "snicholls::gpu::cuda_quant_kernels: cudaLibraryLoadData: %s\n", cudaGetErrorString(e));
             return err(cuda_failure{cuda_error::call_failed, static_cast<int>(e)});
         }
-        std::vector<std::pair<std::string, cudaKernel_t*>> all{{"quantize_q8", &k->quantize_}, {"quantize_q8_1", &k->quantize_1_}, {"quantize_q8k", &k->quantize_k_}};
+        std::vector<std::pair<std::string, cudaKernel_t*>> all{{"quantize_q8", &k->quantize_}, {"quantize_q8_1", &k->quantize_1_}, {"quantize_q8k", &k->quantize_k_}, {"quantize_absmax", &k->quantize_a_}};
         for (std::size_t f = 0; f < detail::quant::format_count; ++f) {
             if (!detail::quant::available(detail::quant::format(f)))
                 continue;
@@ -254,6 +255,8 @@ public:
                 all.emplace_back("qdot_" + n, &k->dot_[f]);
             if (detail::quant::has_q8_k_dot(detail::quant::format(f)))
                 all.emplace_back("qkdot_" + n, &k->dot_[f]);
+            if (detail::quant::has_absmax_dot(detail::quant::format(f)))
+                all.emplace_back("qdot_" + n, &k->dot_[f]);
         }
         for (const auto& [name, slot] : all)
             if (const cudaError_t e = cudaLibraryGetKernel(slot, k->library_, name.c_str()); e != cudaSuccess) {
@@ -328,6 +331,26 @@ public:
             throw std::invalid_argument("snicholls::gpu: 8-bit activations need weights of a format with core's integer dot product");
         if (n == 0 || w.rows == 0)
             return;
+        if (detail::quant::has_absmax_dot(w.fmt)) {   // BitLinear: absmax int8 activations per token, (acc / s) γ
+            u64 cols = w.cols, rows = w.rows;
+            if (!q8_ || q8_->size() < n * (w.cols + 4))
+                q8_ = std::make_unique<device_buffer<std::uint8_t>>(*context_, n * (w.cols + 4));
+            const float* x = xs.data();
+            std::uint8_t* q = q8_->span().data();
+            void* qa[] = {&x, &cols, &q};
+            launch(quantize_a_, dim3(unsigned(n)), dim3(64), qa);
+            const auto* wp = reinterpret_cast<const std::uint8_t*>(w.weights.data());
+            const float* bp = bias.empty() ? nullptr : bias.data();
+            int has_bias = bias.empty() ? 0 : 1;
+            float gamma = w.mean;
+            float* y = ys.data();
+            for (std::size_t t = 0; t < n; t += 65535) {
+                u64 t0 = t;
+                void* args[] = {&wp, &cols, &q, &rows, &t0, &gamma, &bp, &has_bias, &y};
+                launch(dot_[std::size_t(w.fmt)], dim3(unsigned(w.rows), unsigned(std::min<std::size_t>(65535, n - t))), dim3(64), args);
+            }
+            return;
+        }
         const bool k_quant = detail::quant::has_q8_k_dot(w.fmt), q8_1 = detail::quant::has_q8_1_dot(w.fmt);
         const std::size_t block_bytes = k_quant ? detail::quant::q8k_bytes : q8_1 ? detail::quant::q8_1_bytes : detail::quant::q8_bytes;
         u64 blocks = n * w.cols / (k_quant ? 256 : 32), cols = w.cols, rows = w.rows;
@@ -407,7 +430,7 @@ private:
     const cuda_context* context_;
     cudaLibrary_t library_ = nullptr;
     std::array<cudaKernel_t, detail::quant::format_count> mv_{}, mm_{}, mmt_{}, mma_{}, mmat_{}, dot_{};
-    cudaKernel_t quantize_ = nullptr, quantize_1_ = nullptr, quantize_k_ = nullptr;
+    cudaKernel_t quantize_ = nullptr, quantize_1_ = nullptr, quantize_k_ = nullptr, quantize_a_ = nullptr;
     mutable std::unique_ptr<device_buffer<std::uint8_t>> q8_;
 };
 
@@ -474,6 +497,30 @@ template <typename Block>
 void linear_sequence_backward_input(const cuda_training_backend& b, const block_weights<Block>& w, std::span<const float> dys, std::span<float> dxs)
 {
     detail::cuda_quant::kernels(b).backward_input(b.math, detail::quant::traits<block_weights<Block>>::of(w), dys, dxs);
+}
+
+/// \brief `Y = X Wᵀ + b` over BitNet's I2_S weights. \param b The backend. \param w The weights. \param xs `n · cols`.
+/// \param ys Written, `n · rows`. \param bias `rows`, or empty. \throws std::invalid_argument, cuda_exception.
+inline void linear_sequence(const cuda_training_backend& b, const i2_s_weights& w, std::span<const float> xs, std::span<float> ys,
+                            std::span<const float> bias = {})
+{
+    detail::cuda_quant::kernels(b).forward(b.math, detail::quant::traits<i2_s_weights>::of(w), xs, ys, bias);
+}
+
+/// \brief `dX += dY W` over I2_S weights. \param b The backend. \param w The weights. \param dys `n · rows`.
+/// \param dxs Added into, `n · cols`. \throws std::invalid_argument, cuda_exception.
+inline void linear_sequence_backward_input(const cuda_training_backend& b, const i2_s_weights& w, std::span<const float> dys, std::span<float> dxs)
+{
+    detail::cuda_quant::kernels(b).backward_input(b.math, detail::quant::traits<i2_s_weights>::of(w), dys, dxs);
+}
+
+/// \brief BitLinear over I2_S weights (core's `ml::bitlinear`): the tokens' absmax int8 activations, `(acc / s) γ`,
+/// plus the bias. \param b The backend. \param w The weights. \param xs `n · cols`. \param ys Written, `n · rows`.
+/// \param bias `rows`, or empty. \throws std::invalid_argument, cuda_exception.
+inline void linear_sequence_q8(const cuda_training_backend& b, const i2_s_weights& w, std::span<const float> xs, std::span<float> ys,
+                               std::span<const float> bias = {})
+{
+    detail::cuda_quant::kernels(b).forward_q8(detail::quant::traits<i2_s_weights>::of(w), xs, ys, bias);
 }
 
 /// \brief `Y = X Wᵀ + b` over NF4 weights: QLoRA's frozen base. \param b The backend. \param w The weights.

@@ -17,6 +17,11 @@
 #include <snicholls/gpu/quant_weights.hpp>
 
 #include <snicholls/core/linalg/reference.hpp>
+#if __has_include(<snicholls/core/ml/bitnet_kernels.hpp>)
+#include <snicholls/core/ml/bitnet.hpp>
+#include <snicholls/core/ml/bitnet_kernels.hpp>
+#define SNICHOLLS_GPU_TEST_BITNET 1
+#endif
 #include <snicholls/core/ml/linear.hpp>
 #include <snicholls/core/ml/lora.hpp>
 #include <snicholls/core/ml/minifloat.hpp>
@@ -152,6 +157,28 @@ SNICHOLLS_GPU_BLOCK_MATRIX(iq1_m_tag, qml::block_iq1_m)
 #undef SNICHOLLS_GPU_BLOCK_MATRIX
 #endif
 
+#ifdef SNICHOLLS_GPU_TEST_BITNET
+// BitNet's I2_S: absmean ternary weights (core's absmean_quantize) packed by core's pack_i2_s
+struct i2_s_tag { using view = snicholls::gpu::i2_s_weights; static constexpr std::size_t unit = 128; static constexpr bool q8 = true; static constexpr const char* name = "i2_s"; };
+template <>
+struct host_matrix<i2_s_tag> {
+    std::size_t rows = 0, cols = 0;
+    std::vector<std::int8_t> ternary;
+    std::vector<std::uint8_t> packed;
+    std::vector<float> dense;
+    float gamma = 0.0f;
+    host_matrix(std::size_t r, std::size_t c, std::uint64_t seed, float scale) : rows(r), cols(c), ternary(r * c), packed(qml::i2_s_bytes(r * c)), dense(r * c)
+    {
+        const auto src = uniform(r * c, seed, scale);
+        gamma = qml::absmean_quantize(std::span<const float>(src), std::span<std::int8_t>(ternary));
+        qml::pack_i2_s(std::span<const std::int8_t>(ternary), gamma, std::span<std::uint8_t>(packed));
+        for (std::size_t i = 0; i < dense.size(); ++i)
+            dense[i] = float(ternary[i]) * gamma;
+    }
+    [[nodiscard]] snicholls::gpu::i2_s_weights view() const { return {packed, rows, cols, gamma}; }
+};
+#endif
+
 template <>
 struct host_matrix<nf4_tag> {
     std::size_t rows = 0, cols = 0;
@@ -242,6 +269,24 @@ template <typename Block>
 std::vector<float> reference_q8(const snicholls::gpu::block_weights<Block>& w, std::span<const float> xs, std::span<const float> bias)
 {
     return reference_q8_with<typename Block::dot_block>(w, xs, bias);
+}
+#endif
+
+#ifdef SNICHOLLS_GPU_TEST_BITNET
+// BitLinear's reference: core's ml::bitlinear over the same ternary weights, then the bias
+inline std::vector<float> reference_q8_i2_s(const host_matrix<i2_s_tag>& m, std::span<const float> xs, std::span<const float> bias)
+{
+    const std::size_t n = xs.size() / m.cols;
+    std::vector<float> ys(n * m.rows);
+    std::vector<std::int8_t> codes(m.cols);
+    const qml::bitlinear_weights w{m.ternary, m.rows, m.cols, m.gamma};
+    for (std::size_t t = 0; t < n; ++t) {
+        qml::bitlinear(w, xs.subspan(t * m.cols, m.cols), std::span<float>(ys.data() + t * m.rows, m.rows), std::span<std::int8_t>(codes));
+        if (!bias.empty())
+            for (std::size_t i = 0; i < m.rows; ++i)
+                ys[t * m.rows + i] = bias[i] + ys[t * m.rows + i];
+    }
+    return ys;
 }
 #endif
 

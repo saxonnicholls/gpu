@@ -26,7 +26,7 @@
 ///
 /// `w` is one of core's views over host memory (`ml::quantized_weights<Block>`, `ml::nf4_weights`,
 /// `ml::dense_weights<S>` for `bfloat16`, `float16`, `float8_e4m3` or `float8_e5m2`) or a `block_weights<Block>` of
-/// Q4_1, Q5_0, Q5_1, NVFP4, Q1_0, Q2_0, Q2_K to Q6_K, TQ1_0, TQ2_0, the IQ family (IQ1_S, IQ1_M, IQ2_XXS, IQ2_XS, IQ2_S, IQ3_XXS, IQ3_S, IQ4_NL, IQ4_XS) (where the pinned core has them), copied to the device for the
+/// Q4_1, Q5_0, Q5_1, NVFP4, Q1_0, Q2_0, Q2_K to Q6_K, TQ1_0, TQ2_0, the IQ family (IQ1_S, IQ1_M, IQ2_XXS, IQ2_XS, IQ2_S, IQ3_XXS, IQ3_S, IQ4_NL, IQ4_XS), or BitNet's I2_S as an `i2_s_weights` (where the pinned core has them), copied to the device for the
 /// call, or an `opencl_quant_matrix`, the same weights kept on the device by `opencl_quant_kernels::upload` (frozen
 /// weights: upload once, multiply many times). The activations are host memory, copied for each call, as
 /// `opencl_backend`'s products do.
@@ -75,7 +75,8 @@
 /// **Dependencies.** `opencl.hpp`, `detail/quant_source.hpp`, core's `ml/linear.hpp`, `ml/nf4.hpp`, `ml/quantize.hpp`,
 /// `ml/minifloat.hpp`, `<algorithm>`, `<array>`, `<cstddef>`, `<memory>`, `<mutex>`, `<span>`, `<stdexcept>`, `<string>`, `<vector>`.
 ///
-/// **Known issues.** OpenCL 1.2 has no integer dot instructions or tensor cores: everything is in float and int32 on
+/// **Known issues.** BitNet's TL1 and TL2 are lookup-table tilings of the same ternary weights shaped for CPU SIMD
+/// kernels; on a device the weights are read as I2_S. OpenCL 1.2 has no integer dot instructions or tensor cores: everything is in float and int32 on
 /// the vector units. The device's division is correctly rounded only where it says so
 /// (`CL_FP_CORRECTLY_ROUNDED_DIVIDE_SQRT`); elsewhere a Q8_0 scale can differ from core's in its last bit.
 ///
@@ -182,10 +183,11 @@ public:
             if (!make("qmv_" + n, k->mv_[f]) || !make("qmm_" + n, k->mm_[f]) || !make("qmmt_" + n, k->mmt_[f])
                 || ((detail::quant::has_q8_0_dot(detail::quant::format(f)) || detail::quant::has_q8_1_dot(detail::quant::format(f)))
                     && !make("qdot_" + n, k->dot_[f]))
-                || (detail::quant::has_q8_k_dot(detail::quant::format(f)) && !make("qkdot_" + n, k->dot_[f])))
+                || (detail::quant::has_q8_k_dot(detail::quant::format(f)) && !make("qkdot_" + n, k->dot_[f]))
+                || (detail::quant::has_absmax_dot(detail::quant::format(f)) && !make("qdot_" + n, k->dot_[f])))
                 return err(opencl_failure{opencl_error::call_failed, code, {}});
         }
-        if (!make("quantize_q8", k->quantize_) || !make("quantize_q8_1", k->quantize_1_) || !make("quantize_q8k", k->quantize_k_))
+        if (!make("quantize_q8", k->quantize_) || !make("quantize_q8_1", k->quantize_1_) || !make("quantize_q8k", k->quantize_k_) || !make("quantize_absmax", k->quantize_a_))
             return err(opencl_failure{opencl_error::call_failed, code, {}});
         return ok(std::move(k));
     }
@@ -201,7 +203,7 @@ public:
             for (cl_kernel kernel : *set)
                 if (kernel)
                     clReleaseKernel(kernel);
-        for (cl_kernel kernel : {quantize_, quantize_1_, quantize_k_})
+        for (cl_kernel kernel : {quantize_, quantize_1_, quantize_k_, quantize_a_})
             if (kernel)
                 clReleaseKernel(kernel);
         if (program_)
@@ -311,6 +313,10 @@ public:
             return;
         const auto ctx = context_->native_context();
         const auto queue = context_->native_queue();
+        if (detail::quant::has_absmax_dot(w.s_->fmt)) {
+            forward_absmax(w, xs, ys, bias, n);
+            return;
+        }
         const bool k_quant = detail::quant::has_q8_k_dot(w.s_->fmt), q8_1 = detail::quant::has_q8_1_dot(w.s_->fmt);
         const cl_ulong blocks = n * w.cols / (k_quant ? 256 : 32);
         cl_kernel quantize = k_quant ? quantize_k_ : q8_1 ? quantize_1_ : quantize_;
@@ -338,6 +344,32 @@ public:
 
 private:
     explicit opencl_quant_kernels(const opencl_context& c) : context_(&c) {}
+
+    // BitLinear: the tokens' absmax int8 activations, then (acc / s) γ per output
+    void forward_absmax(const opencl_quant_matrix& w, std::span<const float> xs, std::span<float> ys, std::span<const float> bias, std::size_t n) const
+    {
+        const auto ctx = context_->native_context();
+        const auto queue = context_->native_queue();
+        detail::buffer dx(ctx, CL_MEM_READ_ONLY | CL_MEM_COPY_HOST_PTR, xs.size_bytes(), const_cast<float*>(xs.data()));
+        detail::buffer dq(ctx, CL_MEM_READ_WRITE, n * (w.cols + 4), nullptr);
+        detail::buffer dy(ctx, CL_MEM_WRITE_ONLY, ys.size_bytes(), nullptr);
+        detail::buffer db(ctx, CL_MEM_READ_ONLY | CL_MEM_COPY_HOST_PTR, bias.size_bytes(), const_cast<float*>(bias.data()));
+        const cl_int has_bias = bias.empty() ? 0 : 1;
+        const cl_ulong cols = w.cols, rows = w.rows, t0 = 0;
+        const float gamma = w.s_->mean;
+        const std::lock_guard lock(mutex_);
+        cl_uint i = 0;
+        set(quantize_a_, i, dx.mem), set(quantize_a_, i, cols), set(quantize_a_, i, dq.mem);
+        const std::size_t global = n * 64, local = 64;
+        detail::check(clEnqueueNDRangeKernel(queue, quantize_a_, 1, nullptr, &global, &local, 0, nullptr, nullptr), "clEnqueueNDRangeKernel");
+        cl_kernel k = dot_[std::size_t(w.s_->fmt)];
+        i = 0;
+        set(k, i, w.s_->w), set(k, i, cols), set(k, i, dq.mem), set(k, i, rows), set(k, i, t0), set(k, i, gamma), set(k, i, db.mem), set(k, i, has_bias),
+            set(k, i, dy.mem);
+        const std::size_t g2[2] = {w.rows * 64, n}, l2[2] = {64, 1};
+        detail::check(clEnqueueNDRangeKernel(queue, k, 2, nullptr, g2, l2, 0, nullptr, nullptr), "clEnqueueNDRangeKernel");
+        detail::check(clEnqueueReadBuffer(queue, dy.mem, CL_TRUE, 0, ys.size_bytes(), ys.data(), 0, nullptr, nullptr), "clEnqueueReadBuffer");
+    }
 
     cl_mem make_buffer(std::span<const std::byte> bytes) const
     {
@@ -391,7 +423,7 @@ private:
     const opencl_context* context_;
     cl_program program_ = nullptr;
     std::array<cl_kernel, detail::quant::format_count> mv_{}, mm_{}, mmt_{}, dot_{};
-    cl_kernel quantize_ = nullptr, quantize_1_ = nullptr, quantize_k_ = nullptr;
+    cl_kernel quantize_ = nullptr, quantize_1_ = nullptr, quantize_k_ = nullptr, quantize_a_ = nullptr;
     bool exact_q8_ = false;
     mutable std::mutex mutex_;
 };
@@ -515,6 +547,30 @@ template <typename S>
 void linear_sequence_backward_input(const opencl_quant_backend& b, const ml::dense_weights<S>& w, std::span<const float> dys, std::span<float> dxs)
 {
     linear_sequence_backward_input(b, detail::opencl_quant::kernels(b).upload(w), dys, dxs);
+}
+
+/// \brief `Y = X Wᵀ + b` over BitNet's I2_S weights in host memory. \param b The backend. \param w The weights.
+/// \param xs `n · cols`. \param ys Written, `n · rows`. \param bias `rows`, or empty. \throws std::invalid_argument, opencl_exception.
+inline void linear_sequence(const opencl_quant_backend& b, const i2_s_weights& w, std::span<const float> xs, std::span<float> ys,
+                            std::span<const float> bias = {})
+{
+    linear_sequence(b, detail::opencl_quant::kernels(b).upload(w), xs, ys, bias);
+}
+
+/// \brief `dX += dY W` over I2_S weights in host memory. \param b The backend. \param w The weights. \param dys `n · rows`.
+/// \param dxs Added into, `n · cols`. \throws std::invalid_argument, opencl_exception.
+inline void linear_sequence_backward_input(const opencl_quant_backend& b, const i2_s_weights& w, std::span<const float> dys, std::span<float> dxs)
+{
+    linear_sequence_backward_input(b, detail::opencl_quant::kernels(b).upload(w), dys, dxs);
+}
+
+/// \brief BitLinear over I2_S weights in host memory (core's `ml::bitlinear`): the tokens' absmax int8 activations, then
+/// `(acc / s) γ`, plus the bias. \param b The backend. \param w The weights. \param xs `n · cols`. \param ys Written,
+/// `n · rows`. \param bias `rows`, or empty. \throws std::invalid_argument, opencl_exception.
+inline void linear_sequence_q8(const opencl_quant_backend& b, const i2_s_weights& w, std::span<const float> xs, std::span<float> ys,
+                               std::span<const float> bias = {})
+{
+    linear_sequence_q8(b, detail::opencl_quant::kernels(b).upload(w), xs, ys, bias);
 }
 
 /// \brief `dX += dY W` over NF4 weights in host memory: QLoRA's gradient through the frozen base. \param b The backend.

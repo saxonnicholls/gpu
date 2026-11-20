@@ -52,7 +52,8 @@ using quant_cases_for = ::testing::Types<quant_case<Device, q8_0_tag>, quant_cas
                                          quant_case<Device, iq4_nl_tag>, quant_case<Device, iq4_xs_tag>, quant_case<Device, nvfp4_tag>,
                                          quant_case<Device, q1_0_tag>, quant_case<Device, q2_0_tag>, quant_case<Device, iq2_xxs_tag>,
                                          quant_case<Device, iq2_xs_tag>, quant_case<Device, iq2_s_tag>, quant_case<Device, iq3_xxs_tag>,
-                                         quant_case<Device, iq3_s_tag>, quant_case<Device, iq1_s_tag>, quant_case<Device, iq1_m_tag>>;
+                                         quant_case<Device, iq3_s_tag>, quant_case<Device, iq1_s_tag>, quant_case<Device, iq1_m_tag>,
+                                         quant_case<Device, i2_s_tag>>;
 #else
 template <typename Device>
 using quant_cases_for = ::testing::Types<quant_case<Device, q8_0_tag>, quant_case<Device, q4_0_tag>, quant_case<Device, mxfp4_tag>,
@@ -230,7 +231,13 @@ TYPED_TEST_P(QuantProduct, Q8ActivationsGiveCoresDotProduct)
                 const auto bias = with_bias ? uniform(rows, 73) : std::vector<float>{};
                 std::vector<float> ys(n * rows, -1.0f);
                 d.template forward_q8<Tag>(m, xs, ys, bias);
-                const auto want = reference_q8(m.view(), xs, bias);
+                std::vector<float> want;
+#ifdef SNICHOLLS_GPU_TEST_BITNET
+                if constexpr (std::is_same_v<Tag, i2_s_tag>)
+                    want = reference_q8_i2_s(m, xs, bias);
+                else
+#endif
+                    want = reference_q8(m.view(), xs, bias);
                 if (d.exact_q8()) {
                     EXPECT_TRUE(same_bits(ys, want)) << Tag::name << " n " << n << ": first difference at " << first_difference(ys, want);
                 } else {

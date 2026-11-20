@@ -13,7 +13,7 @@
 /// Q4_0, MXFP4). The other ggml formats the device kernels read (Q4_1, Q5_0, Q5_1, NVFP4, Q1_0, Q2_0, the K-quants Q2_K to Q6_K of 256,
 /// the ternary TQ1_0 and TQ2_0, the IQ family) need the same view without that pairing: `rows` rows of `cols / Block::elements`
 /// blocks, end to end, over the caller's memory (host memory for `opencl_quant.hpp`, device memory for
-/// `cuda_quant.hpp`).
+/// `cuda_quant.hpp`). BitNet's I2_S tensors, whose one scale is not in a block, are `i2_s_weights`.
 ///
 /// \snippet quant_weights_demo.cpp view
 ///
@@ -30,7 +30,7 @@
 ///
 /// **Tests and demos.** `tests/quant_weights_test.cpp`, `demos/quant_weights_demo.cpp`.
 ///
-/// **Dependencies.** `<cstddef>`, `<span>`.
+/// **Dependencies.** `<cstddef>`, `<cstdint>`, `<span>`.
 ///
 /// **Status.** Experimental, new in 0.9.0.
 
@@ -38,6 +38,7 @@
 #define snicholls_gpu_quant_weights_hpp
 
 #include <cstddef>
+#include <cstdint>
 #include <span>
 
 namespace snicholls::gpu {
@@ -55,6 +56,19 @@ struct block_weights {
     {
         return blocks.subspan(i * (cols / Block::elements), cols / Block::elements);
     }
+};
+
+/// \brief BitNet's I2_S weights (bitnet.cpp's x86 layout, blocks of 128): `rows · cols` ternary weights, four a byte,
+/// times one scale, over the caller's memory.
+///
+/// Weight `j` of the row-major tensor is code `(packed[j / 128 · 32 + j % 32] >> (6 - 2 · ((j % 128) / 32))) & 3`, less
+/// 1, times `scale` (core's `ml::i2_s_at`, `ml/bitnet_kernels.hpp`). The scale is a host float, read once with core's
+/// `ml::i2_s_scale` from the tensor's tail, so the packed bytes may live in device memory.
+struct i2_s_weights {
+    std::span<const std::uint8_t> packed{};   ///< `rows · cols / 4` bytes of codes (the tail after them, if given, is not read).
+    std::size_t rows = 0;                     ///< The outputs.
+    std::size_t cols = 0;                     ///< The inputs: a multiple of 128.
+    float scale = 1.0f;                       ///< `γ`, the scale of every weight.
 };
 
 } // namespace snicholls::gpu
