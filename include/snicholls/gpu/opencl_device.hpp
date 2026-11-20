@@ -323,7 +323,7 @@ public:
     }
 
     /// \brief The kernels, by name in the source.
-    enum class id : std::size_t { fill, copy, add, add_bias, embed, norm, swiglu, position, attend, store, cross_entropy, sum };
+    enum class id : std::size_t { fill, copy, add, add_bias, embed, norm, swiglu, position, attend, store, cross_entropy, sum, matvec };
 
     /// \brief Enqueues a kernel over `groups` work-groups of `local` items. \param k The kernel. \param groups The
     /// work-groups. \param local Their size. \param args Each argument as (size, address).
@@ -345,9 +345,10 @@ public:
     [[nodiscard]] const opencl_context& context() const noexcept { return *context_; }
 
 private:
-    static constexpr std::size_t kernel_count = 12;
-    static constexpr const char* names[kernel_count] = {"rows_fill", "rows_copy",     "rows_add",     "rows_add_bias",      "rows_embed", "rows_norm",
-                                                        "rows_swiglu", "rows_position", "rows_attend", "rows_store", "rows_cross_entropy", "rows_sum"};
+    static constexpr std::size_t kernel_count = 13;
+    static constexpr const char* names[kernel_count] = {"rows_fill",   "rows_copy",     "rows_add",    "rows_add_bias", "rows_embed",
+                                                        "rows_norm",   "rows_swiglu",   "rows_position", "rows_attend", "rows_store",
+                                                        "rows_cross_entropy", "rows_sum", "rows_matvec"};
     explicit opencl_device_kernels(const opencl_context& c) : context_(&c) {}
     const opencl_context* context_;
     cl_program program_ = nullptr;
@@ -361,6 +362,7 @@ struct opencl_device_backend {
     const opencl_context* context = nullptr;          ///< The device; must outlive the backend.
     const opencl_arena* arena = nullptr;              ///< The memory every operand is in.
     const opencl_device_kernels* kernels = nullptr;   ///< The row kernels.
+    std::size_t matvec_max = 4;                       ///< Products of at most this many rows by a weight matrix run one item an output.
 
     /// \brief Not on the device (a forward pass does not use it). \throws std::logic_error.
     template <linalg::scalar T>
@@ -390,6 +392,14 @@ struct opencl_device_backend {
         if (c.extent(0) == 0 || c.extent(1) == 0)
             return;
         const auto la = arena->locate(a.data_handle()), lb = arena->locate(b.data_handle()), lc = arena->locate(c.data_handle());
+        // A few rows times a transposed row-major matrix (ml::linear_sequence's decode step): one item an output
+        if (c.extent(0) <= matvec_max && alpha == T(1) && beta == T(0) && a.stride(1) == 1 && b.stride(0) == 1 && b.stride(1) == a.extent(1)
+            && c.stride(1) == 1) {
+            kernels->launch(opencl_device_kernels::id::matvec, (c.extent(1) + 63) / 64, 64, la.mem, cl_ulong(la.offset / sizeof(T)), lb.mem,
+                            cl_ulong(lb.offset / sizeof(T)), lc.mem, cl_ulong(lc.offset / sizeof(T)), cl_ulong(c.extent(0)), cl_ulong(a.extent(1)),
+                            cl_ulong(c.extent(1)), cl_ulong(a.stride(0)), cl_ulong(c.stride(0)));
+            return;
+        }
         context->gemm_buffers(alpha, c.extent(0), c.extent(1), a.extent(1), la.mem, la.offset / sizeof(T), a.stride(0), a.stride(1), lb.mem,
                               lb.offset / sizeof(T), b.stride(0), b.stride(1), beta, lc.mem, lc.offset / sizeof(T), c.stride(0), c.stride(1));
     }
@@ -541,11 +551,9 @@ void attention_position_rows(const opencl_device_backend& b, const ml::attention
                 std::copy(c.begin(), c.end(), cs.begin() + std::ptrdiff_t(t * half));
                 std::copy(s.begin(), s.end(), sn.begin() + std::ptrdiff_t(t * half));
             }
-        cl_int code = CL_SUCCESS;
         const cl_context ctx = b.context->native_context();
         detail::buffer dcs(ctx, CL_MEM_READ_ONLY | CL_MEM_COPY_HOST_PTR, cs.size() * sizeof(float), cs.data());
         detail::buffer dsn(ctx, CL_MEM_READ_ONLY | CL_MEM_COPY_HOST_PTR, sn.size() * sizeof(float), sn.data());
-        (void)code;
         const bool raw = !act.q_raw.empty();
         const auto pq = d::at(b, act.q), pk = d::at(b, act.k), pqr = d::at_or(b, act.q_raw, act.q), pkr = d::at_or(b, act.k_raw, act.k);
         const auto pqn = d::at_or(b, w.q_norm, std::span<const float>(act.q)), pkn = d::at_or(b, w.k_norm, std::span<const float>(act.k));
@@ -556,7 +564,7 @@ void attention_position_rows(const opencl_device_backend& b, const ml::attention
                           cl_int(w.k_norm.empty() ? 0 : 1), dcs.mem, dsn.mem, cl_ulong(n), cl_ulong(sequences), cl_int(C.n_heads),
                           cl_int(C.n_kv_heads), cl_ulong(C.head_dim), cl_int(qk), cl_int(C.rope == ml::rope_kind::none ? 0 : 1),
                           cl_int(C.layout() == ml::rope_layout::half ? 1 : 0), ml::norm_eps_v<C, float>);
-        clFinish(b.context->native_queue());   // the uploaded table is freed on return
+        // The table's buffers are released on return; OpenCL frees them once the kernel that reads them has run
     }
 }
 

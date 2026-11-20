@@ -309,6 +309,24 @@ KERNEL GROUP1(256) void rows_cross_entropy(GLOBAL float* x, u64 ox, GLOBAL const
         row[i] = i < classes ? scale * (EXPF(row[i] - m) * inv - (i == (u64)target ? 1.0f : 0.0f)) : 0.0f;
 }
 
+// Y = X Wᵀ for a few rows of X (decode): one work-item per output, the inner products summed from the first column,
+// as core's reference product sums them (the bits of linalg::reference). x [m][k] rows, w [out][k] rows, y [m][out].
+KERNEL GROUP1(64) void rows_matvec(GLOBAL const float* x, u64 ox, GLOBAL const float* w, u64 ow, GLOBAL float* y, u64 oy, u64 m, u64 k, u64 out,
+                                   u64 sx, u64 sy)
+{
+    const u64 j = GID(64);
+    if (j >= out)
+        return;
+    GLOBAL const float* wj = w + ow + j * k;
+    for (u64 r = 0; r < m; ++r) {
+        GLOBAL const float* xr = x + ox + r * sx;
+        float s = 0.0f;
+        for (u64 p = 0; p < k; ++p)
+            s += xr[p] * wj[p];
+        y[oy + r * sy + j] = s;
+    }
+}
+
 // The sum of n values into out[0]: one work-group, a fixed tree
 KERNEL GROUP1(256) void rows_sum(GLOBAL const float* x, u64 ox, u64 n, int squares, GLOBAL float* out)
 {
