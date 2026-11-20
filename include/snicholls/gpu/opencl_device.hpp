@@ -39,7 +39,9 @@
 /// **Implementations.** One. RoPE's table stays the caller's host memory (a `rope_source`): its rows for a call are
 /// copied up, as `cuda_ops.hpp` does.
 ///
-/// **Guarantees.** Products: core's reference bits (the kernel of `opencl.hpp`, each output summed in index order).
+/// **Guarantees.** Products: core's reference bits (the kernel of `opencl.hpp`, each output summed in index order),
+/// except products of at most `matvec_max` rows (a decode step), which run a work-group an output and add 64 partial
+/// sums by a fixed tree: within `|Δ| ≤ k 2^-23 Σ_p |x_p w_p|`, as gpu's quantised matrix-vector kernel.
 /// Norms, QK norm, RoPE and the cache's writes: core's operations in core's order, one work-item a row or head; they
 /// differ from the host only by the device's `exp`, `log` and `sqrt` (OpenCL's are within a few ulp, not correctly
 /// rounded). Attention and the cross-entropy share their reductions across a work-group in a fixed order (lanes merged
@@ -362,7 +364,8 @@ struct opencl_device_backend {
     const opencl_context* context = nullptr;          ///< The device; must outlive the backend.
     const opencl_arena* arena = nullptr;              ///< The memory every operand is in.
     const opencl_device_kernels* kernels = nullptr;   ///< The row kernels.
-    std::size_t matvec_max = 4;                       ///< Products of at most this many rows by a weight matrix run one item an output.
+    std::size_t matvec_max = 4;                       ///< Products of at most this many rows by a weight matrix: a work-group an output
+                                                      ///< (within the bound above, not the reference's bits); 0 for the tiled product.
 
     /// \brief Not on the device (a forward pass does not use it). \throws std::logic_error.
     template <linalg::scalar T>
@@ -395,7 +398,7 @@ struct opencl_device_backend {
         // A few rows times a transposed row-major matrix (ml::linear_sequence's decode step): one item an output
         if (c.extent(0) <= matvec_max && alpha == T(1) && beta == T(0) && a.stride(1) == 1 && b.stride(0) == 1 && b.stride(1) == a.extent(1)
             && c.stride(1) == 1) {
-            kernels->launch(opencl_device_kernels::id::matvec, (c.extent(1) + 63) / 64, 64, la.mem, cl_ulong(la.offset / sizeof(T)), lb.mem,
+            kernels->launch(opencl_device_kernels::id::matvec, c.extent(1), 64, la.mem, cl_ulong(la.offset / sizeof(T)), lb.mem,
                             cl_ulong(lb.offset / sizeof(T)), lc.mem, cl_ulong(lc.offset / sizeof(T)), cl_ulong(c.extent(0)), cl_ulong(a.extent(1)),
                             cl_ulong(c.extent(1)), cl_ulong(a.stride(0)), cl_ulong(c.stride(0)));
             return;

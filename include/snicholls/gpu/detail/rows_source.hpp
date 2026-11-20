@@ -309,36 +309,35 @@ KERNEL GROUP1(256) void rows_cross_entropy(GLOBAL float* x, u64 ox, GLOBAL const
         row[i] = i < classes ? scale * (EXPF(row[i] - m) * inv - (i == (u64)target ? 1.0f : 0.0f)) : 0.0f;
 }
 
-// Y = X Wᵀ for a few rows of X (decode): each output summed from the first column, as core's reference product sums it
-// (the bits of linalg::reference). A work-group of 64 takes 64 outputs; the weights come through local memory in
-// 64 x 64 tiles loaded along their rows (coalesced), and each item adds its own output's terms in column order.
+// Y = X Wᵀ for a few rows of X (decode): a work-group of 64 per output, item l adding the columns l, l + 64, ... in
+// order (reads along the weight row, coalesced), then the 64 partial sums by a fixed tree: deterministic, and within
+// the classical bound of a reordered sum, |Δ| ≤ k 2^-23 Σ_p |x_p w_p| (as gpu's quantised matrix-vector kernel).
 // x [m][k] rows (m at most 4), w [out][k] rows, y [m][out].
 KERNEL GROUP1(64) void rows_matvec(GLOBAL const float* x, u64 ox, GLOBAL const float* w, u64 ow, GLOBAL float* y, u64 oy, u64 m, u64 k, u64 out,
                                    u64 sx, u64 sy)
 {
-    LOCAL float tile[64][65];
-    LOCAL float xs[4][64];
+    LOCAL float red[4][64];
     const int lane = LX;
-    const u64 j0 = GX * 64, j = j0 + (u64)lane;
+    const u64 j = GX;
+    GLOBAL const float* wj = w + ow + j * k;
     float acc[4] = {0.0f, 0.0f, 0.0f, 0.0f};
-    for (u64 p0 = 0; p0 < k; p0 += 64) {
-        const u64 cols = k - p0 < 64 ? k - p0 : 64;
-        for (int r = 0; r < 64; ++r) {   // row j0 + r of the tile: item lane reads column p0 + lane
-            const u64 jr = j0 + (u64)r;
-            tile[r][lane] = jr < out && (u64)lane < cols ? w[ow + jr * k + p0 + (u64)lane] : 0.0f;
-        }
+    for (u64 p = (u64)lane; p < k; p += 64) {
+        const float wp = wj[p];
         for (u64 r = 0; r < m; ++r)
-            xs[r][lane] = (u64)lane < cols ? x[ox + r * sx + p0 + (u64)lane] : 0.0f;
-        BARRIER();
-        if (j < out)
-            for (u64 r = 0; r < m; ++r)
-                for (u64 p = 0; p < cols; ++p)
-                    acc[r] += xs[r][p] * tile[lane][p];
+            acc[r] += x[ox + r * sx + p] * wp;
+    }
+    for (u64 r = 0; r < 4; ++r)
+        red[r][lane] = acc[r];
+    BARRIER();
+    for (int s = 32; s > 0; s /= 2) {
+        if (lane < s)
+            for (u64 r = 0; r < 4; ++r)
+                red[r][lane] = red[r][lane] + red[r][lane + s];
         BARRIER();
     }
-    if (j < out)
+    if (lane == 0)
         for (u64 r = 0; r < m; ++r)
-            y[oy + r * sy + j] = acc[r];
+            y[oy + r * sy + j] = red[r][0];
 }
 
 // The sum of n values into out[0]: one work-group, a fixed tree

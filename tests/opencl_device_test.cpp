@@ -127,14 +127,21 @@ TEST(GpuOpenClDevice, ProductsOverTheArenaAreTheReferencesBits)
     ml::linear_sequence(d.backend(), ml::dense_weights<float>{std::span<const float>(dw), m, k}, std::span<const float>(dx), dy,
                         std::span<const float>(db));
     EXPECT_EQ(d.down(std::span<const float>(dy)), want);
-    // A few rows (decode): the matrix-vector kernel, the same bits
+    // A few rows (decode): the matrix-vector kernel, within the classical bound of a reordered sum
     for (const std::size_t rows : {1u, 3u}) {
         std::vector<float> few(rows * m);
         ml::linear_sequence(snicholls::linalg::reference, ml::dense_weights<float>{w, m, k}, std::span<const float>(x).first(rows * k), few, bias);
         const auto dyf = d.arena->allocate<float>(rows * m);
         ml::linear_sequence(d.backend(), ml::dense_weights<float>{std::span<const float>(dw), m, k}, std::span<const float>(dx).first(rows * k), dyf,
                             std::span<const float>(db));
-        EXPECT_EQ(d.down(std::span<const float>(dyf)), few) << rows;
+        const auto got = d.down(std::span<const float>(dyf));
+        for (std::size_t r = 0; r < rows; ++r)
+            for (std::size_t j = 0; j < m; ++j) {
+                double bound = 0;
+                for (std::size_t p = 0; p < k; ++p)
+                    bound += std::abs(double(x[r * k + p]) * w[j * k + p]);
+                EXPECT_LE(std::abs(double(got[r * m + j]) - few[r * m + j]), double(k) * 0x1p-23 * bound + 0x1p-23 * std::abs(bias[j])) << rows;
+            }
     }
     d.arena->release(mark);
 }
