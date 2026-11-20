@@ -1268,6 +1268,7 @@ private:
 
 class cuda_moe_kernels;     // cuda_moe.hpp
 class cuda_quant_kernels;   // cuda_quant.hpp
+class cuda_rows_kernels;    // cuda_rows.hpp
 
 /// \brief The CUDA backend with the training steps' kernels: core's batched passes run entirely on the device over
 /// `device_buffer` memory. Trivially copyable.
@@ -1282,6 +1283,8 @@ struct cuda_training_backend : cuda_backend {
                                              ///< backend. Last, so the members before it initialise as before.
     const cuda_quant_kernels* quant = nullptr;   ///< The quantised-weight kernels (`cuda_quant.hpp`), or none; must
                                                  ///< outlive the backend. After `moe`, so the members before initialise as before.
+    const cuda_rows_kernels* rows = nullptr;     ///< The key-value cache's kernels (`cuda_rows.hpp`), or none; must outlive
+                                                 ///< the backend. Last, so the members before initialise as before.
 
     /// \brief `C = alpha A B + beta C` in float: under `cuda_math::bf16`, with every operand device memory in a BLAS
     /// layout whose leading dimensions are multiples of 8, `A` and `B` rounded to bfloat16 by a kernel and multiplied on
