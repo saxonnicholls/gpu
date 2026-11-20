@@ -267,6 +267,16 @@ KERNEL GROUP1(256) void rows_store(GLOBAL const float* k, u64 ok, GLOBAL const f
     values[ovalues + to] = v[ov + i];
 }
 
+// A projection's rows [s][t][heads][d] as heads [s][heads][t][d] (core's linear_heads layout), each sequence's n rows
+KERNEL GROUP1(256) void rows_heads(GLOBAL const float* rows, u64 orows, GLOBAL float* heads, u64 oheads, u64 n, u64 sequences, int H, u64 d)
+{
+    const u64 i = GID(256), per = n * (u64)H * d;
+    if (i >= sequences * per)
+        return;
+    const u64 s = i / per, rest = i % per, t = rest / ((u64)H * d), h = (rest / d) % (u64)H, c = rest % d;
+    heads[oheads + s * per + (h * n + t) * d + c] = rows[orows + i];
+}
+
 // Each row's cross-entropy over its first `classes` columns, the row replaced by scale (softmax - onehot) and the
 // padding by 0 (core's cross_entropy_rows): a work-group of 256 per row, the maximum and the sum in a fixed tree
 KERNEL GROUP1(256) void rows_cross_entropy(GLOBAL float* x, u64 ox, GLOBAL const uint* targets, u64 ot, GLOBAL float* losses, u64 ol,

@@ -289,6 +289,24 @@ TEST(GpuOpenClDevice, AttentionAgainstTheCacheIsCoresPerTokenAttention)
     d.arena->release(mark);
 }
 
+TEST(GpuOpenClDevice, RowsBecomeHeads)
+{
+    auto& d = device::get();
+    const auto mark = d.arena->mark();
+    constexpr std::size_t n = 5, seqs = 2, h = 3, dh = 4;
+    const auto rows = random_values(seqs * n * h * dh, 70);
+    const auto dr = d.up(rows);
+    const auto dhd = d.arena->allocate<float>(rows.size());
+    gpu::heads_from_rows(d.backend(), std::span<const float>(dr), dhd, n, seqs, h, dh);
+    const auto got = d.down(std::span<const float>(dhd));
+    for (std::size_t s = 0; s < seqs; ++s)
+        for (std::size_t t = 0; t < n; ++t)
+            for (std::size_t k = 0; k < h; ++k)
+                for (std::size_t c = 0; c < dh; ++c)
+                    EXPECT_EQ(got[s * n * h * dh + (k * n + t) * dh + c], rows[((s * n + t) * h + k) * dh + c]);
+    d.arena->release(mark);
+}
+
 TEST(GpuOpenClDevice, EmbeddingsCrossEntropyAndSumsAreTheHosts)
 {
     auto& d = device::get();

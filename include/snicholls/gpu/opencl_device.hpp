@@ -27,7 +27,8 @@
 /// - rows: `fill_rows`, `copy_rows`, `add_rows`, `add_bias_rows`, `embed_rows`, `block_norm_rows` (RMS and layer norms),
 ///   `mlp_activate_rows` (SwiGLU), `attention_position_rows` (QK norm and RoPE), `attention_attend_rows` (each
 ///   sequence's causal attention, windowed or not), `cross_entropy_rows`, `sum_values`, `sum_squares`;
-/// - the key-value cache: `kv_store_rows` and `attention_attend_cached_rows`, the two operations a forward pass over
+/// - the key-value cache: `kv_store_rows` and `attention_attend_cached_rows`, and `heads_from_rows` (a projection's rows
+///   as heads, for weights core's `linear_heads` does not take), the operations a forward pass over
 ///   new tokens needs beside core's (their host reference is in the consumer's model, `training/llama.hpp`, until
 ///   core has them).
 ///
@@ -337,7 +338,7 @@ public:
     }
 
     /// \brief The kernels, by name in the source.
-    enum class id : std::size_t { fill, copy, add, add_bias, embed, norm, swiglu, position, attend, store, cross_entropy, sum, matvec };
+    enum class id : std::size_t { fill, copy, add, add_bias, embed, norm, swiglu, position, attend, store, cross_entropy, sum, matvec, heads };
 
     /// \brief Enqueues a kernel over `groups` work-groups of `local` items. \param k The kernel. \param groups The
     /// work-groups. \param local Their size. \param args Each argument as (size, address).
@@ -394,10 +395,10 @@ private:
     }
     mutable scratch scratch_[3];
     mutable std::mutex scratch_mutex_;
-    static constexpr std::size_t kernel_count = 13;
+    static constexpr std::size_t kernel_count = 14;
     static constexpr const char* names[kernel_count] = {"rows_fill",   "rows_copy",     "rows_add",    "rows_add_bias", "rows_embed",
                                                         "rows_norm",   "rows_swiglu",   "rows_position", "rows_attend", "rows_store",
-                                                        "rows_cross_entropy", "rows_sum", "rows_matvec"};
+                                                        "rows_cross_entropy", "rows_sum", "rows_matvec", "rows_heads"};
     explicit opencl_device_kernels(const opencl_context& c) : context_(&c) {}
     const opencl_context* context_;
     cl_program program_ = nullptr;
@@ -661,6 +662,20 @@ void kv_store_rows(const opencl_device_backend& b, std::type_identity_t<std::spa
     const std::size_t items = C.n_kv_heads * n * C.head_dim;
     b.kernels->launch(d::id::store, d::groups(items, 256), 256, pk.mem, pk.offset, pv.mem, pv.offset, pks.mem, pks.offset, pvs.mem, pvs.offset,
                       cl_ulong(first), cl_ulong(n), cl_ulong(capacity), cl_int(C.n_kv_heads), cl_ulong(C.head_dim));
+}
+
+/// \brief A projection's rows (`[sequence][token][head][head_dim]`) as heads (`[sequence][head][token][head_dim]`, core's
+/// `linear_heads` layout). \param b The backend. \param rows The rows. \param heads Written. \param n The tokens of each
+/// sequence. \param sequences The sequences. \param count The heads. \param dh Their channels.
+inline void heads_from_rows(const opencl_device_backend& b, std::type_identity_t<std::span<const float>> rows, std::span<float> heads, std::size_t n,
+                            std::size_t sequences, std::size_t count, std::size_t dh)
+{
+    namespace d = detail::opencl_device;
+    if (rows.empty())
+        return;
+    const auto pr = d::at(b, rows), ph = d::at(b, heads);
+    b.kernels->launch(d::id::heads, d::groups(rows.size(), 256), 256, pr.mem, pr.offset, ph.mem, ph.offset, cl_ulong(n), cl_ulong(sequences),
+                      cl_int(count), cl_ulong(dh));
 }
 
 /// \brief Every sequence's causal attention: the sequence's own keys as the cache. \tparam C The configuration.

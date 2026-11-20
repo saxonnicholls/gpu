@@ -13,7 +13,8 @@
 ///
 /// **Overview.** `cuda_ops.hpp` already overloads core's row operations for `cuda_training_backend` (norms, RoPE,
 /// attention within a sequence, the MLP's activations); a pass over new tokens against a cache needs two more,
-/// `kv_store_rows` and `attention_attend_cached_rows` (their host reference is in the consumer's model until core has
+/// `kv_store_rows` and `attention_attend_cached_rows`, and a third for weights core's `linear_heads` does not take,
+/// `heads_from_rows` (their host reference is in the consumer's model until core has
 /// them). This header compiles those kernels from the shared source with NVRTC and overloads the two operations for
 /// `cuda_training_backend`, found by argument-dependent lookup as `opencl_device.hpp`'s are for
 /// `opencl_device_backend`. CUDA's device pointers are real, so every buffer offset is 0.
@@ -103,7 +104,7 @@ public:
             std::fprintf(stderr, "snicholls::gpu::cuda_rows_kernels: cudaLibraryLoadData: %s\n", cudaGetErrorString(e));
             return err(cuda_failure{cuda_error::call_failed, static_cast<int>(e)});
         }
-        for (const auto& [name, slot] : {std::pair<const char*, cudaKernel_t*>{"rows_attend", &k->attend_}, {"rows_store", &k->store_}})
+        for (const auto& [name, slot] : {std::pair<const char*, cudaKernel_t*>{"rows_attend", &k->attend_}, {"rows_store", &k->store_}, {"rows_heads", &k->heads_}})
             if (const cudaError_t e = cudaLibraryGetKernel(slot, k->library_, name); e != cudaSuccess) {
                 std::fprintf(stderr, "snicholls::gpu::cuda_rows_kernels: cudaLibraryGetKernel(%s): %s\n", name, cudaGetErrorString(e));
                 return err(cuda_failure{cuda_error::call_failed, static_cast<int>(e)});
@@ -122,13 +123,15 @@ public:
             (void)cudaLibraryUnload(library_);
     }
 
-    /// \brief Launches `groups` blocks of `threads`. \param attend The attention kernel, else the cache's writes.
+    /// \brief Launches `groups` blocks of `threads`. \param w The kernel.
     /// \param groups The blocks. \param threads Their threads. \param args The arguments. \throws cuda_exception.
-    void launch(bool attend, std::size_t groups, unsigned threads, void** args) const
+    /// \brief The kernels launched. \see launch
+    enum class which { attend, store, heads };
+    void launch(which w, std::size_t groups, unsigned threads, void** args) const
     {
         if (groups == 0)
             return;
-        const cudaKernel_t k = attend ? attend_ : store_;
+        const cudaKernel_t k = w == which::attend ? attend_ : w == which::store ? store_ : heads_;
         if (const cudaError_t e = cudaLaunchKernel(reinterpret_cast<const void*>(k), dim3(unsigned(groups)), dim3(threads), args, 0, context_->stream());
             e != cudaSuccess)
             throw cuda_exception(std::string("cudaLaunchKernel(rows) [") + cudaGetErrorString(e) + "]", static_cast<int>(e));
@@ -138,7 +141,7 @@ private:
     explicit cuda_rows_kernels(const cuda_context& c) : context_(&c) {}
     const cuda_context* context_;
     cudaLibrary_t library_ = nullptr;
-    cudaKernel_t attend_ = nullptr, store_ = nullptr;
+    cudaKernel_t attend_ = nullptr, store_ = nullptr, heads_ = nullptr;
 };
 
 namespace detail::cuda_rows {
@@ -176,7 +179,7 @@ void attention_attend_cached_rows(const cuda_training_backend& b, std::type_iden
     int H = int(C.n_heads), KVH = int(C.n_kv_heads);
     float scale = 1.0f / snicholls::math::sqrt(float(C.head_dim));
     void* args[] = {&pq, &zero, &pk, &zero, &pv, &zero, &f, &nn, &cap, &window, &H, &KVH, &dh, &scale, &py, &zero, &pl, &zero};
-    d::kernels(b).launch(true, n * C.n_heads, 64, args);
+    d::kernels(b).launch(cuda_rows_kernels::which::attend, n * C.n_heads, 64, args);
 }
 
 /// \brief The keys and values of `n` new tokens (`[kv_head][n][head_dim]`) into a cache's rows `first ..` on the device.
@@ -198,7 +201,24 @@ void kv_store_rows(const cuda_training_backend& b, std::type_identity_t<std::spa
     d::u64 zero = 0, f = first, nn = n, cap = capacity, dh = C.head_dim;
     int KVH = int(C.n_kv_heads);
     void* args[] = {&pk, &zero, &pv, &zero, &pks, &zero, &pvs, &zero, &f, &nn, &cap, &KVH, &dh};
-    d::kernels(b).launch(false, (C.n_kv_heads * n * C.head_dim + 255) / 256, 256, args);
+    d::kernels(b).launch(cuda_rows_kernels::which::store, (C.n_kv_heads * n * C.head_dim + 255) / 256, 256, args);
+}
+
+/// \brief A projection's rows (`[sequence][token][head][head_dim]`) as heads (`[sequence][head][token][head_dim]`) on
+/// the device. \param b The backend. \param rows The rows. \param heads Written. \param n The tokens of each sequence.
+/// \param sequences The sequences. \param count The heads. \param dh Their channels.
+inline void heads_from_rows(const cuda_training_backend& b, std::type_identity_t<std::span<const float>> rows, std::span<float> heads, std::size_t n,
+                            std::size_t sequences, std::size_t count, std::size_t dh)
+{
+    namespace d = detail::cuda_rows;
+    if (rows.empty())
+        return;
+    const float* pr = rows.data();
+    float* ph = heads.data();
+    d::u64 zero = 0, nn = n, ss = sequences, dd = dh;
+    int H = int(count);
+    void* args[] = {&pr, &zero, &ph, &zero, &nn, &ss, &H, &dd};
+    d::kernels(b).launch(cuda_rows_kernels::which::heads, (rows.size() + 255) / 256, 256, args);
 }
 
 } // namespace snicholls::gpu
