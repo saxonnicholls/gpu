@@ -333,6 +333,9 @@ public:
     /// \brief Releases the kernels, the program and the scratch.
     ~opencl_device_kernels()
     {
+        clFinish(context_->native_queue());
+        for (cl_mem r : retired_)
+            clReleaseMemObject(r);
         for (const auto& sc : scratch_)
             if (sc.mem)
                 clReleaseMemObject(sc.mem);
@@ -385,6 +388,20 @@ public:
         }
     }
 
+    /// \brief A buffer queued kernels may still read, freed later: once 128 wait, after the queue has run (OpenCL allows
+    /// releasing it at once, but macOS's AMD driver has been seen to fault on that). \param m The buffer.
+    void retire(cl_mem m) const
+    {
+        const std::lock_guard lock(retired_mutex_);
+        retired_.push_back(m);
+        if (retired_.size() >= 128) {
+            clFinish(context_->native_queue());
+            for (cl_mem r : retired_)
+                clReleaseMemObject(r);
+            retired_.clear();
+        }
+    }
+
     /// \brief The context. \return It.
     [[nodiscard]] const opencl_context& context() const noexcept { return *context_; }
 
@@ -398,13 +415,15 @@ private:
         if (s.bytes >= bytes)
             return;
         if (s.mem)
-            clReleaseMemObject(s.mem);   // OpenCL frees it once the commands queued on it have run
+            retire(s.mem);
         cl_int code = CL_SUCCESS;
         s.mem = clCreateBuffer(context_->native_context(), CL_MEM_READ_WRITE, bytes, nullptr, &code);
         detail::check(code, "clCreateBuffer (scratch)");
         s.bytes = bytes;
     }
     mutable scratch scratch_[3];
+    mutable std::vector<cl_mem> retired_;
+    mutable std::mutex retired_mutex_;
     mutable std::mutex scratch_mutex_;
     static constexpr std::size_t kernel_count = 14;
     static constexpr const char* names[kernel_count] = {"rows_fill",   "rows_copy",     "rows_add",    "rows_add_bias", "rows_embed",
@@ -624,8 +643,11 @@ void attention_position_rows(const opencl_device_backend& b, const ml::attention
                 std::copy(s.begin(), s.end(), sn.begin() + std::ptrdiff_t(t * half));
             }
         const cl_context ctx = b.context->native_context();
-        detail::buffer dcs(ctx, CL_MEM_READ_ONLY | CL_MEM_COPY_HOST_PTR, cs.size() * sizeof(float), cs.data());
-        detail::buffer dsn(ctx, CL_MEM_READ_ONLY | CL_MEM_COPY_HOST_PTR, sn.size() * sizeof(float), sn.data());
+        cl_int code = CL_SUCCESS;
+        cl_mem dcs = clCreateBuffer(ctx, CL_MEM_READ_ONLY | CL_MEM_COPY_HOST_PTR, cs.size() * sizeof(float), cs.data(), &code);
+        detail::check(code, "clCreateBuffer (RoPE)");
+        cl_mem dsn = clCreateBuffer(ctx, CL_MEM_READ_ONLY | CL_MEM_COPY_HOST_PTR, sn.size() * sizeof(float), sn.data(), &code);
+        detail::check(code, "clCreateBuffer (RoPE)");
         const bool raw = !act.q_raw.empty();
         const auto pq = d::at(b, act.q), pk = d::at(b, act.k), pqr = d::at_or(b, act.q_raw, act.q), pkr = d::at_or(b, act.k_raw, act.k);
         const auto pqn = d::at_or(b, w.q_norm, std::span<const float>(act.q)), pkn = d::at_or(b, w.k_norm, std::span<const float>(act.k));
@@ -633,10 +655,10 @@ void attention_position_rows(const opencl_device_backend& b, const ml::attention
         const std::size_t items = n * sequences * (C.n_heads + C.n_kv_heads);
         b.kernels->launch(d::id::position, d::groups(items, 64), 64, pq.mem, pq.offset, pk.mem, pk.offset, pqr.mem, pqr.offset, pkr.mem, pkr.offset,
                           cl_int(raw ? 1 : 0), pqn.mem, pqn.offset, cl_int(w.q_norm.empty() ? 0 : 1), pkn.mem, pkn.offset,
-                          cl_int(w.k_norm.empty() ? 0 : 1), dcs.mem, dsn.mem, cl_ulong(n), cl_ulong(sequences), cl_int(C.n_heads),
+                          cl_int(w.k_norm.empty() ? 0 : 1), dcs, dsn, cl_ulong(n), cl_ulong(sequences), cl_int(C.n_heads),
                           cl_int(C.n_kv_heads), cl_ulong(C.head_dim), cl_int(qk), cl_int(C.rope == ml::rope_kind::none ? 0 : 1),
                           cl_int(C.layout() == ml::rope_layout::half ? 1 : 0), ml::norm_eps_v<C, float>);
-        // The table's buffers are released on return; OpenCL frees them once the kernel that reads them has run
+        b.kernels->retire(dcs), b.kernels->retire(dsn);   // freed once the kernel has run
     }
 }
 
