@@ -345,6 +345,9 @@ public:
         for (const auto& sc : scratch_)
             if (sc.mem)
                 clReleaseMemObject(sc.mem);
+        for (const auto& sc : rope_)
+            if (sc.mem)
+                clReleaseMemObject(sc.mem);
         for (cl_kernel kernel : kernels_)
             if (kernel)
                 clReleaseKernel(kernel);
@@ -425,6 +428,23 @@ public:
         }
     }
 
+    /// \brief RoPE's rows for one call into this object's two buffers (grown as needed, never freed while in use: a
+    /// buffer made and released per call faulted on macOS's AMD driver); a blocking write, so the host rows may go.
+    /// \param cs The cosines. \param sn The sines. \return A lock to hold until the kernel reading them is enqueued.
+    [[nodiscard]] std::unique_lock<std::mutex> rope_rows(std::span<const float> cs, std::span<const float> sn) const
+    {
+        std::unique_lock lock(rope_mutex_);
+        grow(rope_[0], cs.size_bytes()), grow(rope_[1], sn.size_bytes());
+        const cl_command_queue q = context_->native_queue();
+        detail::check(clEnqueueWriteBuffer(q, rope_[0].mem, CL_TRUE, 0, cs.size_bytes(), cs.data(), 0, nullptr, nullptr), "clEnqueueWriteBuffer");
+        detail::check(clEnqueueWriteBuffer(q, rope_[1].mem, CL_TRUE, 0, sn.size_bytes(), sn.data(), 0, nullptr, nullptr), "clEnqueueWriteBuffer");
+        return lock;
+    }
+    /// \brief The cosines' buffer `rope_rows` wrote. \return It.
+    [[nodiscard]] cl_mem rope_cos() const noexcept { return rope_[0].mem; }
+    /// \brief The sines' buffer. \return It.
+    [[nodiscard]] cl_mem rope_sin() const noexcept { return rope_[1].mem; }
+
     /// \brief The context. \return It.
     [[nodiscard]] const opencl_context& context() const noexcept { return *context_; }
 
@@ -445,6 +465,8 @@ private:
         s.bytes = bytes;
     }
     mutable scratch scratch_[3];
+    mutable scratch rope_[2];
+    mutable std::mutex rope_mutex_;
     mutable std::vector<cl_mem> retired_;
     mutable std::mutex retired_mutex_;
     mutable std::mutex scratch_mutex_;
@@ -666,12 +688,8 @@ void attention_position_rows(const opencl_device_backend& b, const ml::attention
                 std::copy(c.begin(), c.end(), cs.begin() + std::ptrdiff_t(t * half));
                 std::copy(s.begin(), s.end(), sn.begin() + std::ptrdiff_t(t * half));
             }
-        const cl_context ctx = b.context->native_context();
-        cl_int code = CL_SUCCESS;
-        cl_mem dcs = clCreateBuffer(ctx, CL_MEM_READ_ONLY | CL_MEM_COPY_HOST_PTR, cs.size() * sizeof(float), cs.data(), &code);
-        detail::check(code, "clCreateBuffer (RoPE)");
-        cl_mem dsn = clCreateBuffer(ctx, CL_MEM_READ_ONLY | CL_MEM_COPY_HOST_PTR, sn.size() * sizeof(float), sn.data(), &code);
-        detail::check(code, "clCreateBuffer (RoPE)");
+        const auto lock = b.kernels->rope_rows(cs, sn);   // the rows in the kernels' own buffers, held until launched
+        cl_mem dcs = b.kernels->rope_cos(), dsn = b.kernels->rope_sin();
         const bool raw = !act.q_raw.empty();
         const auto pq = d::at(b, act.q), pk = d::at(b, act.k), pqr = d::at_or(b, act.q_raw, act.q), pkr = d::at_or(b, act.k_raw, act.k);
         const auto pqn = d::at_or(b, w.q_norm, std::span<const float>(act.q)), pkn = d::at_or(b, w.k_norm, std::span<const float>(act.k));
@@ -682,7 +700,7 @@ void attention_position_rows(const opencl_device_backend& b, const ml::attention
                           cl_int(w.k_norm.empty() ? 0 : 1), dcs, dsn, cl_ulong(n), cl_ulong(sequences), cl_int(C.n_heads),
                           cl_int(C.n_kv_heads), cl_ulong(C.head_dim), cl_int(qk), cl_int(C.rope == ml::rope_kind::none ? 0 : 1),
                           cl_int(C.layout() == ml::rope_layout::half ? 1 : 0), ml::norm_eps_v<C, float>);
-        b.kernels->retire(dcs), b.kernels->retire(dsn);   // freed once the kernel has run
+
     }
 }
 
