@@ -62,7 +62,11 @@
 /// **Dependencies.** OpenCL 1.2, `<sys/mman.h>` (the reservation), core's `ml/` headers.
 ///
 /// **Known issues.** Heads of at most 128 channels in attention. The backward operations are not here (training on
-/// OpenCL keeps `opencl_backend`).
+/// OpenCL keeps `opencl_backend`). On macOS's AMD driver (Radeon Pro Vega II, macOS 26), two threads enqueueing on the
+/// one queue (products, row kernels, quantised products and their copies each take their own lock) can get the
+/// process killed by the driver with quantised weights; drive a backend from one thread. Separately, quantised
+/// products in 2,048-row batches faulted deterministically on one model (Qwen2.5-0.5B Q8_0, the fifth batch of
+/// WikiText-2) where 512-row batches do not: not yet found. A queue-wide lock for every enqueue is the next step.
 ///
 /// **Status.** Experimental.
 
