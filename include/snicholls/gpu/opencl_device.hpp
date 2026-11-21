@@ -62,11 +62,11 @@
 /// **Dependencies.** OpenCL 1.2, `<sys/mman.h>` (the reservation), core's `ml/` headers.
 ///
 /// **Known issues.** Heads of at most 128 channels in attention. The backward operations are not here (training on
-/// OpenCL keeps `opencl_backend`). On macOS's AMD driver (Radeon Pro Vega II, macOS 26), two threads enqueueing on the
-/// one queue (products, row kernels, quantised products and their copies each take their own lock) can get the
-/// process killed by the driver with quantised weights; drive a backend from one thread. Separately, quantised
-/// products in 2,048-row batches faulted deterministically on one model (Qwen2.5-0.5B Q8_0, the fifth batch of
-/// WikiText-2) where 512-row batches do not: not yet found. A queue-wide lock for every enqueue is the next step.
+/// OpenCL keeps `opencl_backend`). On macOS's AMD driver (Radeon Pro Vega II, macOS 26) a pair of small buffers made
+/// and released for every call (RoPE's rows, at first) got the process killed by the driver after some thousands of
+/// calls, deterministically for a given run; the backend now writes such data into buffers it keeps (`rope_rows`,
+/// the quantised products' scratch) and retires a buffer it outgrows until the queue has run. Another GPU client
+/// at the same time (llama.cpp's Metal backend offloads large products even with `-ngl 0`) has also stopped runs.
 ///
 /// **Status.** Experimental.
 
