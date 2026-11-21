@@ -7,6 +7,23 @@ A version is released when its tag is on a commit where every blocking CI leg is
 
 ### Added
 
+- **The forward pass with every operand on an OpenCL device** (`opencl_device.hpp`): `opencl_arena`, device memory as
+  spans (a reserved range of host addresses, each allocation a place in a device buffer: OpenCL 1.2 has no pointers),
+  with a first-fit free list; `opencl_device_backend`, core's `blas_backend` over it (products in place through
+  `opencl_context::gemm_buffers`, the same kernel and bits, now with buffer offsets; few-row products a work-group an
+  output within the bound of a reordered sum; launches of at most 512 rows); overloads of core's row operations for
+  it: fills, copies, sums, biases, embeddings, RMS and layer norms, SwiGLU, QK norm and RoPE, causal and windowed
+  attention in core's order, cross-entropy, sums; the key-value cache's `kv_store_rows` and
+  `attention_attend_cached_rows`, and `heads_from_rows`; products over quantised weights kept on the device with the
+  activations in the arena (`opencl_quant_kernels::forward_buffers`). Kernels written once for OpenCL and CUDA
+  (`detail/rows_source.hpp`). Buffers queued kernels may read are retired and freed after the queue has run (macOS's
+  AMD driver faulted on early release).
+- `cuda_rows.hpp`: the cache's operations and `heads_from_rows` on CUDA from the same source (NVRTC), for
+  `cuda_training_backend` (its new last member `rows`).
+- **CUDA: not yet run on an NVIDIA GPU; coming when the machine returns.** Compiled without the toolkit: the host code
+  against the CUDA 12.9 runtime and NVRTC headers with warnings as errors, and the shared kernels to PTX (sm_80) with
+  clang's NVPTX target. Everything else verified on the AMD Radeon Pro Vega II under macOS.
+
 - **Products over quantised weights** (`opencl_quant.hpp`, `cuda_quant.hpp`, one kernel source in
   `detail/quant_source.hpp`): the weights stay in core's formats in device memory, ggml's Q8_0, Q4_0 and MXFP4 blocks,
   QLoRA's NF4 with double-quantised scales, and dense bfloat16, float16, FP8 E4M3 and E5M2, and each weight is
