@@ -81,6 +81,8 @@
 #include <sys/mman.h>
 
 #include <algorithm>
+#include <cstdio>
+#include <cstdlib>
 #include <iterator>
 #include <cstddef>
 #include <cstdint>
@@ -363,6 +365,22 @@ public:
         const std::size_t global = groups * local;
         detail::check(clEnqueueNDRangeKernel(context_->native_queue(), kernel, 1, nullptr, &global, &local, 0, nullptr, nullptr),
                       "clEnqueueNDRangeKernel");
+        debug_sync(names[std::size_t(k)]);
+    }
+
+    /// \brief With `SNICHOLLS_GPU_SYNC` set in the environment, waits for the queue after each launch (1), and names
+    /// the launch on stderr first (2): a fault then stops at the kernel that caused it. \param what The launch's name.
+    void debug_sync(const char* what) const
+    {
+        static const int level = [] {
+            const char* e = std::getenv("SNICHOLLS_GPU_SYNC");
+            return e ? std::atoi(e) : 0;
+        }();
+        if (level == 0)
+            return;
+        if (level >= 2)
+            std::fprintf(stderr, "snicholls::gpu: %s\n", what);
+        detail::check(clFinish(context_->native_queue()), what);
     }
 
     /// \brief A quantised product over arena operands at any offset: the activations copied into this object's
@@ -384,6 +402,7 @@ public:
             const std::size_t m = std::min(step, n - r);
             detail::check(clEnqueueCopyBuffer(q, x.mem, scratch_[0].mem, x.offset + r * xr, 0, m * xr, 0, nullptr, nullptr), "clEnqueueCopyBuffer");
             quant.forward_buffers(w, scratch_[0].mem, scratch_[1].mem, scratch_[2].mem, bias.mem != nullptr, m);
+            debug_sync("quantised product");
             detail::check(clEnqueueCopyBuffer(q, scratch_[1].mem, y.mem, 0, y.offset + r * yr, m * yr, 0, nullptr, nullptr), "clEnqueueCopyBuffer");
         }
     }
@@ -493,6 +512,7 @@ struct opencl_device_backend {
                                   lb.mem, lb.offset / sizeof(T), b.stride(0), b.stride(1), beta, lc.mem, lc.offset / sizeof(T) + r * c.stride(0),
                                   c.stride(0), c.stride(1));
         }
+        kernels->debug_sync("product");
     }
     /// \brief Not on the device. \throws std::logic_error.
     template <linalg::scalar T>
