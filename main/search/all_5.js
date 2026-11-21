@@ -4,5 +4,6 @@ var searchData=
   ['embed_5fbackward_5f_1',['embed_backward_',['../classsnicholls_1_1gpu_1_1cuda__kernels.html#a467c8a5f4e9de6e783b0a2ba41f257b2',1,'snicholls::gpu::cuda_kernels']]],
   ['embed_5frows_2',['embed_rows',['../cuda__ops_8hpp.html#a49eac91674b8e2a4ba34e81f4a8d35e0',1,'snicholls::gpu']]],
   ['embed_5frows_5fbackward_3',['embed_rows_backward',['../cuda__ops_8hpp.html#a781a03408a4ae2245d395b4ac228e49f',1,'snicholls::gpu']]],
-  ['experts_4',['A mixture of experts',['../performance.html#autotoc_md9',1,'']]]
+  ['exact_5fq8_4',['exact_q8',['../classsnicholls_1_1gpu_1_1opencl__quant__kernels.html#ae7365adc35d7f84547784fadfe630f2e',1,'snicholls::gpu::opencl_quant_kernels']]],
+  ['experts_5',['A mixture of experts',['../performance.html#autotoc_md9',1,'']]]
 ];

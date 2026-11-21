@@ -26,7 +26,7 @@
  <tbody>
  <tr id="projectrow">
   <td id="projectalign">
-   <div id="projectname">snicholls-gpu<span id="projectnumber">&#160;0.8.0</span>
+   <div id="projectname">snicholls-gpu<span id="projectnumber">&#160;0.9.0</span>
    </div>
    <div id="projectbrief">GPU backends of snicholls-core&#39;s interfaces: linalg on OpenCL</div>
   </td>
@@ -113,6 +113,12 @@ Public Member Functions</h2></td></tr>
 <tr class="memdesc:a4c461a05ca3f469f10ad77f56788ce7f"><td class="mdescLeft">&#160;</td><td class="mdescRight">Whether the device is a GPU.  <br /></td></tr>
 <tr class="memitem:a0d6ff87c58f0d1dc7a4e1a87dc5a12b1" id="r_a0d6ff87c58f0d1dc7a4e1a87dc5a12b1"><td class="memItemLeft" align="right" valign="top">bool&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="#a0d6ff87c58f0d1dc7a4e1a87dc5a12b1">has_fp64</a> () const noexcept</td></tr>
 <tr class="memdesc:a0d6ff87c58f0d1dc7a4e1a87dc5a12b1"><td class="mdescLeft">&#160;</td><td class="mdescRight">Whether <span class="tt">double</span> products run on the device (<span class="tt">cl_khr_fp64</span>), not on the host.  <br /></td></tr>
+<tr class="memitem:a2e6460b353f0dd7ac86e8294792bc7cb" id="r_a2e6460b353f0dd7ac86e8294792bc7cb"><td class="memItemLeft" align="right" valign="top">cl_device_id&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="#a2e6460b353f0dd7ac86e8294792bc7cb">native_device</a> () const noexcept</td></tr>
+<tr class="memdesc:a2e6460b353f0dd7ac86e8294792bc7cb"><td class="mdescLeft">&#160;</td><td class="mdescRight">The OpenCL device, for programs of other headers built on this context (<span class="tt"><a class="el" href="opencl__quant_8hpp.html" title="snicholls::gpu::opencl_quant_kernels: matrix products whose weights stay in core&#39;s quantised formats ...">opencl_quant.hpp</a></span>).  <br /></td></tr>
+<tr class="memitem:aa52a59ca8b433bcc5f46a552b923b6c3" id="r_aa52a59ca8b433bcc5f46a552b923b6c3"><td class="memItemLeft" align="right" valign="top">cl_context&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="#aa52a59ca8b433bcc5f46a552b923b6c3">native_context</a> () const noexcept</td></tr>
+<tr class="memdesc:aa52a59ca8b433bcc5f46a552b923b6c3"><td class="mdescLeft">&#160;</td><td class="mdescRight">The OpenCL context: buffers of other headers' programs live in it.  <br /></td></tr>
+<tr class="memitem:a1770312498c40d540e3c41b4484ac707" id="r_a1770312498c40d540e3c41b4484ac707"><td class="memItemLeft" align="right" valign="top">cl_command_queue&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="#a1770312498c40d540e3c41b4484ac707">native_queue</a> () const noexcept</td></tr>
+<tr class="memdesc:a1770312498c40d540e3c41b4484ac707"><td class="mdescLeft">&#160;</td><td class="mdescRight">The in-order command queue every product of this context is enqueued on.  <br /></td></tr>
 <tr class="memitem:a574f2303b92eb18589af837d179c8204" id="r_a574f2303b92eb18589af837d179c8204"><td class="memTemplParams" colspan="2">template&lt;typename T&gt; </td></tr>
 <tr class="memitem:a574f2303b92eb18589af837d179c8204 template"><td class="memItemLeft" align="right" valign="top">void&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="#a574f2303b92eb18589af837d179c8204">gemm</a> (T alpha, linalg::matrix_view&lt; const T &gt; a, linalg::matrix_view&lt; const T &gt; b, T beta, linalg::matrix_view&lt; T &gt; c) const</td></tr>
 <tr class="memdesc:a574f2303b92eb18589af837d179c8204"><td class="mdescLeft">&#160;</td><td class="mdescRight"><span class="tt">C = alpha A B + beta C</span> on the device. Called by <span class="tt"><a class="el" href="structsnicholls_1_1gpu_1_1opencl__backend.html#aaba76e55c61d9963d96639f46acd3ffb" title="C = alpha A B + beta C, on the device.">opencl_backend::gemm</a></span>.  <br /></td></tr>
@@ -286,7 +292,7 @@ template&lt;typename T&gt; </div>
   </dd>
 </dl>
 
-<p class="definition">Definition at line <a class="el" href="opencl_8hpp_source.html#l00314">314</a> of file <a class="el" href="opencl_8hpp_source.html">opencl.hpp</a>.</p>
+<p class="definition">Definition at line <a class="el" href="opencl_8hpp_source.html#l00321">321</a> of file <a class="el" href="opencl_8hpp_source.html">opencl.hpp</a>.</p>
 
 </div>
 </div>
@@ -347,6 +353,96 @@ template&lt;typename T&gt; </div>
 <dl class="section return"><dt>Returns</dt><dd>True for a GPU. </dd></dl>
 
 <p class="definition">Definition at line <a class="el" href="opencl_8hpp_source.html#l00302">302</a> of file <a class="el" href="opencl_8hpp_source.html">opencl.hpp</a>.</p>
+
+</div>
+</div>
+<a id="aa52a59ca8b433bcc5f46a552b923b6c3" name="aa52a59ca8b433bcc5f46a552b923b6c3"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#aa52a59ca8b433bcc5f46a552b923b6c3">&#9670;&#160;</a></span>native_context()</h2>
+
+<div class="memitem">
+<div class="memproto">
+<table class="mlabels">
+  <tr>
+  <td class="mlabels-left">
+      <table class="memname">
+        <tr>
+          <td class="memname">cl_context snicholls::gpu::opencl_context::native_context </td>
+          <td>(</td>
+          <td class="paramname"><span class="paramname"><em></em></span></td><td>)</td>
+          <td> const</td>
+        </tr>
+      </table>
+  </td>
+  <td class="mlabels-right">
+<span class="mlabels"><span class="mlabel inline">inline</span><span class="mlabel nodiscard">nodiscard</span><span class="mlabel noexcept">noexcept</span></span>  </td>
+  </tr>
+</table>
+</div><div class="memdoc">
+
+<p>The OpenCL context: buffers of other headers' programs live in it. </p>
+<dl class="section return"><dt>Returns</dt><dd>The context. </dd></dl>
+
+<p class="definition">Definition at line <a class="el" href="opencl_8hpp_source.html#l00309">309</a> of file <a class="el" href="opencl_8hpp_source.html">opencl.hpp</a>.</p>
+
+</div>
+</div>
+<a id="a2e6460b353f0dd7ac86e8294792bc7cb" name="a2e6460b353f0dd7ac86e8294792bc7cb"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#a2e6460b353f0dd7ac86e8294792bc7cb">&#9670;&#160;</a></span>native_device()</h2>
+
+<div class="memitem">
+<div class="memproto">
+<table class="mlabels">
+  <tr>
+  <td class="mlabels-left">
+      <table class="memname">
+        <tr>
+          <td class="memname">cl_device_id snicholls::gpu::opencl_context::native_device </td>
+          <td>(</td>
+          <td class="paramname"><span class="paramname"><em></em></span></td><td>)</td>
+          <td> const</td>
+        </tr>
+      </table>
+  </td>
+  <td class="mlabels-right">
+<span class="mlabels"><span class="mlabel inline">inline</span><span class="mlabel nodiscard">nodiscard</span><span class="mlabel noexcept">noexcept</span></span>  </td>
+  </tr>
+</table>
+</div><div class="memdoc">
+
+<p>The OpenCL device, for programs of other headers built on this context (<span class="tt"><a class="el" href="opencl__quant_8hpp.html" title="snicholls::gpu::opencl_quant_kernels: matrix products whose weights stay in core&#39;s quantised formats ...">opencl_quant.hpp</a></span>). </p>
+<dl class="section return"><dt>Returns</dt><dd>The device. </dd></dl>
+
+<p class="definition">Definition at line <a class="el" href="opencl_8hpp_source.html#l00307">307</a> of file <a class="el" href="opencl_8hpp_source.html">opencl.hpp</a>.</p>
+
+</div>
+</div>
+<a id="a1770312498c40d540e3c41b4484ac707" name="a1770312498c40d540e3c41b4484ac707"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#a1770312498c40d540e3c41b4484ac707">&#9670;&#160;</a></span>native_queue()</h2>
+
+<div class="memitem">
+<div class="memproto">
+<table class="mlabels">
+  <tr>
+  <td class="mlabels-left">
+      <table class="memname">
+        <tr>
+          <td class="memname">cl_command_queue snicholls::gpu::opencl_context::native_queue </td>
+          <td>(</td>
+          <td class="paramname"><span class="paramname"><em></em></span></td><td>)</td>
+          <td> const</td>
+        </tr>
+      </table>
+  </td>
+  <td class="mlabels-right">
+<span class="mlabels"><span class="mlabel inline">inline</span><span class="mlabel nodiscard">nodiscard</span><span class="mlabel noexcept">noexcept</span></span>  </td>
+  </tr>
+</table>
+</div><div class="memdoc">
+
+<p>The in-order command queue every product of this context is enqueued on. </p>
+<dl class="section return"><dt>Returns</dt><dd>The queue. </dd></dl>
+
+<p class="definition">Definition at line <a class="el" href="opencl_8hpp_source.html#l00311">311</a> of file <a class="el" href="opencl_8hpp_source.html">opencl.hpp</a>.</p>
 
 </div>
 </div>

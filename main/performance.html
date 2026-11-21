@@ -26,7 +26,7 @@
  <tbody>
  <tr id="projectrow">
   <td id="projectalign">
-   <div id="projectname">snicholls-gpu<span id="projectnumber">&#160;0.8.0</span>
+   <div id="projectname">snicholls-gpu<span id="projectnumber">&#160;0.9.0</span>
    </div>
    <div id="projectbrief">GPU backends of snicholls-core&#39;s interfaces: linalg on OpenCL</div>
   </td>
@@ -202,7 +202,25 @@ A mixture of experts</h1>
 <tr class="markdownTableRowEven">
 <td class="markdownTableBodyNone">64 x 256 + shared, bfloat16  </td><td class="markdownTableBodyNone">31.3 ms  </td><td class="markdownTableBodyNone">29.1 ms  </td><td class="markdownTableBodyNone">41.0 ms  </td></tr>
 </table>
-<p>So the grouped kernel is the default (<span class="tt">grouped_path::kernel</span>): with it nothing in a layer waits for the host except the two auxiliary losses' values, which go to device memory instead when the step is captured (<span class="tt">cuda_moe_kernels::losses_on_device</span>), and the whole layer replays as one graph. The steps around the products (routing, the histogram, the permutation, gather and combine) take 2.4 ms for the first shape and 2.9 ms for the second. <span class="tt">BENCHMARKS.md</span> is not rewritten from these contended figures; that waits for a free GPU. </p>
+<p>So the grouped kernel is the default (<span class="tt">grouped_path::kernel</span>): with it nothing in a layer waits for the host except the two auxiliary losses' values, which go to device memory instead when the step is captured (<span class="tt">cuda_moe_kernels::losses_on_device</span>), and the whole layer replays as one graph. The steps around the products (routing, the histogram, the permutation, gather and combine) take 2.4 ms for the first shape and 2.9 ms for the second. <span class="tt">BENCHMARKS.md</span> is not rewritten from these contended figures; that waits for a free GPU.</p>
+<h1 class="doxsection"><a class="anchor" id="autotoc_md10"></a>
+Quantised weights on OpenCL</h1>
+<p><span class="tt"><a class="el" href="opencl__quant_8hpp.html" title="snicholls::gpu::opencl_quant_kernels: matrix products whose weights stay in core&#39;s quantised formats ...">opencl_quant.hpp</a></span> on an AMD Radeon Pro Vega II (32 GB HBM2, about 1 TB/s; macOS 26, Apple's OpenCL 1.2, Release, 2026-11-20) <b>while other work kept the host busy</b> (load average 40 to 75): first figures, upper bounds on the times. One token (decode) through a matrix kept on the device, the rate counting the bytes of weights read. The kernel alone, from OpenCL's event profiling with the program of <span class="tt"><a class="el" href="quant__source_8hpp_source.html">detail/quant_source.hpp</a></span> built on its own profiling queue:</p>
+<table class="markdownTable">
+<tr class="markdownTableHead">
+<th class="markdownTableHeadNone">format, activations  </th><th class="markdownTableHeadNone">4096 x 4096  </th><th class="markdownTableHeadNone">14336 x 4096  </th></tr>
+<tr class="markdownTableRowOdd">
+<td class="markdownTableBodyNone">Q4_0, float  </td><td class="markdownTableBodyNone">129 us, 73 GB/s  </td><td class="markdownTableBodyNone">416 us, 80 GB/s  </td></tr>
+<tr class="markdownTableRowEven">
+<td class="markdownTableBodyNone">Q8_0, float  </td><td class="markdownTableBodyNone">126 us, 142 GB/s  </td><td class="markdownTableBodyNone">405 us, 154 GB/s  </td></tr>
+<tr class="markdownTableRowOdd">
+<td class="markdownTableBodyNone">bfloat16, float  </td><td class="markdownTableBodyNone">305 us, 110 GB/s  </td><td class="markdownTableBodyNone">750 us, 157 GB/s  </td></tr>
+<tr class="markdownTableRowEven">
+<td class="markdownTableBodyNone">Q4_0, Q8_0  </td><td class="markdownTableBodyNone">116 us, 81 GB/s  </td><td class="markdownTableBodyNone">380 us, 87 GB/s  </td></tr>
+<tr class="markdownTableRowOdd">
+<td class="markdownTableBodyNone">Q8_0, Q8_0  </td><td class="markdownTableBodyNone">165 us, 108 GB/s  </td><td class="markdownTableBodyNone">545 us, 115 GB/s  </td></tr>
+</table>
+<p>Q4_0 and Q8_0 take the same time, so the matrix-vector kernel is bound by its instructions (decoding, the address arithmetic), not by memory: about 15% of the device's bandwidth. Through the call (<span class="tt">benchmarks/opencl_quant_benchmark.cpp</span>, medians of three, the copies of <span class="tt">x</span> and <span class="tt">y</span> and the buffers made for them included) each product costs about 550 us more: 678 us and 980 us for Q8_0 at the two shapes. Against that, core's own one-row product on the host (scalar, one thread) takes 21 ms for Q4_0 and 14 ms for Q8_0 at 4096 x 4096, and the dequantised float matrix through <span class="tt">opencl_backend</span>'s product, which copies its 64 MB for each call, 46 ms. Prefill, 512 tokens through 4096 x 4096 on the tiled kernel (the reference's bits): 10.9 ms for Q4_0 and 11.1 ms for NF4, 1.6 TFLOP/s. The CUDA kernels' figures wait for the NVIDIA machine. </p>
 </div></div><!-- contents -->
 </div><!-- PageDoc -->
 </div><!-- doc-content -->

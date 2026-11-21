@@ -1,5 +1,6 @@
 var searchData=
 [
-  ['z_5ffinish_5f_0',['z_finish_',['../classsnicholls_1_1gpu_1_1cuda__moe__kernels.html#a7e99147bc57d03fc5ef3ff541175e633',1,'snicholls::gpu::cuda_moe_kernels']]],
-  ['z_5frows_5f_1',['z_rows_',['../classsnicholls_1_1gpu_1_1cuda__moe__kernels.html#a459543e3a66fda8327ddc6e123ce72f9',1,'snicholls::gpu::cuda_moe_kernels']]]
+  ['weight_5fdecay_0',['weight_decay',['../structsnicholls_1_1gpu_1_1adamw__segment.html#ad5c15a3533e4516fb97a1d8159479a46',1,'snicholls::gpu::adamw_segment']]],
+  ['weights_20on_20opencl_1',['Quantised weights on OpenCL',['../performance.html#autotoc_md10',1,'']]],
+  ['whole_20gpt_202_20small_20training_20step_2',['A whole GPT-2 small training step',['../performance.html#autotoc_md7',1,'']]]
 ];

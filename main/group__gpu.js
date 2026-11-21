@@ -3,7 +3,10 @@ var group__gpu =
     [ "cuda.hpp", "cuda_8hpp.html", null ],
     [ "cuda_moe.hpp", "cuda__moe_8hpp.html", null ],
     [ "cuda_ops.hpp", "cuda__ops_8hpp.html", null ],
+    [ "cuda_quant.hpp", "cuda__quant_8hpp.html", null ],
     [ "opencl.hpp", "opencl_8hpp.html", null ],
+    [ "opencl_quant.hpp", "opencl__quant_8hpp.html", null ],
+    [ "quant_weights.hpp", "quant__weights_8hpp.html", null ],
     [ "version.hpp", "version_8hpp.html", null ],
     [ "snicholls::gpu::cuda_math", "group__gpu.html#ga22ea844faef25bad361c431e1315d253", [
       [ "snicholls::gpu::cuda_math::float32", "group__gpu.html#gga22ea844faef25bad361c431e1315d253ad33ec2b0bbea6d471a4706cea030e1e3", null ],

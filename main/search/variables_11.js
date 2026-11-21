@@ -1,4 +1,4 @@
 var searchData=
 [
-  ['weight_5fdecay_0',['weight_decay',['../structsnicholls_1_1gpu_1_1adamw__segment.html#ad5c15a3533e4516fb97a1d8159479a46',1,'snicholls::gpu::adamw_segment']]]
+  ['update_5fbias_5f_0',['update_bias_',['../classsnicholls_1_1gpu_1_1cuda__moe__kernels.html#ab3dd0ed86580da5c630a456ad84648f5',1,'snicholls::gpu::cuda_moe_kernels']]]
 ];

@@ -1,5 +1,7 @@
 var searchData=
 [
-  ['block_5fnorm_5frows_0',['block_norm_rows',['../cuda__ops_8hpp.html#a5f0cc5833e96861c603038049e330bd0',1,'snicholls::gpu']]],
-  ['block_5fnorm_5frows_5fbackward_5fadd_1',['block_norm_rows_backward_add',['../cuda__ops_8hpp.html#a18a16390326978081005a3611db1e6f5',1,'snicholls::gpu']]]
+  ['backward_5finput_0',['backward_input',['../classsnicholls_1_1gpu_1_1cuda__quant__kernels.html#ae3c5177dd4dfbea0cfdda469cd048ef2',1,'snicholls::gpu::cuda_quant_kernels::backward_input()'],['../classsnicholls_1_1gpu_1_1opencl__quant__kernels.html#a5351c972be6f0044dc6e2b31f4b5f080',1,'snicholls::gpu::opencl_quant_kernels::backward_input()']]],
+  ['block_5fnorm_5frows_1',['block_norm_rows',['../cuda__ops_8hpp.html#a5f0cc5833e96861c603038049e330bd0',1,'snicholls::gpu']]],
+  ['block_5fnorm_5frows_5fbackward_5fadd_2',['block_norm_rows_backward_add',['../cuda__ops_8hpp.html#a18a16390326978081005a3611db1e6f5',1,'snicholls::gpu']]],
+  ['bytes_3',['bytes',['../classsnicholls_1_1gpu_1_1opencl__quant__matrix.html#adb3d52832c6218ba2dd57f03b3ab1aa0',1,'snicholls::gpu::opencl_quant_matrix']]]
 ];

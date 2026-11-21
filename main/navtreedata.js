@@ -34,7 +34,8 @@ var NAVTREE =
       [ "Attention alone", "performance.html#autotoc_md6", null ],
       [ "A whole GPT-2 small training step", "performance.html#autotoc_md7", null ],
       [ "Accuracy", "performance.html#autotoc_md8", null ],
-      [ "A mixture of experts", "performance.html#autotoc_md9", null ]
+      [ "A mixture of experts", "performance.html#autotoc_md9", null ],
+      [ "Quantised weights on OpenCL", "performance.html#autotoc_md10", null ]
     ] ],
     [ "Topics", "topics.html", "topics" ],
     [ "Classes", "annotated.html", [
