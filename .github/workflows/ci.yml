@@ -34,8 +34,9 @@ jobs:
             os: macos-latest
             cxx: c++
     env:
-      # macOS runners have no OpenCL device: skip the tests that need one (the OpenCL tests, demo and benchmark)
-      DEVICE_TESTS: ${{ startsWith(matrix.os, 'macos') && '-E (GpuOpenCl|OpenCl/|demo.opencl|benchmark.opencl)' || '' }}
+      # macOS runners have no OpenCL device: skip the tests that need one (the OpenCL tests, demo and benchmark, and
+      # opencl.compile_programs, the fixture that builds the programs first; -FS keeps CTest from adding it back)
+      DEVICE_TESTS: ${{ startsWith(matrix.os, 'macos') && '-E (GpuOpenCl|OpenCl/|opencl\\.|demo.opencl|benchmark.opencl) -FS opencl_programs' || '' }}
     steps:
       - uses: actions/checkout@v5
         with:
