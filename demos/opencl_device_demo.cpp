@@ -62,7 +62,7 @@ int main()
     };
     constexpr ml::transformer_config c{.d_model = 32, .n_heads = 4, .n_kv_heads = 2, .head_dim = 8, .d_ff = 48, .norm = ml::norm_kind::rms,
                                        .norm_eps = 1e-5, .mlp = ml::mlp_kind::swiglu, .rope = ml::rope_kind::half, .rope_base = 10000};
-    constexpr std::size_t n = 12, d = c.d_model, qn = c.q_size(), kn = c.kv_size(), f = c.d_ff;
+    constexpr std::size_t n = 12, d = c.d_model, qn = c.q_size(), kn = c.kv_size(), f = c.d_ff, h = c.n_heads;
     const auto n1 = values(d, 1, 1), n2 = values(d, 2, 1), wq = values(qn * d, 3), wk = values(kn * d, 4), wv = values(kn * d, 5), wo = values(d * qn, 6),
                wg = values(f * d, 7), wu = values(f * d, 8), wd = values(d * f, 9), x = values(n * d, 10);
     using W = ml::dense_weights<float>;
@@ -77,7 +77,7 @@ int main()
         ml::block_activations<float> a{};
         a.x0 = alloc(n * d), a.h1 = alloc(n * d), a.x1 = alloc(n * d), a.h2 = alloc(n * d);
         a.attention.q = alloc(n * qn), a.attention.k = alloc(n * kn), a.attention.v = alloc(n * kn), a.attention.y = alloc(n * qn);
-        a.attention.lse = alloc(n * c.n_heads), a.mlp_up = alloc(n * f), a.mlp_gate = alloc(n * f), a.mlp_hidden = alloc(n * f);
+        a.attention.lse = alloc(n * h), a.mlp_up = alloc(n * f), a.mlp_gate = alloc(n * f), a.mlp_hidden = alloc(n * f);
         return a;
     };
     static const ml::rope_table<float, 16, c.head_dim> rope(10000.0f);
