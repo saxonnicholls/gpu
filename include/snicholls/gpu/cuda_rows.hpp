@@ -123,10 +123,14 @@ public:
             (void)cudaLibraryUnload(library_);
     }
 
+    /// \brief The kernels launched. \see launch
+    enum class which {
+        attend,   ///< attention_attend_cached_rows
+        store,    ///< kv_store_rows
+        heads,    ///< heads_from_rows
+    };
     /// \brief Launches `groups` blocks of `threads`. \param w The kernel.
     /// \param groups The blocks. \param threads Their threads. \param args The arguments. \throws cuda_exception.
-    /// \brief The kernels launched. \see launch
-    enum class which { attend, store, heads };
     void launch(which w, std::size_t groups, unsigned threads, void** args) const
     {
         if (groups == 0)

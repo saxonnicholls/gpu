@@ -121,8 +121,11 @@ public:
                                                               std::min<std::size_t>(chunk, std::size_t(max_alloc)), std::size_t(max_alloc)));
     }
 
+    /// \brief Not copyable.
     opencl_arena(const opencl_arena&) = delete;
+    /// \brief Not assignable. \return Nothing; deleted.
     opencl_arena& operator=(const opencl_arena&) = delete;
+    /// \brief Releases the buffers and the reservation.
     ~opencl_arena()
     {
         for (const auto& c : chunks_)
@@ -323,8 +326,11 @@ public:
         return ok(std::move(k));
     }
 
+    /// \brief Not copyable.
     opencl_device_kernels(const opencl_device_kernels&) = delete;
+    /// \brief Not assignable. \return Nothing; deleted.
     opencl_device_kernels& operator=(const opencl_device_kernels&) = delete;
+    /// \brief Releases the kernels, the program and the scratch.
     ~opencl_device_kernels()
     {
         for (const auto& sc : scratch_)
@@ -417,7 +423,7 @@ struct opencl_device_backend {
     std::size_t matvec_max = 4;                       ///< Products of at most this many rows by a weight matrix: a work-group an output
                                                       ///< (within the bound above, not the reference's bits); 0 for the tiled product.
 
-    /// \brief Not on the device (a forward pass does not use it). \throws std::logic_error.
+    /// \brief Not on the device (a forward pass does not use it). \return Never. \throws std::logic_error.
     template <linalg::scalar T>
     [[nodiscard]] T dot(linalg::vector_view<const T>, linalg::vector_view<const T>) const
     {
@@ -462,7 +468,7 @@ struct opencl_device_backend {
     {
         throw std::logic_error("snicholls::gpu: opencl_device_backend has no syrk");
     }
-    /// \brief Not on the device. \throws std::logic_error.
+    /// \brief Not on the device. \return Never. \throws std::logic_error.
     template <linalg::scalar T>
     [[nodiscard]] result<void, linalg::error> triangular_solve(linalg::matrix_view<const T>, linalg::matrix_view<T>, linalg::triangle,
                                                                linalg::diagonal) const
