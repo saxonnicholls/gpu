@@ -3,7 +3,7 @@
 All notable changes to snicholls-gpu. The format follows Keep a Changelog; versions follow Semantic Versioning.
 A version is released when its tag is on a commit where every blocking CI leg is green.
 
-## 0.9.0 - 2026-11-21
+## 0.10.0 - 2026-11-22
 
 ### Added
 
@@ -20,9 +20,21 @@ A version is released when its tag is on a commit where every blocking CI leg is
   AMD driver faulted on early release).
 - `cuda_rows.hpp`: the cache's operations and `heads_from_rows` on CUDA from the same source (NVRTC), for
   `cuda_training_backend` (its new last member `rows`).
-- **CUDA: not yet run on an NVIDIA GPU; coming when the machine returns.** Compiled without the toolkit: the host code
-  against the CUDA 12.9 runtime and NVRTC headers with warnings as errors, and the shared kernels to PTX (sm_80) with
-  clang's NVPTX target. Everything else verified on the AMD Radeon Pro Vega II under macOS.
+
+### Changed
+
+- Pins core v0.18.0 (was v0.17.0); `snicholls_core_require` stays at 0.17.0, as nothing here uses 0.18.0.
+
+### Not yet verified
+
+- **CUDA: not yet run on an NVIDIA GPU; coming in 0.10.1.** `cuda_rows.hpp` and the shared kernels compile (the host
+  code against the CUDA 12.9 headers with warnings as errors, the kernels to PTX with clang's NVPTX target); the
+  CUDA tests and the CUDA-against-OpenCL comparison come first when the machine returns. Everything else is verified
+  on OpenCL: an AMD Radeon Pro Vega II on macOS and PoCL in every `make ubuntu` configuration.
+
+## 0.9.0 - 2026-11-21
+
+### Added
 
 - **Products over quantised weights** (`opencl_quant.hpp`, `cuda_quant.hpp`, one kernel source in
   `detail/quant_source.hpp`): the weights stay in core's formats in device memory, ggml's Q8_0, Q4_0 and MXFP4 blocks,

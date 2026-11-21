@@ -12,7 +12,7 @@
 cmake_minimum_required(VERSION 3.20)
 
 project(snicholls_gpu
-    VERSION 0.9.0
+    VERSION 0.10.0
     DESCRIPTION "snicholls-gpu - GPU backends (OpenCL) of snicholls-core's interfaces"
     LANGUAGES CXX)
 
