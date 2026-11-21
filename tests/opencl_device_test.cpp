@@ -135,6 +135,12 @@ TEST(GpuOpenClDevice, ProductsOverTheArenaAreTheReferencesBits)
     ml::linear_sequence(d.backend(), ml::dense_weights<float>{std::span<const float>(dw), m, k}, std::span<const float>(dx), dy,
                         std::span<const float>(db));
     EXPECT_EQ(d.down(std::span<const float>(dy)), want);
+    // Launches of at most rows_max rows: the same bits
+    auto split = d.backend();
+    split.rows_max = 8;
+    const auto dy2 = d.arena->allocate<float>(n * m);
+    ml::linear_sequence(split, ml::dense_weights<float>{std::span<const float>(dw), m, k}, std::span<const float>(dx), dy2, std::span<const float>(db));
+    EXPECT_EQ(d.down(std::span<const float>(dy2)), want);
     // A few rows (decode): the matrix-vector kernel, within the classical bound of a reordered sum
     for (const std::size_t rows : {1u, 3u}) {
         std::vector<float> few(rows * m);
@@ -165,7 +171,7 @@ TEST(GpuOpenClDevice, QuantisedProductsOverTheArenaAreTheQuantisedKernelsResults
         ml::quantize_row(std::span<const float>(w).subspan(r * k, k), {}, std::span<ml::block_q8_0>(blocks).subspan(r * k / 32, k / 32));
     const auto resident = d.quant->upload(ml::quantized_weights<ml::block_q8_0>{blocks, m, k});
     const gpu::opencl_quant_backend host_path{{d.context.get()}, d.quant.get()};
-    for (const std::size_t n : {1u, 3u, 33u}) {   // the matrix-vector and the tiled kernels
+    for (const std::size_t n : {1u, 3u, 33u, 1100u}) {   // the matrix-vector and the tiled kernels, and launches of 512 rows
         const auto x = random_values(n * k + 5, 61 + n), bias = random_values(m, 62);
         std::vector<float> want(n * m);
         gpu::linear_sequence(host_path, resident, std::span<const float>(x).subspan(5, n * k), want, bias);

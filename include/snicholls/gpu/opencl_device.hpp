@@ -368,16 +368,21 @@ public:
     /// \param x Where `X` is. \param xb Its bytes. \param y Where `Y` goes. \param yb Its bytes. \param bias Where the
     /// bias is (`mem` null for none). \param bb Its bytes. \param n The rows.
     void quant_product(const opencl_quant_kernels& quant, const opencl_quant_matrix& w, opencl_arena::location x, std::size_t xb,
-                       opencl_arena::location y, std::size_t yb, opencl_arena::location bias, std::size_t bb, std::size_t n) const
+                       opencl_arena::location y, std::size_t yb, opencl_arena::location bias, std::size_t bb, std::size_t n,
+                       std::size_t rows_max = 512) const
     {
         const std::lock_guard lock(scratch_mutex_);
         const cl_command_queue q = context_->native_queue();
-        grow(scratch_[0], xb), grow(scratch_[1], yb), grow(scratch_[2], std::max<std::size_t>(bb, 4));
-        detail::check(clEnqueueCopyBuffer(q, x.mem, scratch_[0].mem, x.offset, 0, xb, 0, nullptr, nullptr), "clEnqueueCopyBuffer");
+        const std::size_t step = rows_max == 0 || rows_max > n ? n : rows_max, xr = xb / n, yr = yb / n;   // bytes a row
+        grow(scratch_[0], step * xr), grow(scratch_[1], step * yr), grow(scratch_[2], std::max<std::size_t>(bb, 4));
         if (bias.mem)
             detail::check(clEnqueueCopyBuffer(q, bias.mem, scratch_[2].mem, bias.offset, 0, bb, 0, nullptr, nullptr), "clEnqueueCopyBuffer");
-        quant.forward_buffers(w, scratch_[0].mem, scratch_[1].mem, scratch_[2].mem, bias.mem != nullptr, n);
-        detail::check(clEnqueueCopyBuffer(q, scratch_[1].mem, y.mem, 0, y.offset, yb, 0, nullptr, nullptr), "clEnqueueCopyBuffer");
+        for (std::size_t r = 0; r < n; r += step) {   // a launch of at most step rows (the same results; no launch long enough for a watchdog)
+            const std::size_t m = std::min(step, n - r);
+            detail::check(clEnqueueCopyBuffer(q, x.mem, scratch_[0].mem, x.offset + r * xr, 0, m * xr, 0, nullptr, nullptr), "clEnqueueCopyBuffer");
+            quant.forward_buffers(w, scratch_[0].mem, scratch_[1].mem, scratch_[2].mem, bias.mem != nullptr, m);
+            detail::check(clEnqueueCopyBuffer(q, scratch_[1].mem, y.mem, 0, y.offset + r * yr, m * yr, 0, nullptr, nullptr), "clEnqueueCopyBuffer");
+        }
     }
 
     /// \brief The context. \return It.
@@ -420,7 +425,8 @@ struct opencl_device_backend {
     const opencl_device_kernels* kernels = nullptr;   ///< The row kernels.
     const opencl_quant_kernels* quant = nullptr;      ///< The quantised-weight kernels (`opencl_quant.hpp`), for products over
                                                       ///< `opencl_quant_matrix` weights; or none.
-    std::size_t matvec_max = 4;                       ///< Products of at most this many rows by a weight matrix: a work-group an output
+    std::size_t matvec_max = 4;
+    std::size_t rows_max = 512;                       ///< The most rows of a product one launch computes; 0 for no limit.                       ///< Products of at most this many rows by a weight matrix: a work-group an output
                                                       ///< (within the bound above, not the reference's bits); 0 for the tiled product.
 
     /// \brief Not on the device (a forward pass does not use it). \return Never. \throws std::logic_error.
@@ -459,8 +465,15 @@ struct opencl_device_backend {
                             cl_ulong(c.extent(1)), cl_ulong(a.stride(0)), cl_ulong(c.stride(0)));
             return;
         }
-        context->gemm_buffers(alpha, c.extent(0), c.extent(1), a.extent(1), la.mem, la.offset / sizeof(T), a.stride(0), a.stride(1), lb.mem,
-                              lb.offset / sizeof(T), b.stride(0), b.stride(1), beta, lc.mem, lc.offset / sizeof(T), c.stride(0), c.stride(1));
+        // At most `rows_max` rows of C a launch (rows are independent: the same results), so that no launch runs long
+        // enough for a driver's watchdog (macOS's kills a client whose kernel holds the GPU for seconds)
+        const std::size_t step = rows_max == 0 ? c.extent(0) : rows_max;
+        for (std::size_t r = 0; r < c.extent(0); r += step) {
+            const std::size_t m = std::min(step, c.extent(0) - r);
+            context->gemm_buffers(alpha, m, c.extent(1), a.extent(1), la.mem, la.offset / sizeof(T) + r * a.stride(0), a.stride(0), a.stride(1),
+                                  lb.mem, lb.offset / sizeof(T), b.stride(0), b.stride(1), beta, lc.mem, lc.offset / sizeof(T) + r * c.stride(0),
+                                  c.stride(0), c.stride(1));
+        }
     }
     /// \brief Not on the device. \throws std::logic_error.
     template <linalg::scalar T>
@@ -713,7 +726,7 @@ inline void linear_sequence(const opencl_device_backend& b, const opencl_quant_m
     if (n == 0 || w.rows == 0)
         return;
     b.kernels->quant_product(*b.quant, w, b.arena->locate(xs.data()), xs.size_bytes(), b.arena->locate(ys.data()), ys.size_bytes(),
-                             bias.empty() ? opencl_arena::location{} : b.arena->locate(bias.data()), bias.size_bytes(), n);
+                             bias.empty() ? opencl_arena::location{} : b.arena->locate(bias.data()), bias.size_bytes(), n, b.rows_max);
 }
 
 /// \brief Each row's cross-entropy over its first `classes` columns, the row replaced by `scale · (softmax - onehot)`
