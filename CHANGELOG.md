@@ -3,7 +3,7 @@
 All notable changes to snicholls-gpu. The format follows Keep a Changelog; versions follow Semantic Versioning.
 A version is released when its tag is on a commit where every blocking CI leg is green.
 
-## Unreleased
+## 0.9.0 - 2026-11-21
 
 ### Added
 
@@ -17,12 +17,25 @@ A version is released when its tag is on a commit where every blocking CI leg is
   sum), tiled kernels for prefill and the input's gradient (core's reference bits over the dequantised weights), the
   Q8_0 path to the bits of core's `ml::linear`; on CUDA under `cuda_math::bf16`, the tiled products on the tensor cores
   (`mma.sync m16n8k16`). Deterministic, no atomics. `opencl_quant_matrix` keeps frozen weights on an OpenCL device.
-- The formats of core's next release where the pinned core has them (`block_weights<Block>`, `quant_weights.hpp`):
+- The formats of core 0.17.0 (`block_weights<Block>`, `quant_weights.hpp`):
   Q4_1, Q5_0, Q5_1, NVFP4, Q1_0, Q2_0, Q2_K to Q6_K, TQ1_0, TQ2_0 and the nine IQ formats (their codebooks embedded in
   the device program from core's tables), BitNet's I2_S (`i2_s_weights`; its integer path BitLinear, to the bit of core's
   `ml::bitlinear`), with the integer path for each that core pairs with 8-bit
   activations: Q8_0 for Q5_0, Q8_1 for Q4_1 and Q5_1, Q8_K for the K-quants (core's eight-lane dot products) and the ternary, to the bit.
 - `cuda_training_backend::quant`, after `moe`; `opencl_context::native_device`, `native_context`, `native_queue`.
+
+### Changed
+
+- Pins core v0.17.0 (was v0.16.0) and raises `snicholls_core_require` to 0.17.0: the quantised kernels implement
+  core 0.17.0's ggml formats (`ml/quant_k.hpp`, `ml/quant_iq.hpp`, the ternary and BitNet formats).
+
+### Not yet verified
+
+- **CUDA: not yet run on an NVIDIA GPU; coming in 0.9.1.** The NVIDIA machine was unavailable. The CUDA quantised
+  kernels compile (clang's NVPTX target, 185 kernels; the host code against the CUDA 12.9 headers with warnings as
+  errors), and a host emulation of one tensor-core tile matches the PTX fragment layouts; the CUDA tests, the
+  benchmark and the CUDA-against-OpenCL comparison come first when it returns. Everything else is verified on OpenCL:
+  an AMD Radeon Pro Vega II on macOS and PoCL in all nine `make ubuntu` configurations.
 
 ## 0.8.0 - 2026-11-19
 
