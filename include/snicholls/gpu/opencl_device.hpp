@@ -394,7 +394,7 @@ public:
     /// scratch buffers (whole buffers, as the quantised kernels take them), the product, the result copied back; all
     /// enqueued in order, nothing waited for. Serialised (one scratch). \param quant The kernels. \param w The weights.
     /// \param x Where `X` is. \param xb Its bytes. \param y Where `Y` goes. \param yb Its bytes. \param bias Where the
-    /// bias is (`mem` null for none). \param bb Its bytes. \param n The rows.
+    /// bias is (`mem` null for none). \param bb Its bytes. \param n The rows. \param rows_max The most rows a launch.
     void quant_product(const opencl_quant_kernels& quant, const opencl_quant_matrix& w, opencl_arena::location x, std::size_t xb,
                        opencl_arena::location y, std::size_t yb, opencl_arena::location bias, std::size_t bb, std::size_t n,
                        std::size_t rows_max = 512) const
@@ -489,9 +489,9 @@ struct opencl_device_backend {
     const opencl_device_kernels* kernels = nullptr;   ///< The row kernels.
     const opencl_quant_kernels* quant = nullptr;      ///< The quantised-weight kernels (`opencl_quant.hpp`), for products over
                                                       ///< `opencl_quant_matrix` weights; or none.
-    std::size_t matvec_max = 4;
-    std::size_t rows_max = 512;                       ///< The most rows of a product one launch computes; 0 for no limit.                       ///< Products of at most this many rows by a weight matrix: a work-group an output
-                                                      ///< (within the bound above, not the reference's bits); 0 for the tiled product.
+    std::size_t matvec_max = 4;                       ///< Products of at most this many rows by a weight matrix: a work-group an
+                                                      ///< output (within the bound above, not the reference's bits); 0 for none.
+    std::size_t rows_max = 512;                       ///< The most rows of a product one launch computes; 0 for no limit.
 
     /// \brief Not on the device (a forward pass does not use it). \return Never. \throws std::logic_error.
     template <linalg::scalar T>

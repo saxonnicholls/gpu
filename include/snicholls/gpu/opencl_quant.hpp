@@ -278,18 +278,26 @@ public:
         const std::size_t f = std::size_t(s.fmt);
         const cl_int hb = has_bias ? 1 : 0;
         if (n <= matvec_max) {
+            // Blocks of mv_tokens rows; after the first, through two buffers of one block (copies at any offset: a
+            // sub-buffer's origin must be aligned, to 4 kB on some devices), kept until the queue has run them
+            const cl_command_queue q = context_->native_queue();
+            const std::size_t block = std::min(detail::quant::mv_tokens, n);
+            cl_mem bx = nullptr, by = nullptr;
             for (std::size_t t0 = 0; t0 < n; t0 += detail::quant::mv_tokens) {
                 const cl_ulong count = cl_ulong(std::min(detail::quant::mv_tokens, n - t0));
                 cl_mem px = x, py = y;
-                cl_mem subs[2] = {nullptr, nullptr};
-                if (t0 > 0) {   // the later rows as sub-buffers (row blocks of mv_tokens rows start where the device allows)
+                if (t0 > 0) {
                     cl_int code = CL_SUCCESS;
-                    const cl_buffer_region rx{t0 * w.cols * sizeof(float), std::size_t(count) * w.cols * sizeof(float)};
-                    const cl_buffer_region ry{t0 * w.rows * sizeof(float), std::size_t(count) * w.rows * sizeof(float)};
-                    subs[0] = px = clCreateSubBuffer(x, CL_MEM_READ_ONLY, CL_BUFFER_CREATE_TYPE_REGION, &rx, &code);
-                    detail::check(code, "clCreateSubBuffer");
-                    subs[1] = py = clCreateSubBuffer(y, CL_MEM_READ_WRITE, CL_BUFFER_CREATE_TYPE_REGION, &ry, &code);
-                    detail::check(code, "clCreateSubBuffer");
+                    if (!bx) {
+                        bx = clCreateBuffer(context_->native_context(), CL_MEM_READ_WRITE, block * w.cols * sizeof(float), nullptr, &code);
+                        detail::check(code, "clCreateBuffer");
+                        by = clCreateBuffer(context_->native_context(), CL_MEM_READ_WRITE, block * w.rows * sizeof(float), nullptr, &code);
+                        detail::check(code, "clCreateBuffer");
+                    }
+                    detail::check(clEnqueueCopyBuffer(q, x, bx, t0 * w.cols * sizeof(float), 0, std::size_t(count) * w.cols * sizeof(float), 0, nullptr,
+                                                      nullptr),
+                                  "clEnqueueCopyBuffer");
+                    px = bx, py = by;
                 }
                 const cl_ulong rows = w.rows;
                 {
@@ -298,12 +306,16 @@ public:
                     cl_uint i = weight_args(k, s, w.cols);
                     set(k, i, px), set(k, i, count), set(k, i, rows), set(k, i, bias), set(k, i, hb), set(k, i, py);
                     const std::size_t global = (w.rows + detail::quant::mv_rows - 1) / detail::quant::mv_rows * 64, local = 64;
-                    detail::check(clEnqueueNDRangeKernel(context_->native_queue(), k, 1, nullptr, &global, &local, 0, nullptr, nullptr),
-                                  "clEnqueueNDRangeKernel");
+                    detail::check(clEnqueueNDRangeKernel(q, k, 1, nullptr, &global, &local, 0, nullptr, nullptr), "clEnqueueNDRangeKernel");
                 }
-                for (cl_mem m : subs)
-                    if (m)
-                        clReleaseMemObject(m);
+                if (t0 > 0)
+                    detail::check(clEnqueueCopyBuffer(q, by, y, 0, t0 * w.rows * sizeof(float), std::size_t(count) * w.rows * sizeof(float), 0, nullptr,
+                                                      nullptr),
+                                  "clEnqueueCopyBuffer");
+            }
+            if (bx) {
+                clFinish(q);
+                clReleaseMemObject(bx), clReleaseMemObject(by);
             }
             return;
         }
