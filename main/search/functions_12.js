@@ -1,8 +1,6 @@
 var searchData=
 [
-  ['version_0',['version',['../version_8hpp.html#ae06fc816d26d7c4047808fc988d453af',1,'snicholls::gpu']]],
-  ['version_5fmajor_1',['version_major',['../version_8hpp.html#a3bdff57caa548c993a00a30a6023b911',1,'snicholls::gpu']]],
-  ['version_5fminor_2',['version_minor',['../version_8hpp.html#aa877250016c115011cd3fc4fa1993559',1,'snicholls::gpu']]],
-  ['version_5fpatch_3',['version_patch',['../version_8hpp.html#a1d542f50e8b6ec6294c1417b64fa9296',1,'snicholls::gpu']]],
-  ['version_5fstring_4',['version_string',['../version_8hpp.html#ab16a43879502d803e574856a910423b0',1,'snicholls::gpu']]]
+  ['to_5fbfloat16_5frows_0',['to_bfloat16_rows',['../cuda__moe_8hpp.html#a12ffd45adc1fc312cd8f25daab759543',1,'snicholls::gpu']]],
+  ['to_5ffloat_5frows_1',['to_float_rows',['../cuda__moe_8hpp.html#a57eafc3347ce864539a0725ad90a218d',1,'snicholls::gpu']]],
+  ['triangular_5fsolve_2',['triangular_solve',['../structsnicholls_1_1gpu_1_1cuda__backend.html#a2f85abf2b61b37665e260dfe91ab109a',1,'snicholls::gpu::cuda_backend::triangular_solve()'],['../structsnicholls_1_1gpu_1_1opencl__backend.html#a6c1ea6f0b8dc92d9ef421915dd3ce468',1,'snicholls::gpu::opencl_backend::triangular_solve()'],['../structsnicholls_1_1gpu_1_1opencl__device__backend.html#a810c40c5925e37f9630699e8debd7691',1,'snicholls::gpu::opencl_device_backend::triangular_solve()']]]
 ];

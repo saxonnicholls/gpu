@@ -6,6 +6,7 @@ var classsnicholls_1_1gpu_1_1opencl__quant__kernels =
     [ "context", "classsnicholls_1_1gpu_1_1opencl__quant__kernels.html#aa9d51cfa8b2fb9b1d57d08306b1eb7a8", null ],
     [ "exact_q8", "classsnicholls_1_1gpu_1_1opencl__quant__kernels.html#ae7365adc35d7f84547784fadfe630f2e", null ],
     [ "forward", "classsnicholls_1_1gpu_1_1opencl__quant__kernels.html#a216a22b09918df9a635bf00ff9ae087d", null ],
+    [ "forward_buffers", "classsnicholls_1_1gpu_1_1opencl__quant__kernels.html#adb24332e6e353cdaf9e09707479e5359", null ],
     [ "forward_q8", "classsnicholls_1_1gpu_1_1opencl__quant__kernels.html#ace178a4d5c503063b9a897d36ab56611", null ],
     [ "operator=", "classsnicholls_1_1gpu_1_1opencl__quant__kernels.html#ad6c76e1baa7143779a717e32b9f2de52", null ],
     [ "upload", "classsnicholls_1_1gpu_1_1opencl__quant__kernels.html#a3982490b3c1cf7c2df51f65e052e7153", null ],

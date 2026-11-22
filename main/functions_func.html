@@ -26,7 +26,7 @@
  <tbody>
  <tr id="projectrow">
   <td id="projectalign">
-   <div id="projectname">snicholls-gpu<span id="projectnumber">&#160;0.9.0</span>
+   <div id="projectname">snicholls-gpu<span id="projectnumber">&#160;0.10.0</span>
    </div>
    <div id="projectbrief">GPU backends of snicholls-core&#39;s interfaces: linalg on OpenCL</div>
   </td>
@@ -92,7 +92,8 @@ $(function(){initNavTree('functions_func.html','',''); });
 <div class="textblock">Here is a list of all documented functions with links to the class documentation for each member:</div>
 
 <h3 class="doxsection"><a id="index_a" name="index_a"></a>- a -</h3><ul>
-<li>axpy()&#160;:&#160;<a class="el" href="structsnicholls_1_1gpu_1_1cuda__backend.html#a0228456a479dc026f7c69fb8a11305db">snicholls::gpu::cuda_backend</a>, <a class="el" href="structsnicholls_1_1gpu_1_1opencl__backend.html#a5965e56acd84a19b2bc0b353588e8578">snicholls::gpu::opencl_backend</a></li>
+<li>allocate()&#160;:&#160;<a class="el" href="classsnicholls_1_1gpu_1_1opencl__arena.html#a64b8bdbe6581b0bc7eba0fba970ffbba">snicholls::gpu::opencl_arena</a></li>
+<li>axpy()&#160;:&#160;<a class="el" href="structsnicholls_1_1gpu_1_1cuda__backend.html#a0228456a479dc026f7c69fb8a11305db">snicholls::gpu::cuda_backend</a>, <a class="el" href="structsnicholls_1_1gpu_1_1opencl__backend.html#a5965e56acd84a19b2bc0b353588e8578">snicholls::gpu::opencl_backend</a>, <a class="el" href="structsnicholls_1_1gpu_1_1opencl__device__backend.html#ac245c666091be6d14fe1b5d8e76423e0">snicholls::gpu::opencl_device_backend</a></li>
 </ul>
 
 
@@ -103,24 +104,28 @@ $(function(){initNavTree('functions_func.html','',''); });
 
 
 <h3 class="doxsection"><a id="index_c" name="index_c"></a>- c -</h3><ul>
+<li>capacity()&#160;:&#160;<a class="el" href="classsnicholls_1_1gpu_1_1opencl__arena.html#aa9a0cb7b78389f040781b25342b650b6">snicholls::gpu::opencl_arena</a></li>
 <li>capture()&#160;:&#160;<a class="el" href="classsnicholls_1_1gpu_1_1cuda__graph.html#ac0f03d5e2a95968491b73a3226a67ebb">snicholls::gpu::cuda_graph</a></li>
 <li>code()&#160;:&#160;<a class="el" href="classsnicholls_1_1gpu_1_1cuda__exception.html#a878a3717a3fd0a4b8c31f89c5618adf5">snicholls::gpu::cuda_exception</a>, <a class="el" href="classsnicholls_1_1gpu_1_1opencl__exception.html#a509e320a5e943f56da690ef45b166d53">snicholls::gpu::opencl_exception</a></li>
-<li>context()&#160;:&#160;<a class="el" href="classsnicholls_1_1gpu_1_1cuda__kernels.html#ac35e16f87c12e3d17270af9a1fe6b285">snicholls::gpu::cuda_kernels</a>, <a class="el" href="classsnicholls_1_1gpu_1_1cuda__moe__kernels.html#ab05a3c2a6df908cf6e72e0188588c254">snicholls::gpu::cuda_moe_kernels</a>, <a class="el" href="classsnicholls_1_1gpu_1_1cuda__quant__kernels.html#a58a507c2f7d04590ac106defe08dd1d9">snicholls::gpu::cuda_quant_kernels</a>, <a class="el" href="classsnicholls_1_1gpu_1_1opencl__quant__kernels.html#aa9d51cfa8b2fb9b1d57d08306b1eb7a8">snicholls::gpu::opencl_quant_kernels</a></li>
-<li>create()&#160;:&#160;<a class="el" href="classsnicholls_1_1gpu_1_1cuda__context.html#a842c0400f82953e25953c58a285c7674">snicholls::gpu::cuda_context</a>, <a class="el" href="classsnicholls_1_1gpu_1_1cuda__kernels.html#aa10b173aeb573f594db45dc2f6a4dc15">snicholls::gpu::cuda_kernels</a>, <a class="el" href="classsnicholls_1_1gpu_1_1cuda__moe__kernels.html#aac59ef01564b0291eee6af80be18ede0">snicholls::gpu::cuda_moe_kernels</a>, <a class="el" href="classsnicholls_1_1gpu_1_1cuda__quant__kernels.html#aeffbcf1c701cb67aefb4119bf6ff0696">snicholls::gpu::cuda_quant_kernels</a>, <a class="el" href="classsnicholls_1_1gpu_1_1opencl__context.html#a61d03ca7e9943617276f95da5909eb98">snicholls::gpu::opencl_context</a>, <a class="el" href="classsnicholls_1_1gpu_1_1opencl__quant__kernels.html#a16278c0c8f6d3d03a3c544250012cbe7">snicholls::gpu::opencl_quant_kernels</a></li>
+<li>context()&#160;:&#160;<a class="el" href="classsnicholls_1_1gpu_1_1cuda__kernels.html#ac35e16f87c12e3d17270af9a1fe6b285">snicholls::gpu::cuda_kernels</a>, <a class="el" href="classsnicholls_1_1gpu_1_1cuda__moe__kernels.html#ab05a3c2a6df908cf6e72e0188588c254">snicholls::gpu::cuda_moe_kernels</a>, <a class="el" href="classsnicholls_1_1gpu_1_1cuda__quant__kernels.html#a58a507c2f7d04590ac106defe08dd1d9">snicholls::gpu::cuda_quant_kernels</a>, <a class="el" href="classsnicholls_1_1gpu_1_1opencl__arena.html#ad5a8c3a50e3a0fa001b4969cfbd61096">snicholls::gpu::opencl_arena</a>, <a class="el" href="classsnicholls_1_1gpu_1_1opencl__device__kernels.html#aae07bee445f50b6cf8d2ae41d0a7c4f5">snicholls::gpu::opencl_device_kernels</a>, <a class="el" href="classsnicholls_1_1gpu_1_1opencl__quant__kernels.html#aa9d51cfa8b2fb9b1d57d08306b1eb7a8">snicholls::gpu::opencl_quant_kernels</a></li>
+<li>create()&#160;:&#160;<a class="el" href="classsnicholls_1_1gpu_1_1cuda__context.html#a842c0400f82953e25953c58a285c7674">snicholls::gpu::cuda_context</a>, <a class="el" href="classsnicholls_1_1gpu_1_1cuda__kernels.html#aa10b173aeb573f594db45dc2f6a4dc15">snicholls::gpu::cuda_kernels</a>, <a class="el" href="classsnicholls_1_1gpu_1_1cuda__moe__kernels.html#aac59ef01564b0291eee6af80be18ede0">snicholls::gpu::cuda_moe_kernels</a>, <a class="el" href="classsnicholls_1_1gpu_1_1cuda__quant__kernels.html#aeffbcf1c701cb67aefb4119bf6ff0696">snicholls::gpu::cuda_quant_kernels</a>, <a class="el" href="classsnicholls_1_1gpu_1_1cuda__rows__kernels.html#ab23f22ef43d734009d14901534aa03f3">snicholls::gpu::cuda_rows_kernels</a>, <a class="el" href="classsnicholls_1_1gpu_1_1opencl__arena.html#af04a4c3462b5fb2cf9663186d4494460">snicholls::gpu::opencl_arena</a>, <a class="el" href="classsnicholls_1_1gpu_1_1opencl__context.html#a61d03ca7e9943617276f95da5909eb98">snicholls::gpu::opencl_context</a>, <a class="el" href="classsnicholls_1_1gpu_1_1opencl__device__kernels.html#a7ca7911f8b0e28e45d0a88576b4440a1">snicholls::gpu::opencl_device_kernels</a>, <a class="el" href="classsnicholls_1_1gpu_1_1opencl__quant__kernels.html#a16278c0c8f6d3d03a3c544250012cbe7">snicholls::gpu::opencl_quant_kernels</a></li>
 <li>cuda_context()&#160;:&#160;<a class="el" href="classsnicholls_1_1gpu_1_1cuda__context.html#ac8120b30627a3b076d0ddd74aa03fa5a">snicholls::gpu::cuda_context</a></li>
 <li>cuda_exception()&#160;:&#160;<a class="el" href="classsnicholls_1_1gpu_1_1cuda__exception.html#a8acacc44cc1c3980a784aeb4d8381545">snicholls::gpu::cuda_exception</a></li>
 <li>cuda_graph()&#160;:&#160;<a class="el" href="classsnicholls_1_1gpu_1_1cuda__graph.html#a33a8a888a8089d01db22ebea84d2683b">snicholls::gpu::cuda_graph</a></li>
 <li>cuda_kernels()&#160;:&#160;<a class="el" href="classsnicholls_1_1gpu_1_1cuda__kernels.html#a1ea6bbb3268b537c91446f3cc78cce41">snicholls::gpu::cuda_kernels</a></li>
 <li>cuda_moe_kernels()&#160;:&#160;<a class="el" href="classsnicholls_1_1gpu_1_1cuda__moe__kernels.html#ab4f5db5d38c4efa5c78a19996ef35e0a">snicholls::gpu::cuda_moe_kernels</a></li>
 <li>cuda_quant_kernels()&#160;:&#160;<a class="el" href="classsnicholls_1_1gpu_1_1cuda__quant__kernels.html#ab1639a8b8aa99e4467b0a9f61f6f047e">snicholls::gpu::cuda_quant_kernels</a></li>
+<li>cuda_rows_kernels()&#160;:&#160;<a class="el" href="classsnicholls_1_1gpu_1_1cuda__rows__kernels.html#a8c5de98d842afde662281aa04bd65ad0">snicholls::gpu::cuda_rows_kernels</a></li>
 </ul>
 
 
 <h3 class="doxsection"><a id="index_d" name="index_d"></a>- d -</h3><ul>
+<li>deallocate()&#160;:&#160;<a class="el" href="classsnicholls_1_1gpu_1_1opencl__arena.html#a9b94afddc44e9c4ff81d59e874fa9f13">snicholls::gpu::opencl_arena</a></li>
+<li>debug_sync()&#160;:&#160;<a class="el" href="classsnicholls_1_1gpu_1_1opencl__device__kernels.html#ab1001e25618f0d9e004050e63d617cc6">snicholls::gpu::opencl_device_kernels</a></li>
 <li>device()&#160;:&#160;<a class="el" href="classsnicholls_1_1gpu_1_1cuda__context.html#a9d855ed9d3afd5ad5e19fb2203b3aa6d">snicholls::gpu::cuda_context</a></li>
 <li>device_buffer()&#160;:&#160;<a class="el" href="classsnicholls_1_1gpu_1_1device__buffer.html#ac55f7b98740fcb477b16d4618c293012">snicholls::gpu::device_buffer&lt; T &gt;</a></li>
 <li>device_name()&#160;:&#160;<a class="el" href="classsnicholls_1_1gpu_1_1cuda__context.html#a1f46b359093dcd16f94b17e3619bf190">snicholls::gpu::cuda_context</a>, <a class="el" href="classsnicholls_1_1gpu_1_1opencl__context.html#a27f7781832d77c3671f1a785cef0d103">snicholls::gpu::opencl_context</a></li>
-<li>dot()&#160;:&#160;<a class="el" href="structsnicholls_1_1gpu_1_1cuda__backend.html#a7c5a1d76b88c6096f49d2847ec1abbb6">snicholls::gpu::cuda_backend</a>, <a class="el" href="structsnicholls_1_1gpu_1_1opencl__backend.html#a921c6f0dfaafdbd4e9ffa074a8a8a7bc">snicholls::gpu::opencl_backend</a></li>
+<li>dot()&#160;:&#160;<a class="el" href="structsnicholls_1_1gpu_1_1cuda__backend.html#a7c5a1d76b88c6096f49d2847ec1abbb6">snicholls::gpu::cuda_backend</a>, <a class="el" href="structsnicholls_1_1gpu_1_1opencl__backend.html#a921c6f0dfaafdbd4e9ffa074a8a8a7bc">snicholls::gpu::opencl_backend</a>, <a class="el" href="structsnicholls_1_1gpu_1_1opencl__device__backend.html#afc77fa3b97e7eae8519cdb420a80529c">snicholls::gpu::opencl_device_backend</a></li>
 <li>download()&#160;:&#160;<a class="el" href="classsnicholls_1_1gpu_1_1device__buffer.html#aed5e53811c71faf82c62df7971eb8e38">snicholls::gpu::device_buffer&lt; T &gt;</a></li>
 </ul>
 
@@ -132,14 +137,16 @@ $(function(){initNavTree('functions_func.html','',''); });
 
 <h3 class="doxsection"><a id="index_f" name="index_f"></a>- f -</h3><ul>
 <li>forward()&#160;:&#160;<a class="el" href="classsnicholls_1_1gpu_1_1cuda__quant__kernels.html#a0ecf4cb72460ef1a9d5e7c65f2e0cab9">snicholls::gpu::cuda_quant_kernels</a>, <a class="el" href="classsnicholls_1_1gpu_1_1opencl__quant__kernels.html#a216a22b09918df9a635bf00ff9ae087d">snicholls::gpu::opencl_quant_kernels</a></li>
+<li>forward_buffers()&#160;:&#160;<a class="el" href="classsnicholls_1_1gpu_1_1opencl__quant__kernels.html#adb24332e6e353cdaf9e09707479e5359">snicholls::gpu::opencl_quant_kernels</a></li>
 <li>forward_q8()&#160;:&#160;<a class="el" href="classsnicholls_1_1gpu_1_1cuda__quant__kernels.html#aad3982ade0cd221d243a8061b98fd4e5">snicholls::gpu::cuda_quant_kernels</a>, <a class="el" href="classsnicholls_1_1gpu_1_1opencl__quant__kernels.html#ace178a4d5c503063b9a897d36ab56611">snicholls::gpu::opencl_quant_kernels</a></li>
 </ul>
 
 
 <h3 class="doxsection"><a id="index_g" name="index_g"></a>- g -</h3><ul>
-<li>gemm()&#160;:&#160;<a class="el" href="structsnicholls_1_1gpu_1_1cuda__backend.html#ab55938333927c6d15d9654b996123e8b">snicholls::gpu::cuda_backend</a>, <a class="el" href="classsnicholls_1_1gpu_1_1cuda__context.html#ac9a8c89ca05c15a174144db3ebe8425a">snicholls::gpu::cuda_context</a>, <a class="el" href="structsnicholls_1_1gpu_1_1cuda__training__backend.html#a2beeae680bd18188b1632118e700f852">snicholls::gpu::cuda_training_backend</a>, <a class="el" href="structsnicholls_1_1gpu_1_1opencl__backend.html#aaba76e55c61d9963d96639f46acd3ffb">snicholls::gpu::opencl_backend</a>, <a class="el" href="classsnicholls_1_1gpu_1_1opencl__context.html#a574f2303b92eb18589af837d179c8204">snicholls::gpu::opencl_context</a></li>
+<li>gemm()&#160;:&#160;<a class="el" href="structsnicholls_1_1gpu_1_1cuda__backend.html#ab55938333927c6d15d9654b996123e8b">snicholls::gpu::cuda_backend</a>, <a class="el" href="classsnicholls_1_1gpu_1_1cuda__context.html#ac9a8c89ca05c15a174144db3ebe8425a">snicholls::gpu::cuda_context</a>, <a class="el" href="structsnicholls_1_1gpu_1_1cuda__training__backend.html#a2beeae680bd18188b1632118e700f852">snicholls::gpu::cuda_training_backend</a>, <a class="el" href="structsnicholls_1_1gpu_1_1opencl__backend.html#aaba76e55c61d9963d96639f46acd3ffb">snicholls::gpu::opencl_backend</a>, <a class="el" href="classsnicholls_1_1gpu_1_1opencl__context.html#a574f2303b92eb18589af837d179c8204">snicholls::gpu::opencl_context</a>, <a class="el" href="structsnicholls_1_1gpu_1_1opencl__device__backend.html#a4561238c43fe2640faaf4faec1e3f36b">snicholls::gpu::opencl_device_backend</a></li>
 <li>gemm_bf16()&#160;:&#160;<a class="el" href="classsnicholls_1_1gpu_1_1cuda__context.html#a06becae80266ae35cd47600ff4d67b2f">snicholls::gpu::cuda_context</a></li>
-<li>gemv()&#160;:&#160;<a class="el" href="structsnicholls_1_1gpu_1_1cuda__backend.html#a2c3cb8ed9803e2957299f8588f3311ea">snicholls::gpu::cuda_backend</a>, <a class="el" href="structsnicholls_1_1gpu_1_1opencl__backend.html#afec15d6f7b733b69c38438f88f224872">snicholls::gpu::opencl_backend</a></li>
+<li>gemm_buffers()&#160;:&#160;<a class="el" href="classsnicholls_1_1gpu_1_1opencl__context.html#a1c4aa3ee49165e82a24e6611ac9eb388">snicholls::gpu::opencl_context</a></li>
+<li>gemv()&#160;:&#160;<a class="el" href="structsnicholls_1_1gpu_1_1cuda__backend.html#a2c3cb8ed9803e2957299f8588f3311ea">snicholls::gpu::cuda_backend</a>, <a class="el" href="structsnicholls_1_1gpu_1_1opencl__backend.html#afec15d6f7b733b69c38438f88f224872">snicholls::gpu::opencl_backend</a>, <a class="el" href="structsnicholls_1_1gpu_1_1opencl__device__backend.html#a27b6c6fab23bb70df47746c6f041b36f">snicholls::gpu::opencl_device_backend</a></li>
 </ul>
 
 
@@ -155,12 +162,18 @@ $(function(){initNavTree('functions_func.html','',''); });
 
 
 <h3 class="doxsection"><a id="index_l" name="index_l"></a>- l -</h3><ul>
-<li>launch()&#160;:&#160;<a class="el" href="classsnicholls_1_1gpu_1_1cuda__graph.html#aa517c09dc160b920e75a4d525d035008">snicholls::gpu::cuda_graph</a>, <a class="el" href="classsnicholls_1_1gpu_1_1cuda__kernels.html#a965add05344fa6923ff723bd8414330e">snicholls::gpu::cuda_kernels</a>, <a class="el" href="classsnicholls_1_1gpu_1_1cuda__moe__kernels.html#a3db77138640751959935f85de6e47454">snicholls::gpu::cuda_moe_kernels</a></li>
+<li>launch()&#160;:&#160;<a class="el" href="classsnicholls_1_1gpu_1_1cuda__graph.html#aa517c09dc160b920e75a4d525d035008">snicholls::gpu::cuda_graph</a>, <a class="el" href="classsnicholls_1_1gpu_1_1cuda__kernels.html#a965add05344fa6923ff723bd8414330e">snicholls::gpu::cuda_kernels</a>, <a class="el" href="classsnicholls_1_1gpu_1_1cuda__moe__kernels.html#a3db77138640751959935f85de6e47454">snicholls::gpu::cuda_moe_kernels</a>, <a class="el" href="classsnicholls_1_1gpu_1_1cuda__rows__kernels.html#aab06bf35712278ec31050746ef0fbb6d">snicholls::gpu::cuda_rows_kernels</a>, <a class="el" href="classsnicholls_1_1gpu_1_1opencl__device__kernels.html#ae6cc57930316228194ed4d15c8af4882">snicholls::gpu::opencl_device_kernels</a></li>
 <li>launch_grid()&#160;:&#160;<a class="el" href="classsnicholls_1_1gpu_1_1cuda__kernels.html#a9aa136fdd341bdf60a9ec293db17c4d3">snicholls::gpu::cuda_kernels</a></li>
 <li>launch_grid2()&#160;:&#160;<a class="el" href="classsnicholls_1_1gpu_1_1cuda__kernels.html#a702594251419a6d368b087226273e205">snicholls::gpu::cuda_kernels</a></li>
 <li>launch_grid3()&#160;:&#160;<a class="el" href="classsnicholls_1_1gpu_1_1cuda__kernels.html#a350a91d0c73d34f34706cb6897d8f804">snicholls::gpu::cuda_kernels</a></li>
 <li>launch_tiles()&#160;:&#160;<a class="el" href="classsnicholls_1_1gpu_1_1cuda__kernels.html#a69b44d172a7e2e8e3db0b3465ec3ef27">snicholls::gpu::cuda_kernels</a></li>
+<li>locate()&#160;:&#160;<a class="el" href="classsnicholls_1_1gpu_1_1opencl__arena.html#adb98c237a36900fac287e6d52bde970c">snicholls::gpu::opencl_arena</a></li>
 <li>losses()&#160;:&#160;<a class="el" href="classsnicholls_1_1gpu_1_1cuda__moe__kernels.html#a0e4be58c7d7c2d9da3d0417973f5973a">snicholls::gpu::cuda_moe_kernels</a></li>
+</ul>
+
+
+<h3 class="doxsection"><a id="index_m" name="index_m"></a>- m -</h3><ul>
+<li>mark()&#160;:&#160;<a class="el" href="classsnicholls_1_1gpu_1_1opencl__arena.html#a904a8dd22ce180838da64edefab37456">snicholls::gpu::opencl_arena</a></li>
 </ul>
 
 
@@ -174,10 +187,13 @@ $(function(){initNavTree('functions_func.html','',''); });
 
 
 <h3 class="doxsection"><a id="index_o" name="index_o"></a>- o -</h3><ul>
+<li>opencl_arena()&#160;:&#160;<a class="el" href="classsnicholls_1_1gpu_1_1opencl__arena.html#a63d0755068bc9cea640fab8011d21a61">snicholls::gpu::opencl_arena</a></li>
 <li>opencl_context()&#160;:&#160;<a class="el" href="classsnicholls_1_1gpu_1_1opencl__context.html#a14d9d28c5d74ace092b49114a53766ec">snicholls::gpu::opencl_context</a></li>
+<li>opencl_device_kernels()&#160;:&#160;<a class="el" href="classsnicholls_1_1gpu_1_1opencl__device__kernels.html#ae4ca1cb887bb39e2ae6f755b9b368d77">snicholls::gpu::opencl_device_kernels</a></li>
 <li>opencl_exception()&#160;:&#160;<a class="el" href="classsnicholls_1_1gpu_1_1opencl__exception.html#a206e3ebd6d94f9fa0491adb022ddf37a">snicholls::gpu::opencl_exception</a></li>
 <li>opencl_quant_kernels()&#160;:&#160;<a class="el" href="classsnicholls_1_1gpu_1_1opencl__quant__kernels.html#a3ddee17054c07494e5cd5f3f4e4a072b">snicholls::gpu::opencl_quant_kernels</a></li>
-<li>operator=()&#160;:&#160;<a class="el" href="classsnicholls_1_1gpu_1_1cuda__context.html#a02de3a51591d8c4a095ff94a307627d8">snicholls::gpu::cuda_context</a>, <a class="el" href="classsnicholls_1_1gpu_1_1cuda__graph.html#a1cee48d26434e43d485895df6878ae7d">snicholls::gpu::cuda_graph</a>, <a class="el" href="classsnicholls_1_1gpu_1_1cuda__kernels.html#a58d40193d9d05b1ed5ab3c3602db37c5">snicholls::gpu::cuda_kernels</a>, <a class="el" href="classsnicholls_1_1gpu_1_1cuda__moe__kernels.html#a45588d4f889a09301d0a5256c0f41064">snicholls::gpu::cuda_moe_kernels</a>, <a class="el" href="classsnicholls_1_1gpu_1_1cuda__quant__kernels.html#ad5dc2ea2fa2a10796475da8c970805ea">snicholls::gpu::cuda_quant_kernels</a>, <a class="el" href="classsnicholls_1_1gpu_1_1device__buffer.html#a890b3009ba9607ca3175d721f492ce92">snicholls::gpu::device_buffer&lt; T &gt;</a>, <a class="el" href="classsnicholls_1_1gpu_1_1opencl__context.html#acfe3b278fac39150c3bfa4c27719a27c">snicholls::gpu::opencl_context</a>, <a class="el" href="classsnicholls_1_1gpu_1_1opencl__quant__kernels.html#ad6c76e1baa7143779a717e32b9f2de52">snicholls::gpu::opencl_quant_kernels</a></li>
+<li>operator=()&#160;:&#160;<a class="el" href="classsnicholls_1_1gpu_1_1cuda__context.html#a02de3a51591d8c4a095ff94a307627d8">snicholls::gpu::cuda_context</a>, <a class="el" href="classsnicholls_1_1gpu_1_1cuda__graph.html#a1cee48d26434e43d485895df6878ae7d">snicholls::gpu::cuda_graph</a>, <a class="el" href="classsnicholls_1_1gpu_1_1cuda__kernels.html#a58d40193d9d05b1ed5ab3c3602db37c5">snicholls::gpu::cuda_kernels</a>, <a class="el" href="classsnicholls_1_1gpu_1_1cuda__moe__kernels.html#a45588d4f889a09301d0a5256c0f41064">snicholls::gpu::cuda_moe_kernels</a>, <a class="el" href="classsnicholls_1_1gpu_1_1cuda__quant__kernels.html#ad5dc2ea2fa2a10796475da8c970805ea">snicholls::gpu::cuda_quant_kernels</a>, <a class="el" href="classsnicholls_1_1gpu_1_1cuda__rows__kernels.html#a91c905ed604804a696c9ba8ea375c909">snicholls::gpu::cuda_rows_kernels</a>, <a class="el" href="classsnicholls_1_1gpu_1_1device__buffer.html#a890b3009ba9607ca3175d721f492ce92">snicholls::gpu::device_buffer&lt; T &gt;</a>, <a class="el" href="classsnicholls_1_1gpu_1_1opencl__arena.html#a49388171aaf4887d3412678823397760">snicholls::gpu::opencl_arena</a>, <a class="el" href="classsnicholls_1_1gpu_1_1opencl__context.html#acfe3b278fac39150c3bfa4c27719a27c">snicholls::gpu::opencl_context</a>, <a class="el" href="classsnicholls_1_1gpu_1_1opencl__device__kernels.html#a473050e94787ae4a60aab4409fe67937">snicholls::gpu::opencl_device_kernels</a>, <a class="el" href="classsnicholls_1_1gpu_1_1opencl__quant__kernels.html#ad6c76e1baa7143779a717e32b9f2de52">snicholls::gpu::opencl_quant_kernels</a></li>
+<li>owns()&#160;:&#160;<a class="el" href="classsnicholls_1_1gpu_1_1opencl__arena.html#a5883c30318ee8b3acae7c43a928d75df">snicholls::gpu::opencl_arena</a></li>
 </ul>
 
 
@@ -186,7 +202,18 @@ $(function(){initNavTree('functions_func.html','',''); });
 </ul>
 
 
+<h3 class="doxsection"><a id="index_q" name="index_q"></a>- q -</h3><ul>
+<li>quant_product()&#160;:&#160;<a class="el" href="classsnicholls_1_1gpu_1_1opencl__device__kernels.html#a5fb96a787edf4589d08b76d03815dba9">snicholls::gpu::opencl_device_kernels</a></li>
+</ul>
+
+
 <h3 class="doxsection"><a id="index_r" name="index_r"></a>- r -</h3><ul>
+<li>read()&#160;:&#160;<a class="el" href="classsnicholls_1_1gpu_1_1opencl__arena.html#aeabff09d93cca5aa2839f7f3989b7699">snicholls::gpu::opencl_arena</a></li>
+<li>release()&#160;:&#160;<a class="el" href="classsnicholls_1_1gpu_1_1opencl__arena.html#a3cadcac3ea01a1b4f87dbbb4a6da863b">snicholls::gpu::opencl_arena</a></li>
+<li>retire()&#160;:&#160;<a class="el" href="classsnicholls_1_1gpu_1_1opencl__device__kernels.html#a90b8d1f559794c11af51d0bda436163f">snicholls::gpu::opencl_device_kernels</a></li>
+<li>rope_cos()&#160;:&#160;<a class="el" href="classsnicholls_1_1gpu_1_1opencl__device__kernels.html#a05389bf17c0c94ce90091293efd7129c">snicholls::gpu::opencl_device_kernels</a></li>
+<li>rope_rows()&#160;:&#160;<a class="el" href="classsnicholls_1_1gpu_1_1opencl__device__kernels.html#a86aa7992ffbcd19b6d31692aecaef7b1">snicholls::gpu::opencl_device_kernels</a></li>
+<li>rope_sin()&#160;:&#160;<a class="el" href="classsnicholls_1_1gpu_1_1opencl__device__kernels.html#a9693758e9cd196a65bf531bd4c8b31a3">snicholls::gpu::opencl_device_kernels</a></li>
 <li>row()&#160;:&#160;<a class="el" href="structsnicholls_1_1gpu_1_1block__weights.html#a4998db2ec0c1a5fe5652ed2530616105">snicholls::gpu::block_weights&lt; Block &gt;</a></li>
 </ul>
 
@@ -199,17 +226,22 @@ $(function(){initNavTree('functions_func.html','',''); });
 <li>span()&#160;:&#160;<a class="el" href="classsnicholls_1_1gpu_1_1device__buffer.html#a56e5c402b503dec3f8e07e16e344e0a0">snicholls::gpu::device_buffer&lt; T &gt;</a></li>
 <li>stream()&#160;:&#160;<a class="el" href="classsnicholls_1_1gpu_1_1cuda__context.html#a01301dfcca6e4e0197bbc4709786ea59">snicholls::gpu::cuda_context</a></li>
 <li>synchronize()&#160;:&#160;<a class="el" href="classsnicholls_1_1gpu_1_1cuda__context.html#a5bc161e43bce860f994cdec7327a102b">snicholls::gpu::cuda_context</a></li>
-<li>syrk()&#160;:&#160;<a class="el" href="structsnicholls_1_1gpu_1_1cuda__backend.html#aafbacae41e8bb86fe64bf85e01b3524a">snicholls::gpu::cuda_backend</a>, <a class="el" href="structsnicholls_1_1gpu_1_1opencl__backend.html#a5333a2fa346bb5d8c91ec717387ad8ca">snicholls::gpu::opencl_backend</a></li>
+<li>syrk()&#160;:&#160;<a class="el" href="structsnicholls_1_1gpu_1_1cuda__backend.html#aafbacae41e8bb86fe64bf85e01b3524a">snicholls::gpu::cuda_backend</a>, <a class="el" href="structsnicholls_1_1gpu_1_1opencl__backend.html#a5333a2fa346bb5d8c91ec717387ad8ca">snicholls::gpu::opencl_backend</a>, <a class="el" href="structsnicholls_1_1gpu_1_1opencl__device__backend.html#aa92f93f786fe8aa3a871ed5cc3d00e0a">snicholls::gpu::opencl_device_backend</a></li>
 </ul>
 
 
 <h3 class="doxsection"><a id="index_t" name="index_t"></a>- t -</h3><ul>
-<li>triangular_solve()&#160;:&#160;<a class="el" href="structsnicholls_1_1gpu_1_1cuda__backend.html#a2f85abf2b61b37665e260dfe91ab109a">snicholls::gpu::cuda_backend</a>, <a class="el" href="structsnicholls_1_1gpu_1_1opencl__backend.html#a6c1ea6f0b8dc92d9ef421915dd3ce468">snicholls::gpu::opencl_backend</a></li>
+<li>triangular_solve()&#160;:&#160;<a class="el" href="structsnicholls_1_1gpu_1_1cuda__backend.html#a2f85abf2b61b37665e260dfe91ab109a">snicholls::gpu::cuda_backend</a>, <a class="el" href="structsnicholls_1_1gpu_1_1opencl__backend.html#a6c1ea6f0b8dc92d9ef421915dd3ce468">snicholls::gpu::opencl_backend</a>, <a class="el" href="structsnicholls_1_1gpu_1_1opencl__device__backend.html#a810c40c5925e37f9630699e8debd7691">snicholls::gpu::opencl_device_backend</a></li>
 </ul>
 
 
 <h3 class="doxsection"><a id="index_u" name="index_u"></a>- u -</h3><ul>
 <li>upload()&#160;:&#160;<a class="el" href="classsnicholls_1_1gpu_1_1device__buffer.html#a23ebc2c811d87d44b588ed7d4a6a73ac">snicholls::gpu::device_buffer&lt; T &gt;</a>, <a class="el" href="classsnicholls_1_1gpu_1_1opencl__quant__kernels.html#a3982490b3c1cf7c2df51f65e052e7153">snicholls::gpu::opencl_quant_kernels</a></li>
+</ul>
+
+
+<h3 class="doxsection"><a id="index_w" name="index_w"></a>- w -</h3><ul>
+<li>write()&#160;:&#160;<a class="el" href="classsnicholls_1_1gpu_1_1opencl__arena.html#a1589ea02b96722e480043629bcaba088">snicholls::gpu::opencl_arena</a></li>
 </ul>
 
 
@@ -219,8 +251,11 @@ $(function(){initNavTree('functions_func.html','',''); });
 <li>~cuda_kernels()&#160;:&#160;<a class="el" href="classsnicholls_1_1gpu_1_1cuda__kernels.html#a98963e80910fe8b077fd173ac3d1dda4">snicholls::gpu::cuda_kernels</a></li>
 <li>~cuda_moe_kernels()&#160;:&#160;<a class="el" href="classsnicholls_1_1gpu_1_1cuda__moe__kernels.html#a162fec0bcb066b00d97b62c8cb87e018">snicholls::gpu::cuda_moe_kernels</a></li>
 <li>~cuda_quant_kernels()&#160;:&#160;<a class="el" href="classsnicholls_1_1gpu_1_1cuda__quant__kernels.html#a26dec7eeffefbfe272033214483ae05a">snicholls::gpu::cuda_quant_kernels</a></li>
+<li>~cuda_rows_kernels()&#160;:&#160;<a class="el" href="classsnicholls_1_1gpu_1_1cuda__rows__kernels.html#af734247259d3a2a98fb5e868dc1a6aac">snicholls::gpu::cuda_rows_kernels</a></li>
 <li>~device_buffer()&#160;:&#160;<a class="el" href="classsnicholls_1_1gpu_1_1device__buffer.html#addbb55c9c32cb224438efb48a98f47ca">snicholls::gpu::device_buffer&lt; T &gt;</a></li>
+<li>~opencl_arena()&#160;:&#160;<a class="el" href="classsnicholls_1_1gpu_1_1opencl__arena.html#aff135c8903e79249535fcade82a92fcd">snicholls::gpu::opencl_arena</a></li>
 <li>~opencl_context()&#160;:&#160;<a class="el" href="classsnicholls_1_1gpu_1_1opencl__context.html#aadf2c895b428040f8f65b71d68758c72">snicholls::gpu::opencl_context</a></li>
+<li>~opencl_device_kernels()&#160;:&#160;<a class="el" href="classsnicholls_1_1gpu_1_1opencl__device__kernels.html#a77e99789efa215023087bf3241a7a1e0">snicholls::gpu::opencl_device_kernels</a></li>
 <li>~opencl_quant_kernels()&#160;:&#160;<a class="el" href="classsnicholls_1_1gpu_1_1opencl__quant__kernels.html#af0b039ccc366e283344f7a90a1854d4a">snicholls::gpu::opencl_quant_kernels</a></li>
 </ul>
 </div><!-- contents -->

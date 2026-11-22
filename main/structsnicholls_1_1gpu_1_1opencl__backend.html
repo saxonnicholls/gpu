@@ -26,7 +26,7 @@
  <tbody>
  <tr id="projectrow">
   <td id="projectalign">
-   <div id="projectname">snicholls-gpu<span id="projectnumber">&#160;0.9.0</span>
+   <div id="projectname">snicholls-gpu<span id="projectnumber">&#160;0.10.0</span>
    </div>
    <div id="projectbrief">GPU backends of snicholls-core&#39;s interfaces: linalg on OpenCL</div>
   </td>
@@ -137,7 +137,7 @@ Public Attributes</h2></td></tr>
 <div class="textblock"><p>The <span class="tt">linalg::blas_backend</span> on an <span class="tt"><a class="el" href="classsnicholls_1_1gpu_1_1opencl__context.html" title="One OpenCL device with its context, queue and compiled kernels.">opencl_context</a></span>: <span class="tt"><a class="el" href="#aaba76e55c61d9963d96639f46acd3ffb" title="C = alpha A B + beta C, on the device.">gemm</a></span> and <span class="tt"><a class="el" href="#afec15d6f7b733b69c38438f88f224872" title="y = alpha A x + beta y, on the device as a product with one column.">gemv</a></span> on the device, the rest on the host. </p>
 <p>Trivially copyable (one pointer), as the concept requires; pass it by value to core's free functions. <span class="tt">float</span> runs on the device; <span class="tt">double</span> too when the device has <span class="tt">cl_khr_fp64</span>; any other scalar type, on the host. </p>
 
-<p class="definition">Definition at line <a class="el" href="opencl_8hpp_source.html#l00401">401</a> of file <a class="el" href="opencl_8hpp_source.html">opencl.hpp</a>.</p>
+<p class="definition">Definition at line <a class="el" href="opencl_8hpp_source.html#l00420">420</a> of file <a class="el" href="opencl_8hpp_source.html">opencl.hpp</a>.</p>
 </div><a name="doc-func-members" id="doc-func-members"></a><h2 id="header-doc-func-members" class="groupheader">Member Function Documentation</h2>
 <a id="a5965e56acd84a19b2bc0b353588e8578" name="a5965e56acd84a19b2bc0b353588e8578"></a>
 <h2 class="memtitle"><span class="permalink"><a href="#a5965e56acd84a19b2bc0b353588e8578">&#9670;&#160;</a></span>axpy()</h2>
@@ -183,7 +183,7 @@ template&lt;linalg::scalar T&gt; </div>
   </dd>
 </dl>
 
-<p class="definition">Definition at line <a class="el" href="opencl_8hpp_source.html#l00413">413</a> of file <a class="el" href="opencl_8hpp_source.html">opencl.hpp</a>.</p>
+<p class="definition">Definition at line <a class="el" href="opencl_8hpp_source.html#l00432">432</a> of file <a class="el" href="opencl_8hpp_source.html">opencl.hpp</a>.</p>
 
 </div>
 </div>
@@ -226,7 +226,7 @@ template&lt;linalg::scalar T&gt; </div>
 </dl>
 <dl class="section return"><dt>Returns</dt><dd>The dot product. </dd></dl>
 
-<p class="definition">Definition at line <a class="el" href="opencl_8hpp_source.html#l00406">406</a> of file <a class="el" href="opencl_8hpp_source.html">opencl.hpp</a>.</p>
+<p class="definition">Definition at line <a class="el" href="opencl_8hpp_source.html#l00425">425</a> of file <a class="el" href="opencl_8hpp_source.html">opencl.hpp</a>.</p>
 
 </div>
 </div>
@@ -292,7 +292,7 @@ template&lt;linalg::scalar T&gt; </div>
   </dd>
 </dl>
 
-<p class="definition">Definition at line <a class="el" href="opencl_8hpp_source.html#l00435">435</a> of file <a class="el" href="opencl_8hpp_source.html">opencl.hpp</a>.</p>
+<p class="definition">Definition at line <a class="el" href="opencl_8hpp_source.html#l00454">454</a> of file <a class="el" href="opencl_8hpp_source.html">opencl.hpp</a>.</p>
 
 </div>
 </div>
@@ -358,7 +358,7 @@ template&lt;linalg::scalar T&gt; </div>
   </dd>
 </dl>
 
-<p class="definition">Definition at line <a class="el" href="opencl_8hpp_source.html#l00422">422</a> of file <a class="el" href="opencl_8hpp_source.html">opencl.hpp</a>.</p>
+<p class="definition">Definition at line <a class="el" href="opencl_8hpp_source.html#l00441">441</a> of file <a class="el" href="opencl_8hpp_source.html">opencl.hpp</a>.</p>
 
 </div>
 </div>
@@ -418,7 +418,7 @@ template&lt;linalg::scalar T&gt; </div>
   </dd>
 </dl>
 
-<p class="definition">Definition at line <a class="el" href="opencl_8hpp_source.html#l00446">446</a> of file <a class="el" href="opencl_8hpp_source.html">opencl.hpp</a>.</p>
+<p class="definition">Definition at line <a class="el" href="opencl_8hpp_source.html#l00465">465</a> of file <a class="el" href="opencl_8hpp_source.html">opencl.hpp</a>.</p>
 
 </div>
 </div>
@@ -473,7 +473,7 @@ template&lt;linalg::scalar T&gt; </div>
 </dl>
 <dl class="section return"><dt>Returns</dt><dd>Failure for a singular <span class="tt">T</span>. </dd></dl>
 
-<p class="definition">Definition at line <a class="el" href="opencl_8hpp_source.html#l00455">455</a> of file <a class="el" href="opencl_8hpp_source.html">opencl.hpp</a>.</p>
+<p class="definition">Definition at line <a class="el" href="opencl_8hpp_source.html#l00474">474</a> of file <a class="el" href="opencl_8hpp_source.html">opencl.hpp</a>.</p>
 
 </div>
 </div>
@@ -492,7 +492,7 @@ template&lt;linalg::scalar T&gt; </div>
 
 <p>The device; must outlive the backend. </p>
 
-<p class="definition">Definition at line <a class="el" href="opencl_8hpp_source.html#l00402">402</a> of file <a class="el" href="opencl_8hpp_source.html">opencl.hpp</a>.</p>
+<p class="definition">Definition at line <a class="el" href="opencl_8hpp_source.html#l00421">421</a> of file <a class="el" href="opencl_8hpp_source.html">opencl.hpp</a>.</p>
 
 </div>
 </div>

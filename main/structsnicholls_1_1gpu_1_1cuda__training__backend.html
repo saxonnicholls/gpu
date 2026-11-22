@@ -26,7 +26,7 @@
  <tbody>
  <tr id="projectrow">
   <td id="projectalign">
-   <div id="projectname">snicholls-gpu<span id="projectnumber">&#160;0.9.0</span>
+   <div id="projectname">snicholls-gpu<span id="projectnumber">&#160;0.10.0</span>
    </div>
    <div id="projectbrief">GPU backends of snicholls-core&#39;s interfaces: linalg on OpenCL</div>
   </td>
@@ -154,6 +154,8 @@ Public Attributes</h2></td></tr>
 <tr class="memdesc:abce12efe344fc7cea117c8c752dbdc72"><td class="mdescLeft">&#160;</td><td class="mdescRight">The mixture-of-experts kernels (<span class="tt"><a class="el" href="cuda__moe_8hpp.html" title="snicholls::gpu::cuda_moe_kernels: snicholls-core&#39;s mixture-of-experts steps (ml/moe....">cuda_moe.hpp</a></span>), or none; must outlive the backend. Last, so the members before it initialise as before.  <br /></td></tr>
 <tr class="memitem:a8786ad594a12c4b905b1b5a2d24d324a" id="r_a8786ad594a12c4b905b1b5a2d24d324a"><td class="memItemLeft" align="right" valign="top">const <a class="el" href="classsnicholls_1_1gpu_1_1cuda__quant__kernels.html">cuda_quant_kernels</a> *&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="#a8786ad594a12c4b905b1b5a2d24d324a">quant</a> = nullptr</td></tr>
 <tr class="memdesc:a8786ad594a12c4b905b1b5a2d24d324a"><td class="mdescLeft">&#160;</td><td class="mdescRight">The quantised-weight kernels (<span class="tt"><a class="el" href="cuda__quant_8hpp.html" title="snicholls::gpu::cuda_quant_kernels: matrix products whose weights stay in core&#39;s quantised formats in...">cuda_quant.hpp</a></span>), or none; must outlive the backend. After <span class="tt"><a class="el" href="#abce12efe344fc7cea117c8c752dbdc72" title="The mixture-of-experts kernels (cuda_moe.hpp), or none; must outlive the backend. Last,...">moe</a></span>, so the members before initialise as before.  <br /></td></tr>
+<tr class="memitem:a991c69803f103f9c11118c4a9b8b0ed5" id="r_a991c69803f103f9c11118c4a9b8b0ed5"><td class="memItemLeft" align="right" valign="top">const <a class="el" href="classsnicholls_1_1gpu_1_1cuda__rows__kernels.html">cuda_rows_kernels</a> *&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="#a991c69803f103f9c11118c4a9b8b0ed5">rows</a> = nullptr</td></tr>
+<tr class="memdesc:a991c69803f103f9c11118c4a9b8b0ed5"><td class="mdescLeft">&#160;</td><td class="mdescRight">The key-value cache's kernels (<span class="tt"><a class="el" href="cuda__rows_8hpp.html" title="snicholls::gpu::cuda_rows_kernels: the key-value cache&#39;s operations on CUDA, from the source opencl_d...">cuda_rows.hpp</a></span>), or none; must outlive the backend. Last, so the members before initialise as before.  <br /></td></tr>
 <tr class="inherit_header pub_attribs_structsnicholls_1_1gpu_1_1cuda__backend"><td colspan="2" onclick="javascript:dynsection.toggleInherit('pub_attribs_structsnicholls_1_1gpu_1_1cuda__backend')"><span class="dynarrow"><span class="arrowhead closed"></span></span>Public Attributes inherited from <a class="el" href="structsnicholls_1_1gpu_1_1cuda__backend.html">snicholls::gpu::cuda_backend</a></td></tr>
 <tr class="memitem:a27da5ae02d32c43ac69e1e292876b108 inherit pub_attribs_structsnicholls_1_1gpu_1_1cuda__backend" id="r_a27da5ae02d32c43ac69e1e292876b108"><td class="memItemLeft" align="right" valign="top">const <a class="el" href="classsnicholls_1_1gpu_1_1cuda__context.html">cuda_context</a> *&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structsnicholls_1_1gpu_1_1cuda__backend.html#a27da5ae02d32c43ac69e1e292876b108">context</a> = nullptr</td></tr>
 <tr class="memdesc:a27da5ae02d32c43ac69e1e292876b108 inherit pub_attribs_structsnicholls_1_1gpu_1_1cuda__backend"><td class="mdescLeft">&#160;</td><td class="mdescRight">The device; must outlive the backend.  <br /></td></tr>
@@ -163,7 +165,7 @@ Public Attributes</h2></td></tr>
 <a name="details" id="details"></a><h2 id="header-details" class="groupheader">Detailed Description</h2>
 <div class="textblock"><p>The CUDA backend with the training steps' kernels: core's batched passes run entirely on the device over <span class="tt"><a class="el" href="classsnicholls_1_1gpu_1_1device__buffer.html" title="n elements of device memory, released when it goes out of scope; span() is a view core&#39;s functions ta...">device_buffer</a></span> memory. Trivially copyable. </p>
 
-<p class="definition">Definition at line <a class="el" href="cuda__ops_8hpp_source.html#l01274">1274</a> of file <a class="el" href="cuda__ops_8hpp_source.html">cuda_ops.hpp</a>.</p>
+<p class="definition">Definition at line <a class="el" href="cuda__ops_8hpp_source.html#l01275">1275</a> of file <a class="el" href="cuda__ops_8hpp_source.html">cuda_ops.hpp</a>.</p>
 </div><a name="doc-func-members" id="doc-func-members"></a><h2 id="header-doc-func-members" class="groupheader">Member Function Documentation</h2>
 <a id="a2beeae680bd18188b1632118e700f852" name="a2beeae680bd18188b1632118e700f852"></a>
 <h2 class="memtitle"><span class="permalink"><a href="#a2beeae680bd18188b1632118e700f852">&#9670;&#160;</a></span>gemm() <span class="overload">[1/2]</span></h2>
@@ -225,7 +227,7 @@ Public Attributes</h2></td></tr>
   </dd>
 </dl>
 
-<p class="definition">Definition at line <a class="el" href="cuda__ops_8hpp_source.html#l01329">1329</a> of file <a class="el" href="cuda__ops_8hpp_source.html">cuda_ops.hpp</a>.</p>
+<p class="definition">Definition at line <a class="el" href="cuda__ops_8hpp_source.html#l01332">1332</a> of file <a class="el" href="cuda__ops_8hpp_source.html">cuda_ops.hpp</a>.</p>
 
 </div>
 </div>
@@ -285,7 +287,7 @@ template&lt;linalg::scalar T&gt; </div>
   </dd>
 </dl>
 
-<p class="definition">Definition at line <a class="el" href="cuda__ops_8hpp_source.html#l01295">1295</a> of file <a class="el" href="cuda__ops_8hpp_source.html">cuda_ops.hpp</a>.</p>
+<p class="definition">Definition at line <a class="el" href="cuda__ops_8hpp_source.html#l01298">1298</a> of file <a class="el" href="cuda__ops_8hpp_source.html">cuda_ops.hpp</a>.</p>
 
 </div>
 </div>
@@ -304,7 +306,7 @@ template&lt;linalg::scalar T&gt; </div>
 
 <p>Under <span class="tt"><a class="el" href="group__gpu.html#gga22ea844faef25bad361c431e1315d253ae00ad49f2e4f0fda1539ae29b2aaef57">cuda_math::tf32</a></span>, heads of 32 or 64 channels: flash attention on the tensor cores; false for the matrix-product path. </p>
 
-<p class="definition">Definition at line <a class="el" href="cuda__ops_8hpp_source.html#l01276">1276</a> of file <a class="el" href="cuda__ops_8hpp_source.html">cuda_ops.hpp</a>.</p>
+<p class="definition">Definition at line <a class="el" href="cuda__ops_8hpp_source.html#l01277">1277</a> of file <a class="el" href="cuda__ops_8hpp_source.html">cuda_ops.hpp</a>.</p>
 
 </div>
 </div>
@@ -322,7 +324,7 @@ template&lt;linalg::scalar T&gt; </div>
 
 <p>The longest sequence whose attention runs as matrix products (cuBLAS, so on the tensor cores under <span class="tt"><a class="el" href="group__gpu.html#gga22ea844faef25bad361c431e1315d253ae00ad49f2e4f0fda1539ae29b2aaef57">cuda_math::tf32</a></span>), its <span class="tt">n x n</span> scores three times in the kernels' scratch; longer ones take the tiled kernels. </p>
 
-<p class="definition">Definition at line <a class="el" href="cuda__ops_8hpp_source.html#l01278">1278</a> of file <a class="el" href="cuda__ops_8hpp_source.html">cuda_ops.hpp</a>.</p>
+<p class="definition">Definition at line <a class="el" href="cuda__ops_8hpp_source.html#l01279">1279</a> of file <a class="el" href="cuda__ops_8hpp_source.html">cuda_ops.hpp</a>.</p>
 
 </div>
 </div>
@@ -340,7 +342,7 @@ template&lt;linalg::scalar T&gt; </div>
 
 <p>The compiled kernels; must outlive the backend. </p>
 
-<p class="definition">Definition at line <a class="el" href="cuda__ops_8hpp_source.html#l01275">1275</a> of file <a class="el" href="cuda__ops_8hpp_source.html">cuda_ops.hpp</a>.</p>
+<p class="definition">Definition at line <a class="el" href="cuda__ops_8hpp_source.html#l01276">1276</a> of file <a class="el" href="cuda__ops_8hpp_source.html">cuda_ops.hpp</a>.</p>
 
 </div>
 </div>
@@ -358,7 +360,7 @@ template&lt;linalg::scalar T&gt; </div>
 
 <p>The mixture-of-experts kernels (<span class="tt"><a class="el" href="cuda__moe_8hpp.html" title="snicholls::gpu::cuda_moe_kernels: snicholls-core&#39;s mixture-of-experts steps (ml/moe....">cuda_moe.hpp</a></span>), or none; must outlive the backend. Last, so the members before it initialise as before. </p>
 
-<p class="definition">Definition at line <a class="el" href="cuda__ops_8hpp_source.html#l01281">1281</a> of file <a class="el" href="cuda__ops_8hpp_source.html">cuda_ops.hpp</a>.</p>
+<p class="definition">Definition at line <a class="el" href="cuda__ops_8hpp_source.html#l01282">1282</a> of file <a class="el" href="cuda__ops_8hpp_source.html">cuda_ops.hpp</a>.</p>
 
 </div>
 </div>
@@ -376,7 +378,25 @@ template&lt;linalg::scalar T&gt; </div>
 
 <p>The quantised-weight kernels (<span class="tt"><a class="el" href="cuda__quant_8hpp.html" title="snicholls::gpu::cuda_quant_kernels: matrix products whose weights stay in core&#39;s quantised formats in...">cuda_quant.hpp</a></span>), or none; must outlive the backend. After <span class="tt"><a class="el" href="#abce12efe344fc7cea117c8c752dbdc72" title="The mixture-of-experts kernels (cuda_moe.hpp), or none; must outlive the backend. Last,...">moe</a></span>, so the members before initialise as before. </p>
 
-<p class="definition">Definition at line <a class="el" href="cuda__ops_8hpp_source.html#l01283">1283</a> of file <a class="el" href="cuda__ops_8hpp_source.html">cuda_ops.hpp</a>.</p>
+<p class="definition">Definition at line <a class="el" href="cuda__ops_8hpp_source.html#l01284">1284</a> of file <a class="el" href="cuda__ops_8hpp_source.html">cuda_ops.hpp</a>.</p>
+
+</div>
+</div>
+<a id="a991c69803f103f9c11118c4a9b8b0ed5" name="a991c69803f103f9c11118c4a9b8b0ed5"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#a991c69803f103f9c11118c4a9b8b0ed5">&#9670;&#160;</a></span>rows</h2>
+
+<div class="memitem">
+<div class="memproto">
+      <table class="memname">
+        <tr>
+          <td class="memname">const <a class="el" href="classsnicholls_1_1gpu_1_1cuda__rows__kernels.html">cuda_rows_kernels</a>* snicholls::gpu::cuda_training_backend::rows = nullptr</td>
+        </tr>
+      </table>
+</div><div class="memdoc">
+
+<p>The key-value cache's kernels (<span class="tt"><a class="el" href="cuda__rows_8hpp.html" title="snicholls::gpu::cuda_rows_kernels: the key-value cache&#39;s operations on CUDA, from the source opencl_d...">cuda_rows.hpp</a></span>), or none; must outlive the backend. Last, so the members before initialise as before. </p>
+
+<p class="definition">Definition at line <a class="el" href="cuda__ops_8hpp_source.html#l01286">1286</a> of file <a class="el" href="cuda__ops_8hpp_source.html">cuda_ops.hpp</a>.</p>
 
 </div>
 </div>

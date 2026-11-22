@@ -26,7 +26,7 @@
  <tbody>
  <tr id="projectrow">
   <td id="projectalign">
-   <div id="projectname">snicholls-gpu<span id="projectnumber">&#160;0.9.0</span>
+   <div id="projectname">snicholls-gpu<span id="projectnumber">&#160;0.10.0</span>
    </div>
    <div id="projectbrief">GPU backends of snicholls-core&#39;s interfaces: linalg on OpenCL</div>
   </td>
@@ -105,8 +105,8 @@ $(function(){initNavTree('index.html','',''); });
 <div class="fragment"><div class="line"><span class="keyword">auto</span> context = <a class="code hl_function" href="classsnicholls_1_1gpu_1_1opencl__context.html#a61d03ca7e9943617276f95da5909eb98">snicholls::gpu::opencl_context::create</a>().unwrap();   <span class="comment">// finds a GPU, compiles the kernels</span></div>
 <div class="line"><span class="keyword">const</span> <a class="code hl_struct" href="structsnicholls_1_1gpu_1_1opencl__backend.html">snicholls::gpu::opencl_backend</a> device{context.get()};</div>
 <div class="line">snicholls::linalg::gemm(device, 1.0f, x, snicholls::linalg::transposed(w), 0.0f, y);   <span class="comment">// Y = X Wᵀ on the GPU</span></div>
-<div class="ttc" id="aclasssnicholls_1_1gpu_1_1opencl__context_html_a61d03ca7e9943617276f95da5909eb98"><div class="ttname"><a href="classsnicholls_1_1gpu_1_1opencl__context.html#a61d03ca7e9943617276f95da5909eb98">snicholls::gpu::opencl_context::create</a></div><div class="ttdeci">static result&lt; std::unique_ptr&lt; opencl_context &gt;, opencl_failure &gt; create(device_choice choice=device_choice::any)</div><div class="ttdoc">Finds a device, creates its context and queue, and compiles the kernels.</div><div class="ttdef"><b>Definition</b> <a href="opencl_8hpp_source.html#l00242">opencl.hpp:242</a></div></div>
-<div class="ttc" id="astructsnicholls_1_1gpu_1_1opencl__backend_html"><div class="ttname"><a href="structsnicholls_1_1gpu_1_1opencl__backend.html">snicholls::gpu::opencl_backend</a></div><div class="ttdoc">The linalg::blas_backend on an opencl_context: gemm and gemv on the device, the rest on the host.</div><div class="ttdef"><b>Definition</b> <a href="opencl_8hpp_source.html#l00401">opencl.hpp:401</a></div></div>
+<div class="ttc" id="aclasssnicholls_1_1gpu_1_1opencl__context_html_a61d03ca7e9943617276f95da5909eb98"><div class="ttname"><a href="classsnicholls_1_1gpu_1_1opencl__context.html#a61d03ca7e9943617276f95da5909eb98">snicholls::gpu::opencl_context::create</a></div><div class="ttdeci">static result&lt; std::unique_ptr&lt; opencl_context &gt;, opencl_failure &gt; create(device_choice choice=device_choice::any)</div><div class="ttdoc">Finds a device, creates its context and queue, and compiles the kernels.</div><div class="ttdef"><b>Definition</b> <a href="opencl_8hpp_source.html#l00243">opencl.hpp:243</a></div></div>
+<div class="ttc" id="astructsnicholls_1_1gpu_1_1opencl__backend_html"><div class="ttname"><a href="structsnicholls_1_1gpu_1_1opencl__backend.html">snicholls::gpu::opencl_backend</a></div><div class="ttdoc">The linalg::blas_backend on an opencl_context: gemm and gemv on the device, the rest on the host.</div><div class="ttdef"><b>Definition</b> <a href="opencl_8hpp_source.html#l00420">opencl.hpp:420</a></div></div>
 </div><!-- fragment --><p>See <span class="tt">ROADMAP.md</span> for where this is going: large-scale training of transformers on GPUs.</p>
 <h1 class="doxsection"><a class="anchor" id="autotoc_md1"></a>
 Use</h1>

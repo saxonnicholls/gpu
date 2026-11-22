@@ -1,4 +1,4 @@
 var searchData=
 [
-  ['opencl_5ferror_0',['opencl_error',['../opencl_8hpp.html#abe1faa3a1086ad8b2247b47aec16d2b9',1,'snicholls::gpu']]]
+  ['id_0',['id',['../classsnicholls_1_1gpu_1_1opencl__device__kernels.html#ad2c3abfa7fc44b8b9d44ba08a95f61c2',1,'snicholls::gpu::opencl_device_kernels']]]
 ];

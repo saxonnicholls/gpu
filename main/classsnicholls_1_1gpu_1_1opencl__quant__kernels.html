@@ -26,7 +26,7 @@
  <tbody>
  <tr id="projectrow">
   <td id="projectalign">
-   <div id="projectname">snicholls-gpu<span id="projectnumber">&#160;0.9.0</span>
+   <div id="projectname">snicholls-gpu<span id="projectnumber">&#160;0.10.0</span>
    </div>
    <div id="projectbrief">GPU backends of snicholls-core&#39;s interfaces: linalg on OpenCL</div>
   </td>
@@ -117,6 +117,8 @@ requires detail::quant::weights&lt;W&gt;</td></tr>
 <tr class="memdesc:a3982490b3c1cf7c2df51f65e052e7153"><td class="mdescLeft">&#160;</td><td class="mdescRight">Copies a weight storage to the device.  <br /></td></tr>
 <tr class="memitem:a216a22b09918df9a635bf00ff9ae087d" id="r_a216a22b09918df9a635bf00ff9ae087d"><td class="memItemLeft" align="right" valign="top">void&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="#a216a22b09918df9a635bf00ff9ae087d">forward</a> (const <a class="el" href="classsnicholls_1_1gpu_1_1opencl__quant__matrix.html">opencl_quant_matrix</a> &amp;w, std::span&lt; const float &gt; xs, std::span&lt; float &gt; ys, std::span&lt; const float &gt; bias) const</td></tr>
 <tr class="memdesc:a216a22b09918df9a635bf00ff9ae087d"><td class="mdescLeft">&#160;</td><td class="mdescRight"><span class="tt">Y = X Wᵀ + b</span>: matrix-vector kernels for at most <span class="tt"><a class="el" href="#adb3792955c24339adbc3cb1ae6b07028" title="The most rows of activations a forward product runs as matrix-vector products (8 rows a launch); more...">matvec_max</a></span> rows, else the tiled kernel.  <br /></td></tr>
+<tr class="memitem:adb24332e6e353cdaf9e09707479e5359" id="r_adb24332e6e353cdaf9e09707479e5359"><td class="memItemLeft" align="right" valign="top">void&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="#adb24332e6e353cdaf9e09707479e5359">forward_buffers</a> (const <a class="el" href="classsnicholls_1_1gpu_1_1opencl__quant__matrix.html">opencl_quant_matrix</a> &amp;w, cl_mem x, cl_mem y, cl_mem bias, bool has_bias, std::size_t n) const</td></tr>
+<tr class="memdesc:adb24332e6e353cdaf9e09707479e5359"><td class="mdescLeft">&#160;</td><td class="mdescRight"><span class="tt">Y = X Wᵀ + b</span> over activations already in device buffers (<span class="tt"><a class="el" href="opencl__device_8hpp.html" title="snicholls::gpu::opencl_device_backend: core&#39;s forward passes with every operand in device memory on a...">opencl_device.hpp</a></span>'s arena): <span class="tt">n</span> rows of <span class="tt">x</span> from the buffer's start, <span class="tt">y</span> written from its start; enqueued and not waited for. The same kernels as <span class="tt"><a class="el" href="#a216a22b09918df9a635bf00ff9ae087d" title="Y = X Wᵀ + b: matrix-vector kernels for at most matvec_max rows, else the tiled kernel.">forward</a></span> (matrix-vector up to <span class="tt"><a class="el" href="#adb3792955c24339adbc3cb1ae6b07028" title="The most rows of activations a forward product runs as matrix-vector products (8 rows a launch); more...">matvec_max</a></span> rows, else tiled), so the same results.  <br /></td></tr>
 <tr class="memitem:a5351c972be6f0044dc6e2b31f4b5f080" id="r_a5351c972be6f0044dc6e2b31f4b5f080"><td class="memItemLeft" align="right" valign="top">void&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="#a5351c972be6f0044dc6e2b31f4b5f080">backward_input</a> (const <a class="el" href="classsnicholls_1_1gpu_1_1opencl__quant__matrix.html">opencl_quant_matrix</a> &amp;w, std::span&lt; const float &gt; dys, std::span&lt; float &gt; dxs) const</td></tr>
 <tr class="memdesc:a5351c972be6f0044dc6e2b31f4b5f080"><td class="mdescLeft">&#160;</td><td class="mdescRight"><span class="tt">dX += dY W</span>, the tiled kernel.  <br /></td></tr>
 <tr class="memitem:ace178a4d5c503063b9a897d36ab56611" id="r_ace178a4d5c503063b9a897d36ab56611"><td class="memItemLeft" align="right" valign="top">void&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="#ace178a4d5c503063b9a897d36ab56611">forward_q8</a> (const <a class="el" href="classsnicholls_1_1gpu_1_1opencl__quant__matrix.html">opencl_quant_matrix</a> &amp;w, std::span&lt; const float &gt; xs, std::span&lt; float &gt; ys, std::span&lt; const float &gt; bias) const</td></tr>
@@ -216,7 +218,7 @@ Public Attributes</h2></td></tr>
   </dd>
 </dl>
 
-<p class="definition">Definition at line <a class="el" href="opencl__quant_8hpp_source.html#l00292">292</a> of file <a class="el" href="opencl__quant_8hpp_source.html">opencl_quant.hpp</a>.</p>
+<p class="definition">Definition at line <a class="el" href="opencl__quant_8hpp_source.html#l00328">328</a> of file <a class="el" href="opencl__quant_8hpp_source.html">opencl_quant.hpp</a>.</p>
 
 </div>
 </div>
@@ -374,6 +376,76 @@ Public Attributes</h2></td></tr>
 
 </div>
 </div>
+<a id="adb24332e6e353cdaf9e09707479e5359" name="adb24332e6e353cdaf9e09707479e5359"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#adb24332e6e353cdaf9e09707479e5359">&#9670;&#160;</a></span>forward_buffers()</h2>
+
+<div class="memitem">
+<div class="memproto">
+<table class="mlabels">
+  <tr>
+  <td class="mlabels-left">
+      <table class="memname">
+        <tr>
+          <td class="memname">void snicholls::gpu::opencl_quant_kernels::forward_buffers </td>
+          <td>(</td>
+          <td class="paramtype">const <a class="el" href="classsnicholls_1_1gpu_1_1opencl__quant__matrix.html">opencl_quant_matrix</a> &amp;</td>          <td class="paramname"><span class="paramname"><em>w</em></span>, </td>
+        </tr>
+        <tr>
+          <td class="paramkey"></td>
+          <td></td>
+          <td class="paramtype">cl_mem</td>          <td class="paramname"><span class="paramname"><em>x</em></span>, </td>
+        </tr>
+        <tr>
+          <td class="paramkey"></td>
+          <td></td>
+          <td class="paramtype">cl_mem</td>          <td class="paramname"><span class="paramname"><em>y</em></span>, </td>
+        </tr>
+        <tr>
+          <td class="paramkey"></td>
+          <td></td>
+          <td class="paramtype">cl_mem</td>          <td class="paramname"><span class="paramname"><em>bias</em></span>, </td>
+        </tr>
+        <tr>
+          <td class="paramkey"></td>
+          <td></td>
+          <td class="paramtype">bool</td>          <td class="paramname"><span class="paramname"><em>has_bias</em></span>, </td>
+        </tr>
+        <tr>
+          <td class="paramkey"></td>
+          <td></td>
+          <td class="paramtype">std::size_t</td>          <td class="paramname"><span class="paramname"><em>n</em></span>&#160;) const</td>
+        </tr>
+      </table>
+  </td>
+  <td class="mlabels-right">
+<span class="mlabels"><span class="mlabel inline">inline</span></span>  </td>
+  </tr>
+</table>
+</div><div class="memdoc">
+
+<p><span class="tt">Y = X Wᵀ + b</span> over activations already in device buffers (<span class="tt"><a class="el" href="opencl__device_8hpp.html" title="snicholls::gpu::opencl_device_backend: core&#39;s forward passes with every operand in device memory on a...">opencl_device.hpp</a></span>'s arena): <span class="tt">n</span> rows of <span class="tt">x</span> from the buffer's start, <span class="tt">y</span> written from its start; enqueued and not waited for. The same kernels as <span class="tt"><a class="el" href="#a216a22b09918df9a635bf00ff9ae087d" title="Y = X Wᵀ + b: matrix-vector kernels for at most matvec_max rows, else the tiled kernel.">forward</a></span> (matrix-vector up to <span class="tt"><a class="el" href="#adb3792955c24339adbc3cb1ae6b07028" title="The most rows of activations a forward product runs as matrix-vector products (8 rows a launch); more...">matvec_max</a></span> rows, else tiled), so the same results. </p>
+<dl class="params"><dt>Parameters</dt><dd>
+  <table class="params">
+    <tr><td class="paramname">w</td><td>The weights.</td></tr>
+    <tr><td class="paramname">x</td><td><span class="tt">n · cols</span> floats.</td></tr>
+    <tr><td class="paramname">y</td><td><span class="tt">n · rows</span> floats.</td></tr>
+    <tr><td class="paramname">bias</td><td><span class="tt">rows</span> floats (read when <span class="tt">has_bias</span>).</td></tr>
+    <tr><td class="paramname">has_bias</td><td>Whether there is a bias.</td></tr>
+    <tr><td class="paramname">n</td><td>The rows of <span class="tt">x</span>. </td></tr>
+  </table>
+  </dd>
+</dl>
+<dl class="exception"><dt>Exceptions</dt><dd>
+  <table class="exception">
+    <tr><td class="paramname">opencl_exception.</td><td></td></tr>
+  </table>
+  </dd>
+</dl>
+
+<p class="definition">Definition at line <a class="el" href="opencl__quant_8hpp_source.html#l00273">273</a> of file <a class="el" href="opencl__quant_8hpp_source.html">opencl_quant.hpp</a>.</p>
+
+</div>
+</div>
 <a id="ace178a4d5c503063b9a897d36ab56611" name="ace178a4d5c503063b9a897d36ab56611"></a>
 <h2 class="memtitle"><span class="permalink"><a href="#ace178a4d5c503063b9a897d36ab56611">&#9670;&#160;</a></span>forward_q8()</h2>
 
@@ -428,7 +500,7 @@ Public Attributes</h2></td></tr>
   </dd>
 </dl>
 
-<p class="definition">Definition at line <a class="el" href="opencl__quant_8hpp_source.html#l00309">309</a> of file <a class="el" href="opencl__quant_8hpp_source.html">opencl_quant.hpp</a>.</p>
+<p class="definition">Definition at line <a class="el" href="opencl__quant_8hpp_source.html#l00345">345</a> of file <a class="el" href="opencl__quant_8hpp_source.html">opencl_quant.hpp</a>.</p>
 
 </div>
 </div>

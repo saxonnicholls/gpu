@@ -26,7 +26,7 @@
  <tbody>
  <tr id="projectrow">
   <td id="projectalign">
-   <div id="projectname">snicholls-gpu<span id="projectnumber">&#160;0.9.0</span>
+   <div id="projectname">snicholls-gpu<span id="projectnumber">&#160;0.10.0</span>
    </div>
    <div id="projectbrief">GPU backends of snicholls-core&#39;s interfaces: linalg on OpenCL</div>
   </td>
@@ -122,6 +122,9 @@ Public Member Functions</h2></td></tr>
 <tr class="memitem:a574f2303b92eb18589af837d179c8204" id="r_a574f2303b92eb18589af837d179c8204"><td class="memTemplParams" colspan="2">template&lt;typename T&gt; </td></tr>
 <tr class="memitem:a574f2303b92eb18589af837d179c8204 template"><td class="memItemLeft" align="right" valign="top">void&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="#a574f2303b92eb18589af837d179c8204">gemm</a> (T alpha, linalg::matrix_view&lt; const T &gt; a, linalg::matrix_view&lt; const T &gt; b, T beta, linalg::matrix_view&lt; T &gt; c) const</td></tr>
 <tr class="memdesc:a574f2303b92eb18589af837d179c8204"><td class="mdescLeft">&#160;</td><td class="mdescRight"><span class="tt">C = alpha A B + beta C</span> on the device. Called by <span class="tt"><a class="el" href="structsnicholls_1_1gpu_1_1opencl__backend.html#aaba76e55c61d9963d96639f46acd3ffb" title="C = alpha A B + beta C, on the device.">opencl_backend::gemm</a></span>.  <br /></td></tr>
+<tr class="memitem:a1c4aa3ee49165e82a24e6611ac9eb388" id="r_a1c4aa3ee49165e82a24e6611ac9eb388"><td class="memTemplParams" colspan="2">template&lt;typename T&gt; </td></tr>
+<tr class="memitem:a1c4aa3ee49165e82a24e6611ac9eb388 template"><td class="memItemLeft" align="right" valign="top">void&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="#a1c4aa3ee49165e82a24e6611ac9eb388">gemm_buffers</a> (T alpha, std::size_t m, std::size_t n, std::size_t k, cl_mem a, std::size_t oa, std::size_t sa0, std::size_t sa1, cl_mem b, std::size_t ob, std::size_t sb0, std::size_t sb1, T beta, cl_mem c, std::size_t oc, std::size_t sc0, std::size_t sc1) const</td></tr>
+<tr class="memdesc:a1c4aa3ee49165e82a24e6611ac9eb388"><td class="mdescLeft">&#160;</td><td class="mdescRight"><span class="tt">C = alpha A B + beta C</span> over operands already in device buffers, at element offsets, with element strides; enqueued on <span class="tt"><a class="el" href="#a1770312498c40d540e3c41b4484ac707" title="The in-order command queue every product of this context is enqueued on.">native_queue()</a></span> and not waited for. The same kernel and the same bits as <span class="tt"><a class="el" href="#a574f2303b92eb18589af837d179c8204" title="C = alpha A B + beta C on the device. Called by opencl_backend::gemm.">gemm</a></span>.  <br /></td></tr>
 </table><table class="memberdecls">
 <tr class="heading"><td colspan="2"><h2 id="header-pub-static-methods" class="groupheader"><a id="pub-static-methods" name="pub-static-methods"></a>
 Static Public Member Functions</h2></td></tr>
@@ -132,7 +135,7 @@ Static Public Member Functions</h2></td></tr>
 <div class="textblock"><p>One OpenCL device with its context, queue and compiled kernels. </p>
 <p>Create it once (compiling the kernels takes milliseconds) and hand <span class="tt"><a class="el" href="structsnicholls_1_1gpu_1_1opencl__backend.html" title="The linalg::blas_backend on an opencl_context: gemm and gemv on the device, the rest on the host.">opencl_backend</a>{&amp;context}</span> to core's free functions. Neither copyable nor movable: backends point at it. </p>
 
-<p class="definition">Definition at line <a class="el" href="opencl_8hpp_source.html#l00237">237</a> of file <a class="el" href="opencl_8hpp_source.html">opencl.hpp</a>.</p>
+<p class="definition">Definition at line <a class="el" href="opencl_8hpp_source.html#l00238">238</a> of file <a class="el" href="opencl_8hpp_source.html">opencl.hpp</a>.</p>
 </div><a name="doc-constructors" id="doc-constructors"></a><h2 id="header-doc-constructors" class="groupheader">Constructor &amp; Destructor Documentation</h2>
 <a id="aadf2c895b428040f8f65b71d68758c72" name="aadf2c895b428040f8f65b71d68758c72"></a>
 <h2 class="memtitle"><span class="permalink"><a href="#aadf2c895b428040f8f65b71d68758c72">&#9670;&#160;</a></span>~opencl_context()</h2>
@@ -159,7 +162,7 @@ Static Public Member Functions</h2></td></tr>
 
 <p>Releases the kernels, the program, the queue and the context. </p>
 
-<p class="definition">Definition at line <a class="el" href="opencl_8hpp_source.html#l00297">297</a> of file <a class="el" href="opencl_8hpp_source.html">opencl.hpp</a>.</p>
+<p class="definition">Definition at line <a class="el" href="opencl_8hpp_source.html#l00298">298</a> of file <a class="el" href="opencl_8hpp_source.html">opencl.hpp</a>.</p>
 
 </div>
 </div>
@@ -196,7 +199,7 @@ Static Public Member Functions</h2></td></tr>
 </dl>
 <dl class="section return"><dt>Returns</dt><dd>The context, or why there is none. </dd></dl>
 
-<p class="definition">Definition at line <a class="el" href="opencl_8hpp_source.html#l00242">242</a> of file <a class="el" href="opencl_8hpp_source.html">opencl.hpp</a>.</p>
+<p class="definition">Definition at line <a class="el" href="opencl_8hpp_source.html#l00243">243</a> of file <a class="el" href="opencl_8hpp_source.html">opencl.hpp</a>.</p>
 
 </div>
 </div>
@@ -226,7 +229,7 @@ Static Public Member Functions</h2></td></tr>
 <p>The device's name, as the driver reports it. </p>
 <dl class="section return"><dt>Returns</dt><dd>The name. </dd></dl>
 
-<p class="definition">Definition at line <a class="el" href="opencl_8hpp_source.html#l00300">300</a> of file <a class="el" href="opencl_8hpp_source.html">opencl.hpp</a>.</p>
+<p class="definition">Definition at line <a class="el" href="opencl_8hpp_source.html#l00301">301</a> of file <a class="el" href="opencl_8hpp_source.html">opencl.hpp</a>.</p>
 
 </div>
 </div>
@@ -292,7 +295,145 @@ template&lt;typename T&gt; </div>
   </dd>
 </dl>
 
-<p class="definition">Definition at line <a class="el" href="opencl_8hpp_source.html#l00321">321</a> of file <a class="el" href="opencl_8hpp_source.html">opencl.hpp</a>.</p>
+<p class="definition">Definition at line <a class="el" href="opencl_8hpp_source.html#l00322">322</a> of file <a class="el" href="opencl_8hpp_source.html">opencl.hpp</a>.</p>
+
+</div>
+</div>
+<a id="a1c4aa3ee49165e82a24e6611ac9eb388" name="a1c4aa3ee49165e82a24e6611ac9eb388"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#a1c4aa3ee49165e82a24e6611ac9eb388">&#9670;&#160;</a></span>gemm_buffers()</h2>
+
+<div class="memitem">
+<div class="memproto">
+<div class="memtemplate">
+template&lt;typename T&gt; </div>
+<table class="mlabels">
+  <tr>
+  <td class="mlabels-left">
+      <table class="memname">
+        <tr>
+          <td class="memname">void snicholls::gpu::opencl_context::gemm_buffers </td>
+          <td>(</td>
+          <td class="paramtype">T</td>          <td class="paramname"><span class="paramname"><em>alpha</em></span>, </td>
+        </tr>
+        <tr>
+          <td class="paramkey"></td>
+          <td></td>
+          <td class="paramtype">std::size_t</td>          <td class="paramname"><span class="paramname"><em>m</em></span>, </td>
+        </tr>
+        <tr>
+          <td class="paramkey"></td>
+          <td></td>
+          <td class="paramtype">std::size_t</td>          <td class="paramname"><span class="paramname"><em>n</em></span>, </td>
+        </tr>
+        <tr>
+          <td class="paramkey"></td>
+          <td></td>
+          <td class="paramtype">std::size_t</td>          <td class="paramname"><span class="paramname"><em>k</em></span>, </td>
+        </tr>
+        <tr>
+          <td class="paramkey"></td>
+          <td></td>
+          <td class="paramtype">cl_mem</td>          <td class="paramname"><span class="paramname"><em>a</em></span>, </td>
+        </tr>
+        <tr>
+          <td class="paramkey"></td>
+          <td></td>
+          <td class="paramtype">std::size_t</td>          <td class="paramname"><span class="paramname"><em>oa</em></span>, </td>
+        </tr>
+        <tr>
+          <td class="paramkey"></td>
+          <td></td>
+          <td class="paramtype">std::size_t</td>          <td class="paramname"><span class="paramname"><em>sa0</em></span>, </td>
+        </tr>
+        <tr>
+          <td class="paramkey"></td>
+          <td></td>
+          <td class="paramtype">std::size_t</td>          <td class="paramname"><span class="paramname"><em>sa1</em></span>, </td>
+        </tr>
+        <tr>
+          <td class="paramkey"></td>
+          <td></td>
+          <td class="paramtype">cl_mem</td>          <td class="paramname"><span class="paramname"><em>b</em></span>, </td>
+        </tr>
+        <tr>
+          <td class="paramkey"></td>
+          <td></td>
+          <td class="paramtype">std::size_t</td>          <td class="paramname"><span class="paramname"><em>ob</em></span>, </td>
+        </tr>
+        <tr>
+          <td class="paramkey"></td>
+          <td></td>
+          <td class="paramtype">std::size_t</td>          <td class="paramname"><span class="paramname"><em>sb0</em></span>, </td>
+        </tr>
+        <tr>
+          <td class="paramkey"></td>
+          <td></td>
+          <td class="paramtype">std::size_t</td>          <td class="paramname"><span class="paramname"><em>sb1</em></span>, </td>
+        </tr>
+        <tr>
+          <td class="paramkey"></td>
+          <td></td>
+          <td class="paramtype">T</td>          <td class="paramname"><span class="paramname"><em>beta</em></span>, </td>
+        </tr>
+        <tr>
+          <td class="paramkey"></td>
+          <td></td>
+          <td class="paramtype">cl_mem</td>          <td class="paramname"><span class="paramname"><em>c</em></span>, </td>
+        </tr>
+        <tr>
+          <td class="paramkey"></td>
+          <td></td>
+          <td class="paramtype">std::size_t</td>          <td class="paramname"><span class="paramname"><em>oc</em></span>, </td>
+        </tr>
+        <tr>
+          <td class="paramkey"></td>
+          <td></td>
+          <td class="paramtype">std::size_t</td>          <td class="paramname"><span class="paramname"><em>sc0</em></span>, </td>
+        </tr>
+        <tr>
+          <td class="paramkey"></td>
+          <td></td>
+          <td class="paramtype">std::size_t</td>          <td class="paramname"><span class="paramname"><em>sc1</em></span>&#160;) const</td>
+        </tr>
+      </table>
+  </td>
+  <td class="mlabels-right">
+<span class="mlabels"><span class="mlabel inline">inline</span></span>  </td>
+  </tr>
+</table>
+</div><div class="memdoc">
+
+<p><span class="tt">C = alpha A B + beta C</span> over operands already in device buffers, at element offsets, with element strides; enqueued on <span class="tt"><a class="el" href="#a1770312498c40d540e3c41b4484ac707" title="The in-order command queue every product of this context is enqueued on.">native_queue()</a></span> and not waited for. The same kernel and the same bits as <span class="tt"><a class="el" href="#a574f2303b92eb18589af837d179c8204" title="C = alpha A B + beta C on the device. Called by opencl_backend::gemm.">gemm</a></span>. </p>
+<dl class="params"><dt>Parameters</dt><dd>
+  <table class="params">
+    <tr><td class="paramname">alpha</td><td>The scale.</td></tr>
+    <tr><td class="paramname">m</td><td>The rows of <span class="tt">C</span>.</td></tr>
+    <tr><td class="paramname">n</td><td>Its columns.</td></tr>
+    <tr><td class="paramname">k</td><td>The inner dimension. </td></tr>
+    <tr><td class="paramname">a</td><td><span class="tt">A</span>'s buffer.</td></tr>
+    <tr><td class="paramname">oa</td><td>Its first element.</td></tr>
+    <tr><td class="paramname">sa0</td><td>Its row stride.</td></tr>
+    <tr><td class="paramname">sa1</td><td>Its column stride. </td></tr>
+    <tr><td class="paramname">b</td><td><span class="tt">B</span>'s buffer.</td></tr>
+    <tr><td class="paramname">ob</td><td>Its first element.</td></tr>
+    <tr><td class="paramname">sb0</td><td>Its row stride.</td></tr>
+    <tr><td class="paramname">sb1</td><td>Its column stride. </td></tr>
+    <tr><td class="paramname">beta</td><td>The scale of <span class="tt">C</span>.</td></tr>
+    <tr><td class="paramname">c</td><td><span class="tt">C</span>'s buffer, not overlapping <span class="tt">A</span> or <span class="tt">B</span>.</td></tr>
+    <tr><td class="paramname">oc</td><td>Its first element. </td></tr>
+    <tr><td class="paramname">sc0</td><td>Its row stride.</td></tr>
+    <tr><td class="paramname">sc1</td><td>Its column stride. </td></tr>
+  </table>
+  </dd>
+</dl>
+<dl class="exception"><dt>Exceptions</dt><dd>
+  <table class="exception">
+    <tr><td class="paramname"><a class="el" href="classsnicholls_1_1gpu_1_1opencl__exception.html" title="A product that failed on the device: an unexpected failure (out of device memory, a lost device).">opencl_exception</a></td><td>if an OpenCL call fails. </td></tr>
+  </table>
+  </dd>
+</dl>
+
+<p class="definition">Definition at line <a class="el" href="opencl_8hpp_source.html#l00351">351</a> of file <a class="el" href="opencl_8hpp_source.html">opencl.hpp</a>.</p>
 
 </div>
 </div>
@@ -322,7 +463,7 @@ template&lt;typename T&gt; </div>
 <p>Whether <span class="tt">double</span> products run on the device (<span class="tt">cl_khr_fp64</span>), not on the host. </p>
 <dl class="section return"><dt>Returns</dt><dd>True if they do. </dd></dl>
 
-<p class="definition">Definition at line <a class="el" href="opencl_8hpp_source.html#l00304">304</a> of file <a class="el" href="opencl_8hpp_source.html">opencl.hpp</a>.</p>
+<p class="definition">Definition at line <a class="el" href="opencl_8hpp_source.html#l00305">305</a> of file <a class="el" href="opencl_8hpp_source.html">opencl.hpp</a>.</p>
 
 </div>
 </div>
@@ -352,7 +493,7 @@ template&lt;typename T&gt; </div>
 <p>Whether the device is a GPU. </p>
 <dl class="section return"><dt>Returns</dt><dd>True for a GPU. </dd></dl>
 
-<p class="definition">Definition at line <a class="el" href="opencl_8hpp_source.html#l00302">302</a> of file <a class="el" href="opencl_8hpp_source.html">opencl.hpp</a>.</p>
+<p class="definition">Definition at line <a class="el" href="opencl_8hpp_source.html#l00303">303</a> of file <a class="el" href="opencl_8hpp_source.html">opencl.hpp</a>.</p>
 
 </div>
 </div>
@@ -382,7 +523,7 @@ template&lt;typename T&gt; </div>
 <p>The OpenCL context: buffers of other headers' programs live in it. </p>
 <dl class="section return"><dt>Returns</dt><dd>The context. </dd></dl>
 
-<p class="definition">Definition at line <a class="el" href="opencl_8hpp_source.html#l00309">309</a> of file <a class="el" href="opencl_8hpp_source.html">opencl.hpp</a>.</p>
+<p class="definition">Definition at line <a class="el" href="opencl_8hpp_source.html#l00310">310</a> of file <a class="el" href="opencl_8hpp_source.html">opencl.hpp</a>.</p>
 
 </div>
 </div>
@@ -412,7 +553,7 @@ template&lt;typename T&gt; </div>
 <p>The OpenCL device, for programs of other headers built on this context (<span class="tt"><a class="el" href="opencl__quant_8hpp.html" title="snicholls::gpu::opencl_quant_kernels: matrix products whose weights stay in core&#39;s quantised formats ...">opencl_quant.hpp</a></span>). </p>
 <dl class="section return"><dt>Returns</dt><dd>The device. </dd></dl>
 
-<p class="definition">Definition at line <a class="el" href="opencl_8hpp_source.html#l00307">307</a> of file <a class="el" href="opencl_8hpp_source.html">opencl.hpp</a>.</p>
+<p class="definition">Definition at line <a class="el" href="opencl_8hpp_source.html#l00308">308</a> of file <a class="el" href="opencl_8hpp_source.html">opencl.hpp</a>.</p>
 
 </div>
 </div>
@@ -442,7 +583,7 @@ template&lt;typename T&gt; </div>
 <p>The in-order command queue every product of this context is enqueued on. </p>
 <dl class="section return"><dt>Returns</dt><dd>The queue. </dd></dl>
 
-<p class="definition">Definition at line <a class="el" href="opencl_8hpp_source.html#l00311">311</a> of file <a class="el" href="opencl_8hpp_source.html">opencl.hpp</a>.</p>
+<p class="definition">Definition at line <a class="el" href="opencl_8hpp_source.html#l00312">312</a> of file <a class="el" href="opencl_8hpp_source.html">opencl.hpp</a>.</p>
 
 </div>
 </div>

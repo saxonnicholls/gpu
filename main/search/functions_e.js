@@ -1,4 +1,4 @@
 var searchData=
 [
-  ['row_0',['row',['../structsnicholls_1_1gpu_1_1block__weights.html#a4998db2ec0c1a5fe5652ed2530616105',1,'snicholls::gpu::block_weights']]]
+  ['partials_0',['partials',['../classsnicholls_1_1gpu_1_1cuda__kernels.html#a4e202d63192240eb1f6b581d06869c28',1,'snicholls::gpu::cuda_kernels']]]
 ];
