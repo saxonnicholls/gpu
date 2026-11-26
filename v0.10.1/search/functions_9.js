@@ -1,0 +1,4 @@
+var searchData=
+[
+  ['kv_5fstore_5frows_0',['kv_store_rows',['../cuda__rows_8hpp.html#ad1a506069cd396a9b4f66f658b1ae481',1,'snicholls::gpu::kv_store_rows(const cuda_training_backend &amp;b, std::type_identity_t&lt; std::span&lt; const float &gt; &gt; k, std::type_identity_t&lt; std::span&lt; const float &gt; &gt; v, std::span&lt; float &gt; keys, std::span&lt; float &gt; values, std::size_t first, std::size_t n, std::size_t capacity)'],['../opencl__device_8hpp.html#ac65d09e1165296329bbc6368db54649a',1,'snicholls::gpu::kv_store_rows(const opencl_device_backend &amp;b, std::type_identity_t&lt; std::span&lt; const float &gt; &gt; k, std::type_identity_t&lt; std::span&lt; const float &gt; &gt; v, std::span&lt; float &gt; keys, std::span&lt; float &gt; values, std::size_t first, std::size_t n, std::size_t capacity)']]]
+];
