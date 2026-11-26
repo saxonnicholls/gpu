@@ -47,7 +47,7 @@
 /// \brief The minor version.
 #define SNICHOLLS_GPU_VERSION_MINOR 10
 /// \brief The patch version.
-#define SNICHOLLS_GPU_VERSION_PATCH 0
+#define SNICHOLLS_GPU_VERSION_PATCH 1
 
 /// \brief The version as one comparable integer: major * 10000 + minor * 100 + patch.
 #define SNICHOLLS_GPU_VERSION                                                                        \

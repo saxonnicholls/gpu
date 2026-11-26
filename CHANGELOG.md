@@ -3,6 +3,18 @@
 All notable changes to snicholls-gpu. The format follows Keep a Changelog; versions follow Semantic Versioning.
 A version is released when its tag is on a commit where every blocking CI leg is green.
 
+## 0.10.1 - 2026-11-27
+
+### Changed
+
+- Pins core v0.28.0 (was v0.18.0), the version the family pins, so a build that carries both this library and core
+  0.28.0 reaches one core version (core's diamond rule). No change to this library; `snicholls_core_require` stays at
+  0.17.0.
+
+### Not yet verified
+
+- CUDA: still not run on an NVIDIA GPU. Verified on OpenCL only (an AMD Radeon Pro Vega II on macOS).
+
 ## 0.10.0 - 2026-11-22
 
 ### Added
